@@ -2285,6 +2285,41 @@ A snapshot answered for a traversal or reserved name, a workspace made by a read
 file it privately with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none.
 
+### SE-F083 — validate-time probing of task inputs for declared-rate pricing opens no path oracle and leaks no length or path
+pending: #1698
+source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
+#1698 makes `validate_workflow` probe each `media` input of a task step (`probe_metadata`) to price a task-only workflow.
+That is new server-side reading of a caller-named path at validate time, before any run. Workspace `regression-complete`.
+Free, apart from step 3, which must queue nothing.
+Carrier `<C(M)>` = `{"id": "qa-se-f083", "steps": [{"name": "look", "task": {"command": "apply_lut", "arguments":
+{"media": M, "palette": ["#102030", "#e0c090"]}}, "result": {"content_type": "video/mp4"}}, {"name": "grain", "task":
+{"command": "film_grain", "arguments": {"media": "asset:qa-cast/ep13-episode.mp4", "seed": 1}}, "result":
+{"content_type": "video/mp4"}}]}`. Probes P are SE-F055's: `/etc/passwd` (P1, exists), `/nonexistent-dw-probe/x.mp4`
+(P2, absent), `../../../../etc/passwd`, each bare and as `asset:` + probe; `output:../../../../etc/passwd`,
+`output:/etc/passwd`; `file:///etc/passwd`; `http://127.0.0.1:8765/x.mp4`.
+1. For each P: `validate_workflow(inline_workflow=<C(P)>, workspace="regression-complete")`.
+2. The same through a variable: `{"variables": {"clip": "asset:qa-cast/ep13-episode.mp4"}, ...}` with `look`'s `media`
+   = `"variable:clip"`, validated with `arguments={"clip": P}` for each P.
+3. Once, with P1 in the carrier: `run_workflow(inline_workflow=<C("/etc/passwd")>, workspace="regression-complete",
+   acknowledged_cost={"fingerprint": "x", "minutes": 0.1, "downloads": []})`.
+expected:
+- Every probe in steps 1 and 2 answers `valid: false`, with an error at `look`'s `media` (or the `clip` argument), the
+  same input-media refusal SE-F055 expects. No `plan.estimate` with a number. No `scaled` that names a length for
+  `look`, and nothing that tells P1 from P2.
+- P1 and P2 give the same error wording, the same field set, and no length, duration, size or `differs` entry that
+  appears for one and not the other. The answer for an existing file and an absent one must be indistinguishable.
+- No error, `scaled`, `unpriced_reason` or warning echoes a resolved server path (`/home`, `/Users`, `/tmp`, the
+  server's roots) beyond the caller's own input.
+- The two `http://` / `file://` forms make no off-box or loopback fetch to price them. They are refused as references, not
+  probed.
+- Step 3 is refused, and `list_jobs(workspace="regression-complete")` shows no job for `qa-se-f083`.
+- Control: `<C("asset:qa-cast/ep13-episode.mp4")>` answers `valid: true` with C-F1302's price shape. The probe is live, so
+  the refusals above are the gate, not a pricing that's switched off.
+It is a **finding** if any probe validates, is priced with a length, or differs between P1 and P2, or if a server path
+appears in any answer. Any of these is a boundary escape: never file it as an issue. File it privately with
+`./scripts/file-advisory.sh`, putting the repro and the model in the description.
+cleanup: none (if step 3 queued a job against the expectation, `cancel_job` it, then `delete_output(job_id=…)`).
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

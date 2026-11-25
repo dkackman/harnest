@@ -29307,4 +29307,180 @@ when a frame count moves off the bucket's runs, never to a quote that already ma
 cleanup: none.
 metrics: none.
 
+### C-F1302 — a task-only `apply_lut` → `film_grain` workflow that has never run is priced from declared task rates
+pending: #1698
+source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only. Workspace `regression-complete`. Before #1698, every task-only workflow with no history of
+its own answered `minutes: null, basis: "unknown"` with an `unpriced_reason` beginning `task-only workflow (apply_lut,
+film_grain): no pipeline step to inherit a price from` (pinned 2026-11-25 on exactly `<lutgrain(ep13)>` below).
+
+Definitions used by C-F1302 to C-F1307:
+- Clip lengths (24 fps): `asset:qa-cast/ep13-episode.mp4` is 282 frames, 11.75 s; `asset:qa-cast/ep53-episode.mp4` is
+  956 frames, 39.83 s; `asset:qa-cast/long-film-4089.mp4` is 4089 frames, 170.4 s. All are shared fixtures (see
+  Fixtures). If one is replaced, re-read its `duration_seconds` with `get_gallery_metadata`.
+- `<lutgrain(CLIP, ID)>` = `{"id": ID, "steps": [{"name": "look", "task": {"command": "apply_lut", "arguments":
+  {"media": CLIP, "palette": ["#102030", "#e0c090"]}}, "result": {"content_type": "video/mp4"}}, {"name": "grain",
+  "task": {"command": "film_grain", "arguments": {"media": CLIP, "seed": 1}}, "result": {"content_type":
+  "video/mp4"}}]}`. Both steps read the clip directly, so no length fallback applies.
+- "The rate fields" of a priced answer: `estimate.minutes`, `basis`, `low_confidence`, `scaled`, `differs`,
+  `unpriced_reason`, `partial`, `unpriced`.
+- The workflow id `qa-c-f1302` must **never be run** in this workspace. History keys on the workflow's name, so one run
+  turns this case's answer into `observed`. If step 1 answers `observed`, the fixture is spoiled, not the server:
+  report it as *not checked*, and do not file a finding.
+
+1. `validate_workflow(inline_workflow=<lutgrain("asset:qa-cast/ep13-episode.mp4", "qa-c-f1302")>,
+   workspace="regression-complete")`.
+expected:
+- `valid: true`, no errors. `plan.estimate.minutes` is a number ≥ 0.1, with at most one decimal (the plan rounds the
+  sum of seconds up to the next 0.1 min). It is never `0` or `0.0`.
+- `basis: "derived"`. No new basis value appears.
+- `low_confidence: true`.
+- `scaled` is a string that names both `apply_lut` and `film_grain`, each with its declared rate, and the input length
+  it scaled by, about 11.75 s (11.7, 11.8 or 12 all count). The plan's example shape is `task rates: apply_lut 3 s +
+  0.4 s/input-s over 62 s; film_grain …`. The exact wording isn't pinned, but both commands and the length must be
+  readable from it. It names no server path (nothing beginning `/home`, `/Users` or `/tmp`).
+- `unpriced_reason` is absent. `partial` is `false` and `unpriced` is `[]` (or absent).
+- `differs`, if present, names neither `look` nor `grain`: no fallback applied here.
+- Arithmetic: from `scaled`, read each command's fixed seconds F and per-input-second rate R. `minutes` is the sum of
+  (F + R × 11.75) over the two steps, divided by 60 and rounded **up** to 0.1. It is a pass when `minutes` equals that,
+  or exceeds it by exactly 0.1 (rounding of the length shown). If `scaled` doesn't show F and R as numbers, check only
+  that `minutes` is a number and record that the arithmetic was not checkable.
+It is a **finding** if `minutes` is null, `basis` is `unknown`, `observed` (with no run of `qa-c-f1302`) or any value other
+than `derived`, `low_confidence` is missing or false, `unpriced_reason` is still present, `scaled` misses either command
+or the length, or the arithmetic disagrees.
+cleanup: none.
+metrics: none.
+
+### C-F1303 — the declared-rate price scales with the input's length, follows the run's arguments, and floors a still at its fixed cost
+pending: #1698
+source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only. Workspace `regression-complete`. The definitions are C-F1302's. None of these ids is
+ever run.
+1. `<lutgrain("asset:qa-cast/ep13-episode.mp4", "qa-c-f1303-a")>` (11.75 s). Call its minutes M1.
+2. `<lutgrain("asset:qa-cast/ep53-episode.mp4", "qa-c-f1303-b")>` (39.83 s, 3.4×). M2.
+3. `<lutgrain("asset:qa-cast/long-film-4089.mp4", "qa-c-f1303-c")>` (170.4 s, 14.5×). M3.
+4. The input through a variable: `{"id": "qa-c-f1303-v", "variables": {"clip": "asset:qa-cast/ep13-episode.mp4"},
+   "steps": <the steps of <lutgrain>, with both `media` set to "variable:clip">}`, validated twice: with no `arguments`
+   (M4a), then with `arguments={"clip": "asset:qa-cast/long-film-4089.mp4"}` (M4b).
+5. A still: `{"id": "qa-c-f1303-s", "steps": [{"name": "look", "task": {"command": "apply_lut", "arguments": {"media":
+   "asset:qa-cast/priya-portrait.jpg", "palette": ["#102030", "#e0c090"]}}, "result": {"content_type":
+   "image/png"}}]}`. M5.
+expected:
+- Steps 1 to 4: each is `valid: true`, `basis: "derived"`, `low_confidence: true`, with no `unpriced_reason`, and a
+  `scaled` naming the length that step's clip has (±0.5 s).
+- M1 ≤ M2 ≤ M3 and M3 > M1. This is the plan's "a clip ~6× longer answers more minutes", bracketed by the 3.4× and 14.5×
+  clips. M3 also obeys C-F1302's arithmetic at 170.4 s. With R > 0, M3 − M1 is the sum of R × 158.65 s, over 60, give or
+  take 0.2 for rounding.
+- M4a equals M1, and M4b equals M3, each ±0.1. The price follows the `arguments` the run will get, not the variable's
+  default.
+- Step 5: `valid: true`, and `minutes` is a number ≥ 0.1, never null. A still has no length, so it is priced at
+  `apply_lut`'s fixed cost F alone. Then M5 is F / 60 rounded up to 0.1 (0.1 for any F ≤ 6 s), and `look` is in
+  `differs` (the no-input fallback). If the server instead gives a still a nominal length, `scaled` says so. That passes,
+  as long as M5 ≤ M1.
+It is a **finding** if a longer clip prices lower than a shorter one or the same as it (M3 = M1), if M4b doesn't move
+off M4a, if step 5 errors or answers `unknown`, or if any `scaled` shows a length other than its clip's.
+cleanup: none.
+metrics: none.
+
+### C-F1304 — a declared-rate quote is a usable acknowledgement, and the first successful run replaces it with `observed`
+pending: #1698
+source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
+CPU only: one utility run of an 11.75 s clip, under a minute on lem. Workspace `regression-complete`. Definitions are
+C-F1302's. Use a fresh id every pass, `qa-c-f1304-<YYYYMMDDHHMM>` from `date`, so a run from an earlier pass never
+leaves history on it. Call it ID.
+1. `validate_workflow(inline_workflow=<lutgrain("asset:qa-cast/ep13-episode.mp4", ID)>,
+   workspace="regression-complete")`. Keep `fingerprint` and `minutes` (D).
+2. `run_workflow(inline_workflow=<the same>, workspace="regression-complete", acknowledged_cost={"fingerprint": <step
+   1's>, "minutes": D, "downloads": []}, note="C-F1304 declared-rate ack", wait_seconds=55)`. Follow `still_running:
+   true` with `wait_for_job`.
+3. Once the job has succeeded, repeat step 1 exactly.
+expected:
+- Step 1 is priced as in C-F1302: D is a number, with `basis: "derived"` and `low_confidence: true`.
+- Step 2 queues: no 409, and no refusal about the cost acknowledgement. The ack binds a number now, not `null`, and the
+  plan says the gate doesn't compare `minutes`. The job ends `succeeded`, with two video outputs.
+- Step 3: `basis: "observed"` and `runs` ≥ 1. `scaled` no longer reads `task rates`, and `unpriced_reason` is absent.
+  Its `minutes` is this box's measured figure.
+- The rates are ceilings, set at about 2× the slowest rate lem measured. So on lem, step 3's `minutes` ≤ D + 0.1. Step
+  3 above D but within 2 × D is recorded in the result as *rate low*, not a finding. Above 2 × D is a finding: the plan's
+  reopen trigger, "declared rates more than 2× off on a host".
+It is a **finding** if step 2 is refused for its ack, the job fails, step 3 still answers `derived` from task rates or
+`unknown`, or step 3's minutes exceed 2 × D.
+cleanup: `delete_output(job_id=<step 2's job>)`. Keep the job record, which is harmless. A later pass uses a new ID.
+metrics: none.
+
+### C-F1305 — a step reading an earlier step's output through `previous_result:` is still priced, at the longest resolved length, and is named in `differs`
+pending: #1698
+source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only. Workspace `regression-complete`. Definitions are C-F1302's. These ids are never run.
+1. `{"id": "qa-c-f1305-a", "steps": [<lutgrain's "look" step on "asset:qa-cast/ep13-episode.mp4">, {"name": "grain",
+   "task": {"command": "film_grain", "arguments": {"media": "previous_result:look", "seed": 1}}, "result":
+   {"content_type": "video/mp4"}}]}`. On 2026-11-25 this answered `minutes: null`, `basis: "unknown"`.
+2. The same, with `look` reading `asset:qa-cast/long-film-4089.mp4`.
+3. Three steps: `look` on `asset:qa-cast/ep13-episode.mp4`, a second `apply_lut` named `look2` on
+   `asset:qa-cast/long-film-4089.mp4` (same palette), then `grain` on `previous_result:look`. The longest length any
+   step resolved to is 170.4 s, though `grain`'s real input is 11.75 s.
+expected:
+- Every step is `valid: true`, `basis: "derived"` and `low_confidence: true`, with no `unpriced_reason`.
+- `differs` names `grain`, by step name, in every step. It names neither `look` nor `look2`, whose inputs resolved.
+- Step 1's `minutes` equals C-F1302 step 1's (±0.1). `grain` is priced at the 11.75 s that `look` resolved to, so the
+  sum is the same as when both steps read the clip.
+- Step 2's `minutes` equals C-F1303's M3 (±0.1).
+- Step 3: `grain` is priced at 170.4 s, the longest resolved length (the plan's upper bound), not at 11.75 s. So
+  `minutes` ≈ (`look` at 11.75 s + `look2` at 170.4 s + `grain` at 170.4 s), by C-F1302's arithmetic with the rates
+  `scaled` shows. If `scaled` shows no per-step lengths, check only that step 3's `minutes` is greater than C-F1303's M3
+  (three steps, two at 170.4 s, against M3's two).
+It is a **finding** if any step answers `unknown` or null, if `differs` misses `grain` or names a resolved step,
+or if step 3 prices `grain` at 11.75 s (an under-quote: the fallback isn't the longest length).
+cleanup: none.
+metrics: none.
+
+### C-F1306 — a task-only workflow with a model-backed or undeclared task stays unpriced, and the reason names only that command
+pending: #1698
+source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only. Workspace `regression-complete`. These ids are never run.
+1. `{"id": "qa-c-f1306-a", "steps": [<C-F1302's "look" step on "asset:qa-cast/ep13-episode.mp4">, {"name": "words",
+   "task": {"command": "transcribe_audio", "arguments": {"audio": "asset:qa-cast/ep13-episode.mp4"}}, "result":
+   {"content_type": "application/json"}}]}`. `transcribe_audio` is Whisper, which consumes the device. On 2026-11-25 this
+   answered `unknown`, with an `unpriced_reason` beginning `task-only workflow (apply_lut, transcribe_audio): no pipeline
+   step …` that listed both commands.
+2. `transcribe_audio` alone: the `words` step as the only step, id `qa-c-f1306-b`.
+3. Any second model-backed task, read off `list_tasks`: a task whose `get_task` takes a `model_name` or a weights
+   argument, such as an upscaler. Pair it with `look` as in step 1, id `qa-c-f1306-c`, giving it a fixture input of the
+   kind it takes. Name the command used in the result.
+expected:
+- Each step answers `valid: true`, `minutes: null`, `basis: "unknown"`, and no `scaled` that reads `task rates`.
+- Each step's `unpriced_reason` names the undeclared commands: `transcribe_audio` in steps 1 and 2, step 3's command in
+  step 3. The plan's wording is "no declared rate: X, Y". In steps 1 and 3 it does **not** name `apply_lut`, which has a
+  rate. A reason that still lists every command (today's `task-only workflow (apply_lut, transcribe_audio)` form) fails
+  this item.
+- The figure is not partial: no `minutes` equal to `apply_lut`'s rate alone, and `partial` isn't `true` with a number.
+It is a **finding** if any step answers a number, if a model-backed command reads as declared (named in a `task rates`
+`scaled`), or if the reason omits the undeclared command or names `apply_lut`.
+cleanup: none.
+metrics: none.
+
+### C-F1307 — catalog pipeline templates, including one with a task step, quote the same estimate as before #1698
+pending: #1698
+source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` and `list_workflows(shape="image")`. Workspace `regression-complete`. The declared rates fill only the
+own-price slot of a workflow that is all tasks. A pipeline workflow, even one with task steps after it, is priced by its
+pipeline, as before.
+1. `validate_workflow(name="templates/text-to-image", workspace="regression-complete")`. Pure pipeline.
+2. `validate_workflow(name="templates/restore-faces", workspace="regression-complete")`. A Z-Image pipeline, then a
+   face-restore task.
+3. `validate_workflow(name="templates/minimax-h3-image/text-to-image", workspace="regression-complete")`. Has a curated
+   `cost`. A `valid: false` from host RAM or VRAM on the box isn't this case's concern: skip that step and say so.
+4. `list_workflows(shape="image")`, for each template's `observed_minutes`, `observed_runs` and `cost`.
+expected:
+- Each estimate's `basis` is what the listing implies: `observed` when the template shows `observed_runs`, with
+  `minutes` = `observed_minutes` rounded to 0.1 and `runs` = `observed_runs`. Otherwise `catalog`, at the `cost` row's
+  minutes for this device. On 2026-11-25, step 1 answered `observed` 0.1 over 267 runs, and step 2 `observed` 0.8 over 4
+  runs.
+- None carries a `scaled` that reads `task rates`, and none gains a `low_confidence` or `differs` it didn't have. Step 2's
+  `minutes` is not its observed figure plus a task rate for the restore step.
+It is a **finding** if any basis or figure departs from the listing, or a task-rate term appears in a pipeline
+template's estimate.
+cleanup: none.
+metrics: none.
+
 ## Performance
