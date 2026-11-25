@@ -21,6 +21,7 @@
   <button type="button" id="rr">Again</button>
   <button type="button" id="rb">Restart batch</button>
   <button type="button" id="ld">Load</button>
+  <button type="button" id="ls">Listen</button>
   <p class="plan-line">steps: 3</p>
   <p class="plan-line warn" aria-live="polite">estimate: low confidence</p>
   <div id="answer"></div>
@@ -32,6 +33,9 @@
   <p id="tok">token: none</p>
   <p id="rerun">rerun: none</p>
   <p id="load">load: none</p>
+  <p id="events">events: none</p>
+  <p id="es">stream: idle</p>
+  <p id="width">width: unknown</p>
   <nav class="links" data-area="nav" title="Site links"><a id="doc-link" href="/docs?x=1" title="Open the docs" data-kind="doc" aria-label="Docs" onclick="return false;">Docs link</a></nav>
   <i id="twice">dup one</i><i id="twice">dup two</i><b id="thrice">t1</b><b id="thrice">t2</b><b id="thrice">t3</b>
   <p id="long">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!</p>
@@ -108,6 +112,22 @@
       });
     }, function () { document.getElementById('load').textContent = 'load: failed'; });
   });
+  // An EventSource the way dw's UI follows a job (ui/src/lib/api.ts streamJobEvents): the
+  // events it got, by type, and whether it is reconnecting (readyState 0) or gave up (2).
+  document.getElementById('ls').addEventListener('click', function () {
+    var got = [];
+    var src = new EventSource('/api/jobs/j-7/events?after=0');
+    var show = function () { document.getElementById('events').textContent = 'events: ' + got.join(' | '); };
+    src.onmessage = function (m) { got.push('message:' + m.data + (m.lastEventId ? '#' + m.lastEventId : '')); show(); };
+    src.addEventListener('job_status', function (m) { got.push('job_status:' + m.data); show(); });
+    src.onerror = function () {
+      document.getElementById('es').textContent = 'stream: ' + (src.readyState === 2 ? 'gave up' : 'reconnecting');
+    };
+  });
+  // The viewport width, for the viewport step.
+  function width() { document.getElementById('width').textContent = 'width: ' + window.innerWidth; }
+  width();
+  window.addEventListener('resize', width);
   document.getElementById('n').addEventListener('click', function () {
     fetch('/api/validate?note=1', { method: 'POST', body: 'plain note ' + 'x'.repeat(5000) });
   });

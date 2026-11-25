@@ -192,6 +192,10 @@ or `npm` is refused). The spec is `{"steps": [{"step": "<kind>", ...}]}` with th
 - `stub {url_glob, json}`: answers a validate, run, cancel or rerun POST without sending it (a
   real Run click queues a GPU job); with `method: "GET"`, any page-data GET (`status` 404, 500).
 - `abort {url_glob}`: a matching GET fails as a network error.
+- `viewport {width, height}`: the page's size from that step on (a run starts at 1280x720).
+- `stream {url_glob, events, once}`: a matching GET (an `EventSource`) gets an event stream of
+  `events` (`{data, event, id, retry}`) that then ends; a `status: 500` stub on the same glob,
+  registered first, answers the reconnect and the page's `EventSource` gives up.
 - `dup_ids`: the DOM ids used more than once. `window_flag {name}`: a primitive `window.__name`.
 - `fetch {path, method}` (`GET` or `HEAD`): a direct read of one server path (`/api/...` and
   `/openapi.json` only) for a JSON or OpenAPI check; `status`, `content_type`, `body` (parsed

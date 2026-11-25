@@ -56,10 +56,17 @@ Seventeen files:
   `scripts/install-schedules.sh` (retro, digest, suite audit) under a throwaway `HOME`.
 - `test-sync.sh`: `scripts/sync-fixtures.sh` with fake curl, rsync and ssh.
 - `test-testbed.sh`: `scripts/testbed.sh` with fake ssh and curl.
+- `test-handoff-gate.sh`: the implementer's hand-off gate on a fixture dw checkout, with npm
+  and the venv's python stubbed: the UI's Playwright e2e on a `ui/` change (HEAD built and run
+  once, the base only when HEAD fails and then kept per base commit, the stamp skipping a rerun), a new failure
+  refused by name, a red base's own failure let through, no e2e without a `ui/` change, a HEAD
+  that can't run or build refused, an unrunnable base skipped, and the port lock waited on.
 - `test-ui-check.sh`: `tools/ui-check/ui-check.mjs` against a fixture page on 127.0.0.1:
   steps, mocks built from the real answer (and a status), stubs (POST on write routes only, GET
   anywhere on the origin), abort, the rerun route allowed and restart-batch blocked, inspect's
-  attributes, dup_ids, window_flag, request recording, the origin lock, fetch (JSON, HEAD,
+  attributes, dup_ids, window_flag, viewport (the page sees the width; bounds refused), stream
+  (an EventSource gets JSON, named and multi-line events, gives up on a 500 reconnect after a
+  `once` stream and on a 204, reconnects without `once`; event and body-cap refusals), request recording, the origin lock, fetch (JSON, HEAD,
   the 256 KB cap on a sized and an endless chunked body, an endless drip returned at the step
   timer, JSON too deep to print, redirects not followed, `/api/...` and `/openapi.json` only
   with dot-segment escapes refused, path and method refusals, never in `recorded`, the token

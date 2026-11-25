@@ -31,6 +31,18 @@
 //               to play a 404 or 500 page-data load; a POST on it goes on. Default:
 //               POST when the glob names only POST_ALLOWED routes, else GET.
 //               delay_ms (integer 0-10000) holds the answer that long, as for mock.
+//   stream      {url_glob, events, status?, once?, delay_ms?}   answer a matching
+//               same-origin GET with a text/event-stream body built from events
+//               (1-200 of {data, event?, id?, retry?}: data a string or any JSON
+//               value, serialized; event and id one-line strings of at most 200
+//               chars; retry an integer 0-60000 ms), then end it; never sent. The
+//               body is at most 256 KB. An EventSource reconnects when the body
+//               ends: a stub with a status (say 500) on the same glob, registered
+//               before a stream with once, answers the reconnect, and the page's
+//               EventSource gives up. status 100-599 (default 200); delay_ms as for
+//               mock; once answers the first match only
+//   viewport    {width, height}   the page's viewport from here on (width 320-3840,
+//               height 240-2160); a run starts at 1280x720
 //   abort       {url_glob}   fail a matching same-origin GET or HEAD as a network
 //               error (anything else on the glob goes on)
 //   unmock      {url_glob}   removes the mocks, stubs and aborts on that glob
@@ -135,6 +147,10 @@ const TOKEN_KEY = "dw-api-token";
 // exactly a POST_ALLOWED or STUB_ONLY path, then nothing or a query.
 const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/(?:cancel|rerun|rerun-restart-batch))(?:\?.*)?$/;
 const FLAG_NAME = /^__[A-Za-z0-9_]{1,40}$/;
+// stream: at most this many events and body bytes; event and id are one line.
+const MAX_EVENTS = 200;
+const MAX_STREAM = 262144;
+const SSE_LINE = /^[^\r\n]{1,200}$/;
 // fetch: the most of a body it reads, and the content types it parses as JSON.
 const MAX_FETCH = 262144;
 const JSON_TYPE = /^application\/(?:[A-Za-z0-9.!#$&^_-]+\+)?json\s*(?:;|$)/i;
@@ -262,6 +278,8 @@ const SHAPES = {
   press: { key: "key" },
   mock: { url_glob: "glob", set: "set", status: "status", once: "boolean", delay_ms: "delay" },
   stub: { url_glob: "glob", json: "json", status: "status", method: "method", delay_ms: "delay" },
+  stream: { url_glob: "glob", events: "events", status: "status", once: "boolean", delay_ms: "delay" },
+  viewport: { width: "width", height: "height" },
   abort: { url_glob: "glob" },
   unmock: { url_glob: "glob" },
   record: { url_glob: "glob" },
@@ -338,6 +356,27 @@ function checkValue(kind, v, where) {
     case "index":
       if (!Number.isInteger(v) || v < 0 || v > 1000) invalid(where + " must be an integer from 0");
       return;
+    case "width":
+      if (!Number.isInteger(v) || v < 320 || v > 3840) invalid(where + " must be an integer from 320 to 3840 (pixels)");
+      return;
+    case "height":
+      if (!Number.isInteger(v) || v < 240 || v > 2160) invalid(where + " must be an integer from 240 to 2160 (pixels)");
+      return;
+    case "events": {
+      if (!Array.isArray(v) || !v.length || v.length > MAX_EVENTS) invalid(where + " must be an array of 1 to " + MAX_EVENTS + " events");
+      v.forEach((e, k) => {
+        const at = where + "[" + k + "]";
+        if (!e || typeof e !== "object" || Array.isArray(e)) invalid(at + " must be an object {data, event?, id?, retry?}");
+        for (const key of Object.keys(e)) if (!["data", "event", "id", "retry"].includes(key)) invalid(at + ": unknown key " + JSON.stringify(key) + " (data, event, id, retry)");
+        if (!("data" in e)) invalid(at + " needs data");
+        for (const key of ["event", "id"]) {
+          if (e[key] !== undefined && (typeof e[key] !== "string" || !SSE_LINE.test(e[key]))) invalid(at + "." + key + " must be one line of 1 to 200 chars");
+        }
+        if (e.retry !== undefined && (!Number.isInteger(e.retry) || e.retry < 0 || e.retry > 60000)) invalid(at + ".retry must be an integer from 0 to 60000 (milliseconds)");
+      });
+      if (Buffer.byteLength(sseBody(v)) > MAX_STREAM) invalid(where + " make a body over 256 KB");
+      return;
+    }
     case "delay":
       if (!Number.isInteger(v) || v < 0 || v > 10000) invalid(where + " must be an integer from 0 to 10000 (milliseconds)");
       return;
@@ -418,6 +457,12 @@ function validate(spec) {
       case "window_flag":
         need(has("name"), "needs name");
         break;
+      case "stream":
+        need(has("url_glob") && has("events"), "needs url_glob and events");
+        break;
+      case "viewport":
+        need(has("width") && has("height"), "needs width and height");
+        break;
       case "fetch":
         need(has("path"), "needs path");
         break;
@@ -448,6 +493,21 @@ function writeGlob(glob) {
 // What a stub answers: its method, else POST on a write-route glob, else GET.
 function stubMethod(s) {
   return s.method || (writeGlob(s.url_glob) ? "POST" : "GET");
+}
+
+// The text/event-stream body for a stream step: each event's fields, data split on line
+// breaks into data: lines, a blank line after each.
+function sseBody(events) {
+  let body = "";
+  for (const e of events) {
+    if (e.retry !== undefined) body += "retry: " + e.retry + "\n";
+    if (e.id !== undefined) body += "id: " + e.id + "\n";
+    if (e.event !== undefined) body += "event: " + e.event + "\n";
+    const data = typeof e.data === "string" ? e.data : JSON.stringify(e.data);
+    for (const line of data.split(/\r\n|\r|\n/)) body += "data: " + line + "\n";
+    body += "\n";
+  }
+  return body;
 }
 
 // --- the run ---------------------------------------------------------------
@@ -788,6 +848,25 @@ async function main() {
         await addRoute(s.url_glob, entry);
         return { url_glob: s.url_glob, method, status: s.status ?? 200, delay_ms: s.delay_ms ?? 0 };
       }
+      case "stream": {
+        // A same-origin GET answered with an event stream that ends; never sent.
+        const entry = { hits: 0, errors: [] };
+        const body = sseBody(s.events);
+        entry.handler = async (route) => {
+          const req = route.request();
+          if (!READ_METHODS.has(req.method().toUpperCase()) || denied(req)) return route.fallback();
+          entry.hits++;
+          await hold(s);
+          return route
+            .fulfill({ status: s.status ?? 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body })
+            .catch(() => {});
+        };
+        await addRoute(s.url_glob, entry, s.once ? { times: 1 } : {});
+        return { url_glob: s.url_glob, events: s.events.length, bytes: Buffer.byteLength(body), status: s.status ?? 200, once: s.once === true, delay_ms: s.delay_ms ?? 0 };
+      }
+      case "viewport":
+        await page.setViewportSize({ width: s.width, height: s.height });
+        return { width: s.width, height: s.height };
       case "abort": {
         // A network failure on a same-origin read; a write on the glob goes on.
         const entry = { hits: 0, errors: [] };

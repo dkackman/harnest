@@ -338,7 +338,13 @@ the real answer), so a Run click need not queue a GPU job; as a GET stub (the de
 other glob), a GET or HEAD on any same-origin path, which changes nothing on the server, to
 play a 404 or 500 page-data load. `mock` takes `status` too (the real answer's, replaced),
 and `abort {url_glob}` fails same-origin GETs as a network error; neither reaches a write the
-lock refuses. `inspect` reports the element's attributes (at most 40, values cut to 500, an
+lock refuses. `stream {url_glob, events, status, once, delay_ms}` (harnest#295) answers a
+same-origin GET with a `text/event-stream` body built from 1-200 `{data, event, id, retry}`
+(at most 256 KB) and ends it, never sending the request: dw's UI follows a job with
+`EventSource`, which reconnects when the body ends, so a `status` stub on the same glob
+registered before a `once` stream plays the stream giving up (dw#1650). `viewport {width,
+height}` (320-3840 by 240-2160) resizes the page from that step on, for layouts at a width
+(dw#1611); a run starts at Playwright's 1280x720. `inspect` reports the element's attributes (at most 40, values cut to 500, an
 `on*` handler as `"<handler>"`, never its code), `dup_ids` the DOM ids used more than once,
 and `window_flag {name}` one primitive `window.__name` (the name checked against
 `^__[A-Za-z0-9_]{1,40}$` at validation, read as a property in the page, never evaluated as an

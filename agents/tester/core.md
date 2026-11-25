@@ -181,7 +181,8 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   the run's own, is in the step's result and in `shots`, for `Read`); `mock
   {url_glob, set, status, once}`, `stub {url_glob, json, status, method}`, `abort
   {url_glob}` and `unmock {url_glob}`; `record {url_glob}` and `recorded {url_glob}`;
-  `dup_ids`; `window_flag {name}`; `fetch {path, method}`. Locators are visible text and role only (`exact`,
+  `dup_ids`; `window_flag {name}`; `fetch {path, method}`; `viewport {width, height}`;
+  `stream {url_glob, events, status, once}`. Locators are visible text and role only (`exact`,
   `nth` disambiguate); a CSS or XPath key is refused.
 - `mock` is the cases' "build it from a real answer": it fetches the real response,
   sets each `"dotted.path"` in `set` (`a.0.b`, `a[0]`; any JSON value, `null` too) and
@@ -200,6 +201,14 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   workflow and cancel it. `method` `GET` (the default on any other glob): a GET on any
   path of the server, e.g. a 404 or 500 for the page's data.
 - `abort {url_glob}` fails matching GETs as a network error (the server unreachable).
+- `viewport {width, height}` (320-3840 by 240-2160) sizes the page from that step on; a run
+  starts at 1280x720. A case at a phone width (390x844) sets it before its `goto`.
+- `stream {url_glob, events, status, once}` answers a matching GET (an `EventSource`, such as
+  a job's `/api/jobs/<id>/events`) with an event stream of `events` (`{data, event, id,
+  retry}`; `data` a string or any JSON value), then ends it; nothing is sent. The page's
+  `EventSource` then reconnects after `retry` ms: to play "the stream gives up", `stub` the
+  same glob with `status: 500` first, then `stream` with `once: true` (the later route
+  answers first, once).
 - `dup_ids` returns `ids`, the DOM ids used more than once on the page, with `counts`.
 - `window_flag {name}` returns `window[name]` (`type`, `value`) for a name `__` + up to 40
   letters, digits or `_` (`__APP_READY`), when it is a boolean, number, string of at most

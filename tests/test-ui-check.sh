@@ -675,6 +675,82 @@ fails "no 8-char prefix of the token in the content type" grep -qF "${tok:0:8}" 
 DW_URL="http://127.0.0.1:$aport/mcp" run "$fspec"
 eq "without a config, fetch sends no token: 401" 401 "$(j '.steps[0].result.status')"
 
+# --- viewport: the page's size from that step on (dw#1611, a layout at 390 px)
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "expect_text", "text": "width: 1280"},
+  {"step": "viewport", "width": 390, "height": 844},
+  {"step": "wait_text", "text": "width: 390"},
+  {"step": "screenshot", "name": "narrow"}
+]}'
+eq "viewport run ok" true "$(j .ok)"
+eq "a run starts at 1280 wide" true "$(j '.steps[1].result.found')"
+eq "viewport returns its size" "390x844" "$(j '.steps[2].result | "\(.width)x\(.height)"')"
+eq "the page sees the new width" true "$(j '.steps[3].ok')"
+d1="$(j '.shots[0]' | xargs dirname)"; case "$d1" in "$tmpdir"/dw-ui-shots-*) rm -rf "$d1" ;; esac
+for v in '"width": 319, "height": 800' '"width": 3841, "height": 800' '"width": 390, "height": 239' '"width": 390, "height": 2161' '"width": 390.5, "height": 800' '"width": "390", "height": 800' '"width": 390' '"height": 800'; do
+  run '{"steps": [{"step": "viewport", '"$v"'}]}'
+  eq "viewport {$v} is an invalid spec" 2 "$rc"
+done
+
+# --- stream: an event stream that ends; a 500 on the reconnect makes EventSource give up (dw#1650)
+sglob='**/api/jobs/*/events**'
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "stub", "url_glob": "'"$sglob"'", "json": {"detail": "gone"}, "status": 500},
+  {"step": "stream", "url_glob": "'"$sglob"'", "once": true, "events": [
+    {"retry": 100, "id": "1", "data": {"n": 1}},
+    {"event": "job_status", "data": "running"},
+    {"data": "two\nlines"}]},
+  {"step": "click", "role": "button", "name": "Listen"},
+  {"step": "wait_text", "text": "stream: gave up", "timeout_ms": 10000},
+  {"step": "expect_text", "regex": "events: .*"},
+  {"step": "unmock", "url_glob": "'"$sglob"'"}
+]}'
+eq "stream run ok" true "$(j .ok)"
+eq "stream reports its events" 3 "$(j '.steps[2].result.events')"
+eq "and once" true "$(j '.steps[2].result.once')"
+has "the page got a JSON data event with its id" 'message:{"n":1}#1' "$(j '.steps[5].result.snippet')"
+has "a named event reaches its listener" "job_status:running" "$(j '.steps[5].result.snippet')"
+has "multi-line data arrives as one event" "message:two" "$(j '.steps[5].result.snippet')"
+eq "the stream, then the 500 stub on the reconnect" 2 "$(j '.steps[6].result.hits')"
+eq "the stream request is never blocked" 0 "$(j '[.blocked[] | select(contains("/events"))] | length')"
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "stream", "url_glob": "'"$sglob"'", "events": [{"retry": 100, "data": "tick"}]},
+  {"step": "click", "role": "button", "name": "Listen"},
+  {"step": "wait_text", "regex": "tick \\| message:tick", "timeout_ms": 10000},
+  {"step": "expect_text", "text": "stream: reconnecting"},
+  {"step": "unmock", "url_glob": "'"$sglob"'"}
+]}'
+eq "without once, each reconnect gets the stream again" true "$(j .ok)"
+ok "more than one answer" test "$(j '.steps[5].result.hits')" -ge 2
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "stream", "url_glob": "'"$sglob"'", "status": 204, "events": [{"data": "x"}]},
+  {"step": "click", "role": "button", "name": "Listen"},
+  {"step": "wait_text", "text": "stream: gave up", "timeout_ms": 10000}
+]}'
+eq "a 204 stream tells EventSource to stop" true "$(j .ok)"
+eq "status is reported" 204 "$(j '.steps[1].result.status')"
+# 60000 line breaks: about 120 KB of spec, about 420 KB of body (a data: line each)
+evs="$(python3 -c 'import json; print(json.dumps([{"data": "\n" * 60000}]))')"
+for bad in '"events": []' '"events": {"data": 1}' '"events": [{"event": "x"}]' '"events": [{"data": 1, "extra": 2}]' \
+  '"events": [{"data": 1, "event": "two\nlines"}]' '"events": [{"data": 1, "id": ""}]' '"events": [{"data": 1, "retry": -1}]' \
+  '"events": [{"data": 1, "retry": 60001}]' '"events": ['"$(printf '{"data":1},%.0s' $(seq 1 200))"'{"data":1}]' "\"events\": $evs" '"events": [1]'; do
+  run '{"steps": [{"step": "stream", "url_glob": "'"$sglob"'", '"$bad"'}]}'
+  eq "stream {${bad:0:40}...} is an invalid spec" 2 "$rc"
+done
+run '{"steps": [{"step": "stream", "url_glob": "'"$sglob"'", "events": '"$evs"'}]}'
+has "a body over 256 KB is refused as such" "over 256 KB" "$(j .error)"
+run '{"steps": [{"step": "stream", "events": [{"data": 1}]}]}'
+eq "stream needs url_glob" 2 "$rc"
+run '{"steps": [{"step": "stream", "url_glob": "'"$sglob"'"}]}'
+eq "stream needs events" 2 "$rc"
+run '{"steps": [{"step": "stream", "url_glob": "'"$sglob"'", "events": [{"data": 1}], "selector": "#x"}]}'
+eq "stream takes no locator" 2 "$rc"
+unset evs
+
 # --- the spec path: /tmp/dw-ui-*.json, a regular file, no symlink
 printf '{"steps": []}\n' > "$T/elsewhere.json"
 node "$runner" "$T/elsewhere.json" >/dev/null 2>&1; eq "a spec outside /tmp/dw-ui-* exits 2" 2 $?
