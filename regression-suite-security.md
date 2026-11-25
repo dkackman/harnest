@@ -2320,6 +2320,50 @@ appears in any answer. Any of these is a boundary escape: never file it as an is
 `./scripts/file-advisory.sh`, putting the repro and the model in the description.
 cleanup: none (if step 3 queued a job against the expectation, `cancel_job` it, then `delete_output(job_id=…)`).
 
+### SE-F084 — a `preference:` key is a name, never a path: traversal and absolute forms are refused with no server path
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete`. Stage 1 adds a new `workflow.path` form whose key indexes a server-held
+file (the shipped ladder, later the overlay). The key must be checked as a name before any lookup.
+Carrier `<P0(path)>` from C-F1406. Keys K: `../preferences`, `../../etc/passwd`, `/etc/passwd`, `text_to_image/../x`,
+`..%2Fpreferences`, `text_to_image%00`, `~/x`, `C:\\x`, a 300-character run of `a`.
+1. `validate_workflow(inline_workflow=<P0("preference:" + K)>)` for each K.
+2. The same through a variable: `<PT("variable:w")>` with `"w": "preference:text_to_image"` in `variables`, validated
+   with `arguments={"w": "preference:" + K}`.
+3. `run_workflow` the first K bare, with a made-up `acknowledged_cost`; `list_jobs(workspace="regression-complete")`.
+expected:
+- Every probe `valid: false`, refused as a bad key name (or an unknown key), at `steps[0].workflow.path`. None resolves
+  to a target, none is read as a workflow file, and P1 and P2 answer alike.
+- No answer carries an absolute server path (`/home/`, `/Users/`, a workspace or checkout root), file contents, or a
+  stack trace.
+- 3 is refused; no job is queued.
+It is a **finding** if any probe resolves, reads a file, or leaks a server path. That is a boundary escape: never file
+it as an issue. File it privately with `./scripts/file-advisory.sh`, putting the repro and the model in the description.
+cleanup: none (cancel and `delete_output` a job if 3 queued one).
+
+### SE-F085 — a stored ladder target is a library workflow name: a path, URL or bad argument reference is refused at PUT
+pending: #1723
+source: tester, spec for #1723 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free. REST writes as C-F1418 (`PUT /api/preferences/{key}` with a fresh `If-Match`). The overlay feeds `workflow.path`
+for every caller, so a bad target written once is resolved by every later run.
+1. PUT `qa_sec` = `{"best": [T]}` for each T: `../../etc/passwd`, `/etc/passwd`, `/home/x/workflow.json`,
+   `https://example.invalid/w.json`, `file:///etc/passwd`, `asset:qa-cast/priya-voice.wav`, `output:x/y.png`,
+   `preference:text_to_image` (a ladder naming a ladder), `variable:x`.
+2. PUT `{"best": [{"workflow": "templates/text-to-image", "arguments": {"prompt": A}}]}` for A: `"asset:../../etc/passwd"`,
+   `"output:../../x.png"`, `"prompt:../x"`.
+3. PUT to the key route `/api/preferences/..%2Fx` and `/api/preferences/%2Fetc%2Fpasswd`.
+4. `fetch {path: "/api/preferences"}` after all of them.
+expected:
+- Every PUT 422 (or 4xx), naming the target or argument at fault, with no server path in the body; nothing stored. A
+  preference that recurses into itself is refused at PUT or at validate, never loops.
+- 2: refused at PUT, or stored and then refused at validate by the same gate a step argument meets (SE cases on
+  `asset:`/`output:` traversal); record which. A resolution that reads outside the server's roots is a **finding**.
+- 4: no `qa_sec` key, and no key named like a path.
+It is a **finding** if any PUT stores a path, URL or reference as a target, if any reply leaks a server path, or if an
+off-box fetch is attempted. That is a boundary escape: never file it as an issue. File it privately with
+`./scripts/file-advisory.sh`, putting the repro and the model in the description.
+cleanup: DELETE `qa_sec` if it was stored.
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

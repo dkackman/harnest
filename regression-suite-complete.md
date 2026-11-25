@@ -31661,4 +31661,362 @@ cleanup: `delete_output(job_id=<storm job>)`. Then `delete_asset` the three `qa-
 `acknowledged_cost=true`, once no other case this session still needs them.
 metrics: none.
 
+### C-F1406 — a step composing `preference:text_to_image` names its resolution in the validate plan, per tier
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete` on every call. Before the stage, a `workflow.path` of
+`preference:text_to_image` (direct or through a `variable:`) was refused at `steps[0].workflow.path` as a sub-workflow
+that "could not be resolved", looked up as a file. That refusal is the old behaviour this case turns around.
+The carriers, used by C-F1406–C-F1413 and SE-F084:
+- `<P0(path)>` = `{"id": "qa-pref-1626", "variables": {"prompt": "a red bicycle against a white wall", "seed": 1626},
+  "seed": "variable:seed", "steps": [{"name": "picture", "workflow": {"path": <path>, "arguments": {"prompt":
+  "variable:prompt", "seed": "variable:seed", "num_images_per_prompt": 1}}}]}`: no `tier` anywhere.
+- `<PT(path)>` = `<P0(path)>` with `"tier": "standard"` added to `variables`, so a run's `arguments` can set `tier`.
+Shipped ladder (plan v2): draft `templates/text-to-image`; standard `models/z-image`, `models/z-image-sdnq`; best
+`{models/minimax-h3-image, devices: [cuda]}`, `models/qwen-image-2.1`; `default_tier` `standard`.
+1. `validate_workflow(inline_workflow=<P0("preference:text_to_image")>)`, no arguments.
+2. `validate_workflow(inline_workflow=<PT("preference:text_to_image")>, arguments=...)` with `{"tier": "draft"}`, then
+   `{"tier": "standard"}`, then `{"tier": "best"}`, then no arguments.
+3. `get_server_info()` and `get_health()`: the device type, and the smallest card's VRAM.
+expected:
+- Every call answers `valid: true`, with a `plan`. A refusal of the prefix itself is the old behaviour: a **finding**.
+- Each plan carries one resolution line for step `picture`, in the plan's form: `preference:text_to_image (tier <t>) ->
+  <target>; [skipped <target>: <reason>; ...] source: <source>`. Exact punctuation may differ; the key, the tier, the
+  chosen target, every skipped target with its reason, and the source must all be there. A plan with no line naming
+  the resolution (a silent swap) is a **finding**.
+- 1 (no tier anywhere) resolves `tier standard` -> `models/z-image`: the `default_tier`. 2 draft -> `templates/text-to-image`;
+  standard -> `models/z-image`; no arguments -> standard -> `models/z-image` (the variable's default).
+- 2 best: the chosen target is `models/minimax-h3-image` or `models/qwen-image-2.1`. If it is Qwen, the line names
+  `models/minimax-h3-image` as skipped with a reason that is one of the plan's fit rules (device, host RAM, VRAM above
+  the smallest card, gated). Record which, and the reason, in the verify comment. A best pick that is neither, or a
+  skip with no reason, is a **finding**.
+- `source` is `shipped` (no overlay exists before #1723). If it says `server`, record it: lem may carry an overlay file.
+- A target that is not downloaded is picked, with a note on the line or in `plan.downloads_required` (Q1), never skipped
+  for that alone.
+cleanup: none.
+metrics: none.
+
+### C-F1407 — the rung follows a step `tier` argument first, then the enclosing workflow's tier up to the root
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete`. Design 6's order: the composing step's `tier` argument, else the
+enclosing workflow's folded `tier` walking up to the root, else `default_tier`.
+Setup: `save_workflow(name="qa-pref-child-1626", workflow=<P0("preference:text_to_image")>, workspace="regression-complete")`
+(no `tier` variable of its own; use the save tool's current argument names).
+1. `<PT("preference:text_to_image")>` with step `picture`'s `arguments` given `"tier": "draft"`; validate with
+   `arguments={"tier": "best"}`.
+2. The same step `tier` set to `"variable:tier"`; validate with `{"tier": "draft"}`.
+3. A parent `<PT("qa-pref-child-1626")>` (its step composes the saved child, passing only `prompt` and `seed`); validate
+   with `{"tier": "draft"}`, then with no arguments.
+4. A parent `<P0("qa-pref-child-1626")>` (no tier anywhere in the chain); validate.
+expected:
+- 1: the resolution line says `tier draft` -> `templates/text-to-image`: the step argument beats the run's `best`.
+- 2: `tier draft` -> `templates/text-to-image`.
+- 3: the child's line says `tier draft` -> `templates/text-to-image` with `{"tier": "draft"}`, and `tier standard` ->
+  `models/z-image` with no arguments: the child, which declares no tier, follows its parent. A child that resolves
+  `standard` under a `draft` parent is a **finding**: one `tier` does not flow down the chain.
+- 4: `tier standard` -> `models/z-image` (`default_tier`).
+- The step-level `tier` is not passed into the resolved child as an undeclared argument: no warning that the target
+  declares no `tier` variable (it is read by the resolver). Such a warning is a **finding** to file, not a stage failure.
+cleanup: `delete_workflow(name="qa-pref-child-1626", workspace="regression-complete", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1408 — a `preference:` run pins its resolution in the job, and a rerun runs the same target
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+GPU: three or four short single-image jobs (SD 1.5 and one z-image). Workspace `regression-complete`. `validate_workflow`
+each run first with the same arguments and pass its `acknowledged_cost`.
+1. `run_workflow(inline_workflow=<PT("preference:text_to_image")>, arguments={"tier": "draft"}, wait_seconds=55,
+   workspace="regression-complete")` (C-F1406's carrier). Then `get_job(<id>)`.
+2. `rerun_job(<id>)`, wait, `get_job`.
+3. A rerun of job 1 that changes `tier` to `standard` (`rerun_job` with changed arguments, as C-F1053 uses it). Wait
+   (`wait_seconds=55`, then `wait_for_job` if `still_running`), `get_job`.
+expected:
+- 1: completes with one image. `get_job` carries a `preferences` map with an entry keyed
+  `preference:text_to_image@draft` (or the same key and tier in another spelling), `target: templates/text-to-image`,
+  `skipped: []` and `source`. The job's events or realized workflow (`get_job_workflow`) show `templates/text-to-image`
+  ran. A job with no `preferences` map is a **finding**: the pin is what keeps a rerun on the same model.
+- 2: completes on `templates/text-to-image`, with the same `preferences` entry as job 1 (the map was replayed).
+- 3: resolves fresh: its map has `preference:text_to_image@standard` -> `models/z-image`, and it ran z-image. A rerun that
+  passed `standard` but replayed the draft pin is a **finding**.
+- No job carries a warning that the resolution was skipped, guessed or re-resolved in the worker.
+cleanup: `delete_output(job_id=<id>)` for each job.
+metrics: none.
+
+### C-F1409 — an unknown key and a tier outside `draft | standard | best` are refused at validate, and queue nothing
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free. Workspace `regression-complete`. C-F1406's carriers.
+1. `validate_workflow(inline_workflow=<P0("preference:no_such_key")>)`.
+2. `validate_workflow(inline_workflow=<PT("preference:text_to_image")>, arguments=...)` with `{"tier": "ultra"}`, then
+   `{"tier": ""}`, then `{"tier": "Best"}`, then `{"tier": 3}`.
+3. `<P0("preference:text_to_image")>` with step `picture`'s `arguments` given `"tier": "ultra"`; validate.
+4. Invalid key names: `<P0(path)>` for path `preference:`, `preference:text to image`, `preference:text-to-image!`,
+   `preference:text_to_image.json`, `preference:Text_To_Image` (record whether case is folded or refused).
+5. `run_workflow(inline_workflow=<P0("preference:no_such_key")>, workspace="regression-complete",
+   acknowledged_cost={"fingerprint": "x", "minutes": 0.1, "downloads": []})`, then `list_jobs(workspace="regression-complete")`.
+expected:
+- 1: `valid: false`, an error at `steps[0].workflow.path` naming `no_such_key` as an unknown preference key. It is not the
+  file-lookup "could not be resolved ... Looked in" message: that would mean the prefix is still read as a file.
+- 2: each refused, naming `tier` and the allowed names `draft`, `standard`, `best`. `"Best"` is either refused or folded to
+  `best` with the line saying `tier best`; record which. Resolving a non-tier to some rung silently is a **finding**.
+- 3: refused at the step's `tier`, the same way.
+- 4: each refused as a bad key name, naming the rule, never answered with a resolution. `preference:` with an empty key
+  must not resolve to a default key.
+- 5: refused before anything queues; `list_jobs` shows no job for `qa-pref-1626`.
+- No refusal carries an absolute server path (`/home/`, `/Users/`, a workspace root).
+cleanup: none (cancel and `delete_output` a job if 5 queued one against the expectation).
+metrics: none.
+
+### C-F1410 — a `variable:` holding `preference:` resolves the same way; overriding it with a workflow name skips the preference
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free at validate; two GPU runs (one z-image image, one SD 1.5 image). Workspace `regression-complete`.
+`<PV>` = `<PT("variable:picture_workflow")>` with `"picture_workflow": "preference:text_to_image"` added to `variables`
+(the plan's per-run override shape).
+1. `validate_workflow(inline_workflow=<PV>)`, then with `arguments={"tier": "draft"}`.
+2. `validate_workflow(inline_workflow=<PV>, arguments={"picture_workflow": "models/z-image"})`, and with
+   `{"picture_workflow": "models/z-image", "tier": "draft"}`.
+3. `run_workflow` 2's first form (`wait_seconds=55`, then `wait_for_job`); `get_job`.
+4. `arguments={"picture_workflow": "preference:no_such_key"}`, then `{"picture_workflow": "models/no-such-1626"}`;
+   validate each.
+expected:
+- 1: the same resolution lines as C-F1406 step 2 (standard -> `models/z-image`; draft -> `templates/text-to-image`).
+- 2: `valid: true`, and the plan has **no** `preference:` resolution line, under either tier: the named workflow wins, and
+  the tier is not applied to pick another model. The plan's estimate and downloads are z-image's.
+- 3: completes on z-image; `get_job` has no `preferences` entry (or an empty map). An entry resolving
+  `text_to_image` for this job is a **finding**: the stored preference was consulted though a workflow was named.
+- 4: the first refused as an unknown key (C-F1409's wording); the second refused as an unresolvable sub-workflow.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F1411 — the resolved child is priced, its downloads listed and its arguments warned, as a named child is
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete`. The plan's main risk: a reader of `workflow.path` left reading the raw
+string swallows the failure, so the child goes **silently** unpriced, un-downloaded or unwarned.
+For each tier T in `draft`, `standard`, `best`, with R(T) the target C-F1406 recorded for it:
+1. `validate_workflow(inline_workflow=<PT("preference:text_to_image")>, arguments={"tier": T})`.
+2. `validate_workflow(inline_workflow=<P0(R(T))>)`: the same child named directly.
+3. Repeat 1 and 2 with step `picture`'s `arguments` given an extra `"bogus_1626": 1`.
+expected:
+- 1 and 2 give the same `plan.estimate` (`minutes`, `basis`, `partial`, `unpriced`), within rounding, and the same
+  `plan.downloads_required` entries. A step-1 estimate that is `unknown`, `partial: true`, `unpriced` naming the step, or
+  missing downloads that step 2 lists, is a **finding**.
+- A gated target on this host shows the same gate warning in 1 as in 2.
+- 3: both forms warn that `bogus_1626` is passed to a workflow that declares no such variable, naming the resolved child.
+  A warning in 2 but not in 1 is a **finding**.
+- The fingerprints of 1 differ across the three tiers (a different child is planned for each).
+cleanup: none.
+metrics: none.
+
+### C-F1412 — `preference:` inside an argument value is plain text, not a reference
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete`. Design 8: `preference:` is not a `variable:`, so only `workflow.path`
+resolves it.
+1. `validate_workflow(inline_workflow=<P0("templates/text-to-image")>, arguments={"prompt": "preference:text_to_image"})`.
+2. `validate_workflow(inline_workflow=<P0("templates/text-to-image")>, arguments={"prompt": "preference:no_such_key"})`.
+expected:
+- Both `valid: true`, with no resolution line and no error about a preference key: the prompt is text. A refusal of 2 for
+  an unknown key, or a resolution line in either, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1413 — the guide and the schema describe `preference:` in `workflow.path`
+pending: #1721
+source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_guide("workflows")` (the index), then the References section and the section on composing a stored workflow.
+`get_schema` for the section holding a step's `workflow.path`. The server's MCP instructions (the prefix list).
+expected:
+- References lists `preference:` beside `variable:`, `builtin:` and the others, saying it resolves to a workflow from the
+  server's stored ladder, by key and tier, and is accepted only in `workflow.path`.
+- The composing section names the per-run override pattern (a variable whose default is `preference:<key>`), the tier
+  order (step `tier`, enclosing workflow's tier, `default_tier`), the fit rules, that the resolution is pinned in the job
+  and replayed by a rerun, and that a step's arguments win over a target's.
+- The schema's `path` description names the `preference:` form.
+- The MCP instructions' prefix list names `preference:`.
+- Any of these missing is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1414 — each MiniMax portrait step resolves `preference:text_to_image` at `tier standard`, whatever the run's tier
+pending: #1722
+source: tester, spec for #1722 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete`. Templates T and their portrait steps (plan v2): `templates/minimax/dialogue-short`
+(2: `draw_character_a`, `draw_character_b`), `templates/minimax/generated-subject-reference` (1),
+`templates/minimax/music-video` (1), `templates/minimax/storyboard` (3). Read each step name from `get_workflow`.
+Templates that need a variable with no default (`required: true` under `constraints`, e.g. a voice or a song) get the
+cheapest fixture that satisfies it (`asset:qa-cast/priya-voice.wav` for a voice, `asset:qa-cast/ep15-song.mp3` for a song).
+1. `get_workflow(name=T, variables_only=true)` and `get_workflow(name=T)` for each T.
+2. `validate_workflow(name=T, arguments={...})` with no tier, then `"tier": "draft"`, then `"tier": "best"`.
+expected:
+- 1: each declares `portrait_workflow: "preference:text_to_image"`. Each portrait step is `{"workflow": {"path":
+  "variable:portrait_workflow", "arguments": {...}}}` passing `prompt`, `seed: "variable:seed"`,
+  `num_images_per_prompt: 1`, `width`/`height` 768x768 (960x544 in storyboard) and `tier: "standard"`. No inline
+  Z-Image pipeline (a `pipeline` block with a literal `num_inference_steps: 9`) remains in any portrait step.
+  `dialogue-short`'s second portrait step still carries `release_pipeline: true` on the composing step.
+- 2: `valid: true` each time. Every portrait step has its own resolution line `preference:text_to_image (tier standard) ->
+  models/z-image` (one line per step, or one line naming every portrait step), under all three run tiers. A portrait line
+  saying `tier draft` or `tier best` is a **finding** (Q4: portraits pin standard).
+- The run's `tier` still drives the H3 step: the plan's estimate or H3 settings differ between `draft` and `best`.
+cleanup: none.
+metrics: none.
+
+### C-F1415 — `portrait_workflow` names another model for one run; a bad override is refused
+pending: #1722
+source: tester, spec for #1722 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete`. C-F1414's four templates and arguments.
+1. `validate_workflow(name=T, arguments={..., "portrait_workflow": "models/qwen-image-2.1"})` for each T.
+2. For `dialogue-short`: `{"portrait_workflow": "models/no-such-1626"}`, then `{"portrait_workflow": "preference:no_such_key"}`,
+   then `{"portrait_workflow": "../../etc/passwd"}`.
+expected:
+- 1: `valid: true` (or a host-fit gate on Qwen, recorded), with **no** `preference:` resolution line for any portrait step,
+  and Qwen in the plan (its downloads or its price in the estimate). A line resolving `text_to_image` here is a **finding**.
+- 2: each refused at the portrait step's path: unresolvable sub-workflow, unknown preference key, and a path refused as
+  outside the library, in that order. No server path in any message.
+cleanup: none.
+metrics: none.
+
+### C-F1416 — a `dialogue-short` draft run draws one portrait per character, under the run's seed
+pending: #1722
+source: tester, spec for #1722 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+GPU, H3 video: two draft runs of one short shot each (dialogue-short at standard with 5 shots ran 32–43 min on lem; one
+draft shot is a fraction of that). Workspace `regression-complete`. `wait_seconds=1500`. Arguments A = `{"tier": "draft",
+"seed": 1626, "shots": [<dialogue-short's own first shot, `cold_open`, read in full with get_workflow>],
+"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/hal-voice.wav"}` (any
+voices the template accepts; only the portraits are judged). `validate_workflow` first and pass its `acknowledged_cost`.
+1. `run_workflow(workflow="templates/minimax/dialogue-short", arguments=A, ...)`; `get_job`.
+2. `keep_output` each portrait image as `qa-1722/portrait-a.png` and `qa-1722/portrait-b.png` (check the names are free
+   with `get_gallery_metadata` first), then `delete_output(job_id=<job 1>)` so no step cache can serve run 2.
+3. `validate_workflow` with A again: note `cached_steps`. Run it; `get_job`.
+4. `compare_outputs` run 2's portraits against the kept assets (a against a, b against b).
+expected:
+- 1: completes. Exactly one portrait image per character (two, not eight: z-image's own `num_images_per_prompt: 4` must
+  not leak through). Its `preferences` map has `preference:text_to_image@standard` -> `models/z-image` though the run is
+  `draft`.
+- The H3 shot consumed one subject reference per portrait (no error about an image list where one was expected).
+- 3: `cached_steps` 0 for the portrait steps (if not, record it: the comparison then shows the cache, not the seed).
+- 4: each pair matches (identical or near-identical by `compare_outputs`' own measure): same seed, same portrait. A
+  different face under the same seed means the portrait step ran under z-image's own `seed: 42` or a drawn seed, not
+  the run's: a **finding**.
+cleanup: `delete_output(job_id=<job 2>)`; `delete_asset` the two `qa-1722/` assets with `acknowledged_cost=true`.
+metrics: none.
+
+### C-F1417 — `get_preferences` lists the merged ladder, its source and default tier, and this host's pick per tier
+pending: #1723
+source: tester, spec for #1723 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free. With no overlay key set (run after C-F1420's cleanup if both run).
+1. `get_preferences()`; then `get_preferences(key="text_to_image")`; then `get_preferences(key="no_such_key")`.
+2. One `ui-check` run: `fetch {path: "/api/preferences"}`.
+3. The MCP tool list (the tool schemas loaded in the session).
+expected:
+- 1: `text_to_image` listed with `source: shipped`, its three rungs as the plan's shipped ladder, `default_tier:
+  standard`, and for each tier this host's pick with its skips and reasons, agreeing with C-F1406's resolution lines.
+  The keyed form returns just that key. `no_such_key` is refused or answered empty, naming the key; never a server path.
+- 2: 200 with the same keys, `source` per key and `default_tier`; an etag (header or field) is present for the writes.
+  No server path in the body.
+- 3: `get_preferences` exists; no MCP tool sets or deletes a preference (Q3).
+cleanup: none.
+metrics: none.
+
+### C-F1418 — a stored ladder skips a target that doesn't fit this host, naming the reason, and refuses when none fits
+pending: #1723
+source: tester, spec for #1723 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Writes go over REST, through `PUT /api/preferences/{key}` with the etag from a fresh GET as
+`If-Match`; the case needs a REST write the tester can send (see the stage's spec note). Workspace `regression-complete`.
+C-F1406's carriers with key K.
+1. PUT `qa_ladder` = `{"best": [{"workflow": "models/minimax-h3-image", "devices": ["mps"]}, "models/z-image"]}`
+   (draft and standard absent).
+2. `get_preferences(key="qa_ladder")`; `validate_workflow(inline_workflow=<PT("preference:qa_ladder")>,
+   arguments={"tier": "best"})`.
+3. The same with `{"tier": "standard"}`.
+4. PUT `qa_nofit` = `{"best": [{"workflow": "models/z-image", "devices": ["mps"]}, {"workflow": "templates/text-to-image",
+   "devices": ["cpu"]}]}`; validate `<PT("preference:qa_nofit")>` with `{"tier": "best"}`; then `run_workflow` it with a
+   made-up `acknowledged_cost`, and `list_jobs`.
+expected:
+- 1: accepted (200/201/204). 2: `source: server`; the line on lem (cuda) reads `preference:qa_ladder (tier best) ->
+  models/z-image; skipped models/minimax-h3-image: <device reason naming mps or cuda>; source: server`.
+- 3: refused at validate, naming `qa_ladder` has no `standard` rung. Resolving to the `best` rung, or to `default_tier`'s
+  rung of another key, is a **finding**: a tier is never dropped silently. (If 1 was refused because every key must carry
+  all three rungs, record that and skip 3.)
+- 4: refused at validate, naming both targets with their device reasons; `run_workflow` refused, no job queued.
+cleanup: `DELETE /api/preferences/qa_ladder` and `/api/preferences/qa_nofit`; `get_preferences()` no longer lists them.
+metrics: none.
+
+### C-F1419 — a PUT naming a missing workflow or a bad shape is 422; a stale `If-Match` is 412; a stale stored target fails validate
+pending: #1723
+source: tester, spec for #1723 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free. REST writes as C-F1418. Each PUT to `/api/preferences/qa_bad` with a fresh etag unless stated.
+1. Values: `{"best": ["models/no-such-1626"]}`; `{"ultra": ["models/z-image"]}`; `{"best": "models/z-image"}` (not a list);
+   `{"best": []}`; `{"best": [{"arguments": {"seed": 1}}]}` (no workflow); `{"best": [{"workflow": "models/z-image",
+   "devices": "cuda"}]}`; `{"best": [{"workflow": "models/z-image", "arguments": {"num_images_per_prompt": "many"}}]}`;
+   `[]` (not an object).
+2. Keys in the route: `qa ladder` (encoded), `qa-ladder!`, empty.
+3. PUT a valid `qa_etag` = `{"best": ["models/z-image"]}`; PUT it again with the **first** etag (now stale).
+4. If the catalog a target may name includes workspace-saved workflows: save `qa-stale-1626` (a copy of
+   `templates/text-to-image`), PUT `qa_stale` = `{"best": ["qa-stale-1626", "models/no-such-a"]}`. If that PUT is refused for
+   the second name, PUT `{"best": ["qa-stale-1626"]}`; then `delete_workflow` it and validate
+   `<PT("preference:qa_stale")>` with `{"tier": "best"}`.
+expected:
+- 1, 2: each 422 with a message naming the field, tier, key or workflow at fault; nothing stored (`get_preferences`
+  doesn't list `qa_bad`).
+- 3: the first PUT succeeds; the stale one is 412, and the stored value is unchanged.
+- 4: the validate refuses the stale target as a validate **error** (not a skip to the next target), naming
+  `qa-stale-1626`. Where more than one stale target is in the rung, every one is named. If PUT refuses workspace
+  workflows outright, record it and skip 4.
+cleanup: DELETE `qa_etag`, `qa_stale`; `delete_workflow` `qa-stale-1626` if it is still there.
+metrics: none.
+
+### C-F1420 — an overlay replaces the whole shipped key, DELETE restores `source: shipped`, and `default_tier` moves the untiered pick
+pending: #1723
+source: tester, spec for #1723 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+Free. REST writes as C-F1418. Restore everything at the end: this changes lem's live `text_to_image` ladder.
+1. PUT `text_to_image` = `{"best": ["models/z-image-sdnq"]}`. `get_preferences(key="text_to_image")`; validate
+   `<PT("preference:text_to_image")>` with `{"tier": "best"}`, then `{"tier": "standard"}`.
+2. DELETE `/api/preferences/text_to_image`; `get_preferences(key="text_to_image")`; validate `{"tier": "standard"}`.
+3. DELETE it again (nothing to reset).
+4. `PUT /api/preferences` with `{"default_tier": "best"}`; validate `<P0("preference:text_to_image")>`. Then
+   `{"default_tier": "ultra"}`.
+expected:
+- 1: `source: server`; best -> `models/z-image-sdnq` with `source: server` in the line; standard is refused as a missing
+  rung (Q6: an overlay key replaces the whole key, no per-tier merge). Standard still resolving `models/z-image` is a
+  **finding**.
+- 2: `source: shipped`, the shipped ladder back, and standard -> `models/z-image`. 3: a no-op success or a 404; record which.
+- 4: the untiered carrier resolves `tier best`; `ultra` is 422 and leaves `default_tier` at `best`.
+cleanup: `PUT /api/preferences` `{"default_tier": "standard"}`; DELETE `text_to_image` if any overlay remains;
+`get_preferences()` shows `default_tier: standard` and `text_to_image` `source: shipped`.
+metrics: none.
+
+### C-F1421 — a job queued before a PUT keeps its pinned target, and so does its rerun
+pending: #1723
+source: tester, spec for #1723 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+GPU: a few SD 1.5 jobs. Workspace `regression-complete`. REST writes as C-F1418. `validate_workflow` each run first.
+1. Queue a blocker so the next job waits: `run_workflow(workflow="templates/text-to-image", arguments={"prompt": "a blue
+   chair", "seed": 1, "num_images_per_prompt": 8})` with no wait (on a multi-card host, one blocker per card).
+2. Queue J = `<PT("preference:text_to_image")>` with `{"tier": "draft"}`, no wait. `get_job(J)`: still queued.
+3. PUT `text_to_image` = `{"draft": ["models/z-image-sdnq"], "standard": ["models/z-image"], "best": ["models/z-image"]}`.
+4. `wait_for_job(J)`; `get_job(J)`. Then `rerun_job(J)`, wait, `get_job`.
+expected:
+- 4: J ran `templates/text-to-image`, and its `preferences` map says `@draft` -> `templates/text-to-image`, `source: shipped`:
+  admission's pin, not the edited store. The rerun replays the same target. If J had already started before the PUT,
+  record the arm as not exercised, not a pass.
+- A validate after the PUT with `{"tier": "draft"}` resolves `models/z-image-sdnq` (the store did change).
+cleanup: DELETE `text_to_image`; `delete_output(job_id=...)` for the blocker, J and the rerun.
+metrics: none.
+
+### C-F1422 — a target's `arguments` reach the child, and the composing step's own arguments win
+pending: #1723
+source: tester, spec for #1723 from #1626's plan v2 (claude-opus-5-5 via anthropic)
+GPU: two SD 1.5 jobs. Workspace `regression-complete`. REST writes as C-F1418. Design 7: step's `arguments` > the target's
+`arguments` > the child's defaults.
+1. PUT `qa_args` = `{"draft": [{"workflow": "templates/text-to-image", "arguments": {"num_images_per_prompt": 2}}]}`.
+2. Run `<PT("preference:qa_args")>` with `{"tier": "draft"}` but with `num_images_per_prompt` removed from step `picture`'s
+   arguments. 3. Run it again with the carrier as written (`num_images_per_prompt: 1` on the step).
+expected:
+- 2: two images (the target's argument applied). 3: one image (the step wins). Either the other way round is a **finding**.
+- The resolution lines and `get_job`'s map name `templates/text-to-image` and its arguments.
+cleanup: DELETE `qa_args`; `delete_output(job_id=...)` for both jobs.
+metrics: none.
+
 ## Performance
