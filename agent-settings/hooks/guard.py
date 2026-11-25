@@ -27,7 +27,8 @@ implementer:
     round 5; listed here because the implementer is who pushes)
   - hand-off gate: adding `status:fixed-pending-verify` needs a clean tree,
     ruff clean on the changed files, the UI's check/lint/test passing when
-    ui/ changed, and no pytest failure that isn't also failing on
+    ui/ changed, no Playwright e2e failure that isn't also failing on the
+    base when ui/ changed (harnest#298), and no pytest failure that isn't also failing on
     HARNEST_BASE_COMMIT (see handoff_gate)
   - dw's architecture, at a hand-off and at any push of develop, on the
     work's own commits (three dots from origin/develop). See arch_gate.
@@ -188,6 +189,7 @@ could spell a call so this misses it, which audit_issue still catches.
 """
 
 import codecs
+import fcntl
 import json
 import os
 import re
@@ -196,6 +198,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import arch_ratchet  # noqa: E402  (lib/arch_ratchet.py, likewise)
@@ -1030,6 +1033,69 @@ def git_push_problem(words):
     return None
 
 
+# The UI's Playwright e2e (harnest#298): its fixture server takes a fixed port (8971,
+# ui/playwright.config.ts), so two hand-offs on one box take turns on this lock.
+E2E_LOCK = os.path.join("/tmp", "harnest-dw-e2e.lock")
+E2E_LOCK_SECS = 300
+
+
+def e2e_failures(root, report):
+    """Build the UI and run its Playwright e2e in root/ui, the JSON report written to report.
+    The set of failing tests ("file > title > ..."), or None when no report came out (the
+    suite could not run: no browser, a config or build error) with the output's tail."""
+    ui = os.path.join(root, "ui")
+    if os.path.exists(report):
+        os.remove(report)
+    b = subprocess.run(["npm", "run", "--silent", "build"], cwd=ui, capture_output=True, text=True)
+    if b.returncode != 0:
+        return None, "`npm run build` failed:\n" + (b.stdout + b.stderr)[-2000:]
+    r = subprocess.run(
+        ["npm", "run", "--silent", "e2e", "--", "--reporter=json"],
+        cwd=ui,
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, PLAYWRIGHT_JSON_OUTPUT_FILE=report, CI="1"),
+    )
+    try:
+        doc = json.load(open(report))
+    except (OSError, ValueError):
+        return None, "`npm run e2e` wrote no report (exit %d):\n%s" % (r.returncode, (r.stdout + r.stderr)[-2000:])
+    failed = set()
+
+    def walk(suite, path):
+        for spec in suite.get("specs", []):
+            name = " > ".join(path + [spec.get("title", "")])
+            if any(t.get("status") == "unexpected" for t in spec.get("tests", [])):
+                failed.add(name)
+        for child in suite.get("suites", []):
+            walk(child, path + [child.get("title", "")])
+
+    for top_suite in doc.get("suites", []):
+        walk(top_suite, [top_suite.get("title", "")])
+    if r.returncode != 0 and not failed:
+        return None, "`npm run e2e` failed (exit %d) with no failing test in its report:\n%s" % (
+            r.returncode,
+            (r.stdout + r.stderr)[-2000:],
+        )
+    return failed, ""
+
+
+def e2e_lock():
+    """The box's e2e turn, or a refusal after E2E_LOCK_SECS (another hand-off holds the port)."""
+    fh = open(E2E_LOCK, "a")
+    for _ in range(E2E_LOCK_SECS):
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fh
+        except BlockingIOError:
+            time.sleep(1)
+    fh.close()
+    deny(
+        "another hand-off has run the UI's e2e for over %d s (its fixture server holds port 8971). "
+        "Hand off again in a few minutes." % E2E_LOCK_SECS
+    )
+
+
 def handoff_gate(cwd):
     """No new pytest failures and no new ruff findings on HEAD, relative to
     HARNEST_BASE_COMMIT (origin/develop when the driver started the session).
@@ -1078,13 +1144,14 @@ def handoff_gate(cwd):
 
     # The UI's own checks, when this work touched ui/: CI runs them, and
     # before R14 nothing did between a hand-off and the release PR. Type
-    # check, lint and unit tests - about 15 s - not the build or e2e.
+    # check, lint and unit tests - about 15 s. The build and e2e run after pytest, below.
     # Absolute rather than relative to the base, unlike pytest: they are
     # green on develop by CI's standard, and there is no per-test list to
     # compare. Skipped, not refused, where the checkout can't run them.
     ui_changed = git("diff", "--name-only", "--diff-filter=d", base, "HEAD", "--", "ui/")
     ui_dir = os.path.join(top, "ui")
-    if ui_changed and os.path.isdir(os.path.join(ui_dir, "node_modules")) and shutil.which("npm"):
+    ui_ready = os.path.isdir(os.path.join(ui_dir, "node_modules")) and bool(shutil.which("npm"))
+    if ui_changed and ui_ready:
         for script in ("check", "lint", "test"):
             r = subprocess.run(["npm", "run", "--silent", script], cwd=ui_dir, capture_output=True, text=True)
             if r.returncode != 0:
@@ -1126,6 +1193,53 @@ def handoff_gate(cwd):
             "Fix them first (a flaky one can be retried: rerun the hand-off command):\n%s"
             % (base[:10], "\n".join(new[:30]))
         )
+
+    # The UI's Playwright e2e (harnest#298), when this work touched ui/: until now only the
+    # release PR's CI ran it, so a hand-off that broke a browser journey surfaced weeks and
+    # many tickets later. Relative to the base, like pytest (one fixture server, real
+    # browser; develop need not be green), the base run only when HEAD fails something,
+    # then kept per base commit. A base
+    # that cannot run it at all (no Chromium, an old tree with no e2e) skips it, as the
+    # checks above skip a checkout that can't run them; a HEAD that can't is refused.
+    if ui_changed and ui_ready and os.path.isfile(os.path.join(ui_dir, "playwright.config.ts")):
+        report = os.path.join(gitdir, "harnest-e2e-report.json")
+        e2e_base = os.path.join(gitdir, "harnest-base-e2e-" + base)
+        lock = e2e_lock()
+        try:
+            # HEAD first: on a green base (the usual case) one run is the whole cost, and the
+            # base, about 5 minutes more, runs only when HEAD has a failure to compare.
+            head_e2e, why = e2e_failures(top, report)
+            if head_e2e is None or head_e2e:
+                if not os.path.exists(e2e_base):
+                    wt = os.path.join(gitdir, "harnest-base-tree")
+                    subprocess.run(["git", "-C", top, "worktree", "remove", "--force", wt], capture_output=True)
+                    subprocess.run(
+                        ["git", "-C", top, "worktree", "add", "--detach", wt, base], capture_output=True, check=True
+                    )
+                    try:
+                        os.symlink(os.path.join(top, "venv"), os.path.join(wt, "venv"))
+                        if os.path.isdir(os.path.join(wt, "ui")):
+                            os.symlink(os.path.join(ui_dir, "node_modules"), os.path.join(wt, "ui", "node_modules"))
+                            failed, _ = e2e_failures(wt, report)
+                        else:
+                            failed = None
+                    finally:
+                        subprocess.run(["git", "-C", top, "worktree", "remove", "--force", wt], capture_output=True)
+                    with open(e2e_base, "w") as fh:
+                        fh.write("UNRUNNABLE\n" if failed is None else "\n".join(sorted(failed)) + "\n")
+                base_lines = {l.strip() for l in open(e2e_base) if l.strip()}
+                if "UNRUNNABLE" not in base_lines:
+                    if head_e2e is None:
+                        deny("the UI's e2e ran on %s but not on HEAD: %s" % (base[:10], why))
+                    new_e2e = sorted(head_e2e - base_lines)
+                    if new_e2e:
+                        deny(
+                            "Playwright e2e tests that pass on %s fail on HEAD (`npm run e2e` in ui/ shows "
+                            "each; a flaky one can be retried: rerun the hand-off command):\n%s"
+                            % (base[:10], "\n".join(new_e2e[:30]))
+                        )
+        finally:
+            lock.close()
     with open(stamp, "w") as fh:
         fh.write(tree + " " + base + "\n")
 

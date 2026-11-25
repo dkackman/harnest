@@ -68,7 +68,15 @@ It also gates the implementer's hand-off. The tree must be clean, `ruff` must pa
 changed files, the UI's `npm run check`/`lint`/`test` must pass when `ui/` changed (about
 15 s; absolute, since CI now holds `develop` to them), and no test may fail that passed on `HARNEST_BASE_COMMIT` (origin/develop
 when the session began, exported by `implementer_pass`). The gate is relative because
-`develop` isn't always green. The result is stamped per tree in the checkout's `.git`.
+`develop` isn't always green. When `ui/` changed it also builds the UI and runs its
+Playwright e2e (harnest#298), relative too: a test failing on HEAD and not on the base is
+refused. HEAD runs first, and the base (in a worktree) only when HEAD fails something, its
+failures then kept per base commit in `.git` (`harnest-base-e2e-<base>`); a green run is one
+build and about 5 minutes of e2e. A base that can't run e2e at all (no Chromium, no report)
+skips it; a HEAD that can't where the base could is refused. The implementer's hook timeout
+is 1800 s for it, so the gate does not time out mid-run. The fixture server's fixed port (8971) means two hand-offs on one box
+take turns on `/tmp/harnest-dw-e2e.lock`, and one that waits over 300 s is refused, to be
+retried. The result is stamped per tree in the checkout's `.git`.
 `HARNEST_HOOKS` (exported by `providers.sh`) is how the settings files find the script.
 The role prompts' cores carry each guard rule as one line under "Enforced by the harness".
 `arch_gate` also refuses a hand-off or a push of `develop` whose own commits touch dw's hot zone or worsen a
