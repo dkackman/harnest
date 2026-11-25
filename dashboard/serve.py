@@ -64,9 +64,21 @@ PARKED = "(parked) "  # status_board's mark on a parked issue's title
 AGENT_OWNERS = {"owner:implementer", "owner:tester", "owner:reviewer", "owner:lead"}
 
 # The two combined streams, one per server target
-STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log", "minid": "loop.minid.log"}  # mac: the mini-ai test bed
+# delegate: R19's escalation delegate, run by the loop driver but beside both servers
+STREAMS = {
+    "lem": "loop.log",
+    "mac": "loop.mini-ai.log",
+    "minid": "loop.minid.log",
+    "delegate": "delegate.log",
+}  # mac: the mini-ai test bed
 LOOP_STATE = LOGS / "loop" / "state.json"  # harness.drivers.loop's view of itself (R17)
-LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.mini-ai", "minid": ".driver.lock.minid"}
+# the delegate's stream lives while the loop driver does: it holds lem's lock
+LOCKS = {
+    "lem": ".driver.lock",
+    "mac": ".driver.lock.mini-ai",
+    "minid": ".driver.lock.minid",
+    "delegate": ".driver.lock",
+}
 # a driver run against any target but lem ("local" is the field the page reads)
 OTHER_TARGET = re.compile(r"DW_TARGET=(?!lem\b)\S")
 LOG_TAIL_BYTES = 64 * 1024
@@ -994,7 +1006,7 @@ def regression_state():
             )
     fleet = _read_json(FLEET / "state.json")
     if fleet:
-        fleet["locks"] = {n: lock(LOCKS[n]) for n in LOCKS}
+        fleet["locks"] = {n: lock(LOCKS[n]) for n in LOCKS if n != "delegate"}  # servers only
         live = fleet["status"] in ("starting", "running", "sweeping")
         if live and not any(d["driver"] == "fleet" for d in procs):
             fleet["status"] = "interrupted"  # its driver is gone without writing its end

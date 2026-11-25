@@ -209,7 +209,7 @@ class LoopState:
             except ValueError:
                 resources = []
             for res in resources:
-                if res != "free" and sv == server:
+                if res not in ("free", "delegate") and sv == server:
                     held.setdefault(res, []).append({"resource": res, "session": dict(session)})
         slots = []
         for res in ("gpu:" + server, "src:" + server):
@@ -228,8 +228,11 @@ class LoopState:
             shared = []
             for item, sv, session in self._sessions:
                 try:
-                    if "free" in needs(item, sv):
+                    need = needs(item, sv)
+                    if "free" in need:
                         shared.append({"resource": "free", "session": dict(session)})
+                    elif "delegate" in need:
+                        shared.append({"resource": "delegate", "session": dict(session)})
                 except ValueError:
                     pass
             return {

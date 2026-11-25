@@ -79,6 +79,10 @@ PASS = {
 }
 # The sessions that may edit a suite file run in a tree of their own.
 SUITE_WRITERS = frozenset(q for q in PASS if q.startswith("tester:") or q == "curator")
+# R19's escalation delegate: server-free and loop-independent, so its sessions
+# write logs/delegate.log (HARNEST_LOOP_LOG), not the server's loop log, and
+# the dashboard shows them as a stream of their own.
+DELEGATE_KINDS = frozenset({"delegate:rule", "delegate:suite"})
 # The sessions that hold gpu:S.
 GPU_KINDS = frozenset({"tester:verify", "tester:answer", "tester:task", "tester:closures"})
 # What waits for (and so triggers) a deploy: the spec's "verify (or answer)".
@@ -404,6 +408,7 @@ class Loop:
         self.nightly_level = (os.environ.get("REGRESSION_NIGHTLY_LEVEL") or "all").split()
         self.only_issues = {x for x in (os.environ.get("ONLY_ISSUES") or "").replace(",", " ").split() if x}
         self.logs = REPO / "logs"
+        self._delegate_log = None
         self.q = queue.Queue()
         self.running: dict[str, Running] = {}  # slot -> item
         self.srv: dict[str, Srv] = {}
@@ -458,6 +463,15 @@ class Loop:
         return [s for s in self.srv.values() if s.active]
 
     # -- subprocesses ------------------------------------------------------------
+    def log_for(self, item, srv):
+        """Where an item's driver lines go: the delegate's own log for its
+        items, else the server's loop log."""
+        if item.queue in DELEGATE_KINDS:
+            if self._delegate_log is None:
+                self._delegate_log = Log(str(self.logs / "delegate.log"))
+            return self._delegate_log
+        return srv.log
+
     def env_for(self, srv, last=None):
         e = os.environ.copy()
         e.update(
@@ -963,6 +977,9 @@ class Loop:
         slot = self.free_slot()
         last = f"logs/.last-session.item.{slot}"
         env = self.env_for(srv, last)
+        lg = self.log_for(item, srv)
+        if item.queue in DELEGATE_KINDS:
+            env["HARNEST_LOOP_LOG"] = lg.path
         fam = TREE_FAMILY.get(item.queue)
         own_tree = None
         if fam:
@@ -1028,10 +1045,8 @@ class Loop:
             self.done_keys.add(item.key)
         if item.queue == "tester:task":
             self.task_last = time.time()
-        srv.log.say(f"[loop] {ts()} start {rec.label} ({item.queue}) on {server}, slot {slot}")
-        self.state.session_started(
-            item, server, rec.label, role_model(item.queue.split(":")[0]), Path(srv.log.path).name
-        )
+        lg.say(f"[loop] {ts()} start {rec.label} ({item.queue}) on {server}, slot {slot}")
+        self.state.session_started(item, server, rec.label, role_model(item.queue.split(":")[0]), Path(lg.path).name)
         threading.Thread(target=self._wait, args=(rec,), daemon=True).start()
         self._gpu_flags()
         return True
@@ -1069,6 +1084,7 @@ class Loop:
     def ended(self, rec):
         srv = self.srv[rec.server]
         rc = rec.proc.returncode
+        lg = self.log_for(rec.item, srv)
         self.running.pop(rec.slot, None)
         cost = cost_of(rec.last)
         self.state.session_ended(rec.item, rec.server, cost)
@@ -1076,7 +1092,7 @@ class Loop:
             tail = ""
             with contextlib.suppress(OSError):
                 tail = " | ".join(Path(rec.out).read_text(errors="replace").strip().splitlines()[-3:])
-            srv.log.say(f"[loop] WARNING: {rec.label} item exited {rc}: {tail}")
+            lg.say(f"[loop] WARNING: {rec.label} item exited {rc}: {tail}")
         if not rec.paused and (outcome.rejected(rec.last) or outcome.rejected(rec.out)):
             self.rate_limited(outcome.rejected_until(rec.out) or outcome.rejected_until(rec.last))
         if rec.tree is not None:
@@ -1095,10 +1111,10 @@ class Loop:
             prev = self.backoff.get(rec.item.key)
             secs = EMPTY_BACKOFF if prev is None else min(prev[1] * 2, EMPTY_BACKOFF_MAX)
             self.backoff[rec.item.key] = (self.last_finish[rec.item.key], secs)
-            srv.log.say(f"[loop] {rec.label} ran no session; not offered again for {secs}s")
+            lg.say(f"[loop] {rec.label} ran no session; not offered again for {secs}s")
         if rec.item.queue in CLOSURE_KINDS:
             srv.closures = []  # read again at the next housekeeping
-        srv.log.say(
+        lg.say(
             f"[loop] {ts()} end {rec.label} on {rec.server} (exit {rc}"
             + (f", ${cost:.2f}" if cost is not None else "")
             + f", {int(time.time() - rec.started)}s)"

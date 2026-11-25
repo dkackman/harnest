@@ -165,6 +165,18 @@ class LoopStateTests(unittest.TestCase):
         self.assertEqual(len(d["shared"]["slots"]), 1)
         self.assertTrue(all(s["session"] is None for s in d["servers"]["lem"]["slots"]))
 
+    def test_a_delegate_session_is_shared_not_the_servers(self):
+        d_item = Item("delegate:rule", 1617, "lem")
+        self.st.session_started(d_item, "lem", "delegate:#1617", "claude-opus-5-5", "delegate.log")
+        d = self.read()
+        self.assertTrue(all(s["resource"] != "delegate" for s in d["servers"]["lem"]["slots"]))
+        self.assertTrue(all(s["session"] is None for s in d["servers"]["lem"]["slots"]))
+        shared = d["shared"]["slots"]
+        self.assertEqual(
+            [(s["resource"], s["session"]["label"], s["session"]["log"]) for s in shared],
+            [("delegate", "delegate:#1617", "delegate.log")],
+        )
+
     def test_deploy_heads_queues_status(self):
         self.st.deploy("lem", "waiting", [3, 4], {"at": 1, "head": "abc", "ok": True, "secs": 9})
         self.st.heads("lem", "a1", "b2")
