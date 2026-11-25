@@ -12511,4 +12511,183 @@ wrapper, or (seeded) the background is painted rather than transparent.
 cleanup: `delete_output(job_id=<id>)`, and delete step 5's downloaded copy.
 metrics: none.
 
+### M-F500 — the #1680 mps probe's two bench workflows validate clean on mini-ai: two steps, components by path, no 64 GiB download
+pending: #1729
+source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageBlocks`), text encoder from
+`MiniMaxAI/MiniMax-H3`. Server: **mini-ai** (mps), workspace `bench` (pass `workspace="bench"` on every call). The
+pre-quantized folders exist only there: `/Volumes/NVME/cache/h3-prequantized-int8/text_encoder` and `.../transformer`.
+On any other server, record "mini-ai-only probe, skipped". **Free**: reads and validate only.
+Steps:
+1. `list_workflows` / `get_workflow("bench/h3-image-mps-t2i")` and `get_workflow("bench/h3-image-mps-edit3")`.
+2. `validate_workflow(name="bench/h3-image-mps-t2i", workspace="bench")` and the same for `bench/h3-image-mps-edit3`,
+   at their defaults.
+expected:
+- Step 1, both workflows: (at least) two pipeline steps. The **first** cuts the H3-Image pipeline to its encode blocks,
+  loads `text_encoder` by path from `/Volumes/NVME/cache/h3-prequantized-int8/text_encoder` (not a hub id, not the int4
+  `/Volumes/NVME/cache/h3-prequantized/` folder), removes `lm_head`, truncates the language model to 51 layers as the
+  catalog template does, and sets `release_pipeline: true`. The **second** runs denoise and decode, loads the
+  transformer by path from `/Volumes/NVME/cache/h3-prequantized-int8/transformer`, takes the VAE and the small parts
+  from `MiniMaxAI/MiniMax-H3-Image` (not the old folder's `vae/`, which is H3 video's), loads **no** text encoder, and
+  takes `prompt_embeds` and their modality tags from step 1 by `previous_result:`.
+- `h3-image-mps-t2i`: 2048×2048, the catalog template's prompt, `seed` 1317. `h3-image-mps-edit3`: an `image` list
+  of exactly 3 references that resolve on mini-ai (record which `asset:` names), with a pinned seed.
+- Neither sets `trust_remote_code` or `custom_pipeline`, and neither loads `MiniMaxAI/MiniMax-H3-Image-PE`.
+- Step 2, both: `valid: true` with no error. `plan.downloads_required` names nothing from `MiniMaxAI/MiniMax-H3`
+  and no transformer or text-encoder weights; at most the H3-Image repo's small parts (VAE, scheduler, tokenizer,
+  configs; ~1 GB in total, or nothing once cached). Any single download of tens of GB is a finding. The plan is not
+  refused for `host_ram_gb` (contrast M-F503).
+It is a **finding** if either workflow is missing, is one step, loads either big component by hub id, loads a text
+encoder in the denoise step, plans a text-encoder or transformer download, or does not validate clean. (Under the
+time stop the edit workflow is still owed this case: it need only validate.)
+cleanup: none.
+metrics: none.
+
+### M-F501 — a rerun of the #1680 mps t2i probe on mini-ai gives one 2048×2048 PNG under `final`
+pending: #1729
+source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `bench/h3-image-mps-t2i` (M-F500), mini-ai (mps), workspace `bench`. **Spends mini-ai time**: one
+2048×2048 still, plausibly 10-20+ min (dequantize-on-use), near 64 GB of unified memory: run nothing beside it.
+If the #1729 record (M-F504) says the probe **failed**, there is nothing to rerun: record "probe failed (job <id>,
+issue #<n>), nothing to rerun" and skip. On any server but mini-ai, skip as in M-F500.
+Steps:
+1. From the record, take the cold t2i job id (`J`). `get_job(J)`.
+2. `validate_workflow(name="bench/h3-image-mps-t2i", workspace="bench")`; bind `acknowledged_cost` from its plan.
+3. `rerun_job(J, acknowledged_cost=...)` (or `run_workflow(name="bench/h3-image-mps-t2i", workspace="bench",
+   note="M-F501 mps t2i rerun", wait_seconds=55)` if `rerun_job` refuses for a reason other than cost); follow
+   `still_running: true` with `wait_for_job`. Do not cancel under 15 min of event silence.
+4. `get_job(<new id>)`; `get_output_image(<the png>)`.
+expected:
+- The job `succeeded`. Its outputs hold exactly one PNG from the `final` step (the step whose results are the
+  workflow's deliverable), 2048×2048. No other image output.
+- The still is the prompt's subject, coherent (no noise field, no grey or black frame, no tiling seams); with seed
+  1317 it matches the record's look at the cold arm's still in composition.
+- `job.warnings` carries no OOM retry, no fallback to cpu and no "component loaded anyway" warning.
+It is a **finding** if the run fails, produces no PNG, a size other than 2048×2048, or more than one image.
+Wall time is recorded in the verify comment, never asserted.
+cleanup: `delete_output(job_id=<new id>)`.
+metrics: none.
+
+### M-F502 — the #1680 mps rerun's events show step 1's pipeline released before step 2 loads, and a host peak within 10% of the record
+pending: #1729
+source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the M-F501 rerun job, mini-ai (mps), workspace `bench`. **Free**: job reads. Skip when M-F501 skipped.
+Steps: `get_job_events(<M-F501 job id>)` (page through all of them); `get_job(<id>)`.
+expected:
+- Ordered events: step 1's text-encoder load, its encode, then a release of step 1's pipeline (an event naming the
+  release, or the memory event after step 1 showing its resident memory dropped by roughly the text encoder's ~35 GB)
+  **before** any event of step 2 loading the transformer. Step 2 loads no text encoder.
+- The highest host peak in the memory events (peak RSS, and committed where reported) is within ±10% of the record's
+  peak for the t2i arm (cold or warm, whichever the rerun matches: say which). Compute and state the ratio.
+- The peak is below 64 GB (mini-ai's total): one model at a time, not both.
+It is a **finding** if step 2's load starts before step 1 is released, both big components are resident at once
+(a peak near or past ~64 GB), a text encoder loads in step 2, or the peak differs from the record's by more than 10%.
+A missing memory event is a finding too: the record's peak can't be checked without one.
+cleanup: none.
+metrics: none.
+
+### M-F503 — the shipped H3-Image catalog templates stay refused at validate on a 64 GB mps host, naming `host_ram_gb`
+pending: #1729
+source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: every `templates/minimax-h3-image/*` entry (`text-to-image` at least). Server: mini-ai (mps, 64 GB);
+on a host with more than ~70 GB of RAM the refusal doesn't apply: record the host and skip. Workspace `bench`.
+**Free**: validate only.
+Steps: `list_workflows(shape="image")` and `list_workflows(shape="image-edit")` to collect the
+`templates/minimax-h3-image/` names; `validate_workflow(name=<each>, workspace="bench")` at defaults.
+expected:
+- Each: `valid: false`, refused (not only warned), with the error naming `host_ram_gb` (the template's declared 64
+  plus the margin against the host's RAM). Nothing is queued.
+- `get_workflow("templates/minimax-h3-image/text-to-image")` still declares `host_ram_gb` 64: the plan leaves the
+  CUDA templates unchanged.
+It is a **finding** if any catalog H3-Image template validates clean on mini-ai, or is refused for another reason
+only (a download, a device rule) with no `host_ram_gb` named.
+cleanup: none.
+metrics: none.
+
+### M-F504 — the #1680 mps record: every arm with job ids, phase timing, peak memory, swap and a still check; cut arms and failures named
+pending: #1729
+source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the #1729 probe. **Free**: issue reads and job reads. The record is the `## mini-ai (mps)` section
+of `bench/records/h3-image.md` in the dw repo; read it **as quoted on #1729 or #1680**, never from the checkout. If
+it isn't quoted, ask for the quote on #1729 (`status:needs-info`) rather than reading source.
+Steps: read the quote; `list_jobs(workspace="bench")` on mini-ai; `get_job` and `get_job_events` on each job id it
+names.
+expected:
+- One row per arm that ran, in plan order: t2i 2048×2048 cold, t2i warm, edit with 3 references, t2i at a 16:9 size
+  near 2048×1152 (state the exact size). Each row: job id(s), outcome, wall time and per-phase timing (load, encode,
+  denoise, decode, as lem's baseline `3eec967fe939` has), peak RSS and committed memory from the job's memory events,
+  whether mini-ai went into swap, and a look at the still against lem's.
+- Every job id named exists in `bench` on mini-ai with that outcome, and each H3-Image mps job in `bench` from the
+  probe has a row (no orphan job).
+- **Time stop**: if any arm was skipped, the record says which and why (the 1 h total, or the cold t2i arm past
+  ~20 min, in which case only the t2i arm ran). Total mini-ai time across the probe's jobs is ≤ ~1 h, or the record
+  says which arm crossed it and that the stop applied.
+- **Failure**: if the probe failed (tensor handoff refused, a component loaded anyway, OOM, swap thrash, sdnq failing
+  to load the lem-saved folders), the record names the job id, the error as the job reported it, and a filed issue
+  (`gh issue view <n> --repo dkackman/diffusers-workflow` exists and describes that gap). The stage then ran no
+  further arm.
+- If #1678's int8-matmul landed first, its arm is one more row inside the 1 h stop.
+It is a **finding** if a row lacks an owed number, a named job doesn't exist or disagrees with the row, a skipped
+arm is unexplained, or a failure lacks its job id, error or issue.
+cleanup: none.
+metrics: none.
+
+### M-F505 — the `minimax-h3-image` skill's mps rule matches the #1680 record: pre-quantized folders and the bench workflow, or CUDA only with the measured reason
+pending: #1730
+source: tester, spec for #1730 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3-image` plugin skill (as loaded from `develop`), against M-F504's record. **Free**:
+reading the skill and the record's quote.
+Steps: load the skill (`Skill dw:minimax-h3-image`); read its *Before anything*, *Cost* and *Quote, then wait*
+sections; compare with the record.
+expected, **if the probe ran**:
+- *Before anything* no longer says "on mps, stop". It says an mps host under ~70 GB runs H3-Image only from
+  pre-quantized folders, through the bench workflow copied into the workspace (`copy_to_workspace` or the bench
+  name), and **never** the catalog template.
+- It gives the measured peak, the measured time and the reference limit, each equal to the record's figure (rounding
+  only); or it says the edit arm wasn't measured, when the record says it was skipped. No figure appears that the
+  record doesn't hold (helmstudio's 38.9 GB or 112-145 s may appear only marked as theirs).
+- *Cost* and *Quote, then wait* give the mps numbers from the record, separately from the CUDA ones, which are
+  unchanged.
+expected, **if it didn't**: the skill keeps "CUDA only" and adds one line with the measured reason, matching the
+record's failure (and its issue number where the record gives one).
+Both branches: an agent following the skill on mps is never sent to `templates/minimax-h3-image/*` (which M-F503
+shows refused there).
+It is a **finding** if a number disagrees with the record, the branch taken disagrees with the record's outcome, or
+the skill routes an mps host to the catalog template.
+cleanup: none.
+metrics: none.
+
+### M-F506 — after #1680, no H3-Image mps statement says "untested" or "by rule"; ACCELERATION.md and the template README carry the measured result
+pending: #1730
+source: tester, spec for #1730 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3-image` skill, `docs/ACCELERATION.md` (its H3-Image row), and
+`workflows/templates/minimax-h3-image/README.md`. **Free**: reads only.
+Steps:
+1. In the loaded skill, search the mps / host-RAM lines for "untested" and "by rule".
+2. `list_guides`; if ACCELERATION.md is served, `get_guide(<its name>)` and find the H3-Image row. `get_workflow`
+   on `templates/minimax-h3-image/text-to-image` for any README text it carries.
+3. Any doc the MCP surface doesn't serve: check its quote on #1730; if it isn't quoted, that part is a reader of the
+   source's check: leave it to the docs reviewer (`docs-review`) and say so, never read the checkout.
+expected:
+- No H3-Image mps line in the skill, the ACCELERATION.md row or the README says "untested" or "by rule".
+- The ACCELERATION.md row is measured: device mps, the record's peak and time (or the failure and its reason).
+- The README notes the mps result in the same terms. All three agree with M-F504's record and with each other.
+It is a **finding** if any says "untested"/"by rule" for H3-Image on mps, or a figure differs from the record.
+cleanup: none.
+metrics: none.
+
+### M-F507 — after #1680's skill change, `get_server_info`'s `plugin` still reports the `minimax-h3-image` skill current
+pending: #1730
+source: tester, spec for #1730 from #1680's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3-image` plugin skill. **Free**: one read.
+Steps: `get_server_info()`; read `plugin.current_from`; read the release the loaded skill states it was written for.
+expected:
+- The skill states a release, and it is not older than `plugin.current_from` (semver order). On the 2026-11-25
+  mini-ai server `current_from` was `0.22.0`; take the live value.
+- The CUDA-side template pins are untouched: M-F503's `host_ram_gb` 64 still holds.
+It is a **finding** if the skill states no release or one older than `current_from`, so an agent would tell the
+user the plugin is out of date.
+cleanup: none.
+metrics: none.
+
 ## Performance
