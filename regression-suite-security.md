@@ -2364,6 +2364,30 @@ off-box fetch is attempted. That is a boundary escape: never file it as an issue
 `./scripts/file-advisory.sh`, putting the repro and the model in the description.
 cleanup: DELETE `qa_sec` if it was stored.
 
+### SE-F086 — describe-and-regenerate's new `image_workflow` path variable can't name a file outside the workflow sources
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete`. Stage A turns a literal `workflow.path` into `variable:image_workflow`, so
+a run's `arguments` now choose which file the step reads. Before the stage, compose-workflows' `variable:` path answered
+`../models/does-not-exist.json` with `could not be resolved ... Looked in: <two paths under the server's workflows
+root> (outside the root)`; listing the server's own search roots is the accepted form (SE-F014's judgement).
+Values V: `../../../../etc/passwd`, `/etc/passwd`, `../../dw/server/enhancers.py`, `~/.cache/huggingface/token`,
+`https://example.invalid/w.json`, `file:///etc/passwd`, `asset:qa-cast/priya-voice.wav`, `output:x/y.json`.
+1. `validate_workflow(name="templates/describe-and-regenerate", arguments={"image_workflow": V},
+   workspace="regression-complete")` for each V.
+2. `run_workflow(workflow_path="templates/describe-and-regenerate", arguments={"image_workflow": "/etc/passwd"},
+   acknowledged_cost={"fingerprint": "sha256:0", "minutes": null, "downloads": []}, workspace="regression-complete")`;
+   `list_jobs(workspace="regression-complete")`.
+expected:
+- Every probe `valid: false` at `steps[N].workflow.path`, refused as unresolvable or outside every source. None is read
+  as a workflow: no JSON parse error quoting the file, no file contents, no stack trace in any answer.
+- No off-box fetch for the URL forms (refused as a path, not downloaded).
+- 2 is refused; no job is queued.
+It is a **finding** if any probe resolves, quotes a file's contents, or names a server path beyond the search roots the
+existing message lists. That is a boundary escape: never file it as an issue. File it privately with
+`./scripts/file-advisory.sh`, putting the repro and the model in the description.
+cleanup: none (cancel and `delete_output` a job if 2 queued one).
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

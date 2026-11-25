@@ -32146,4 +32146,196 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1429 — the composing templates list their new pass-through variables, defaulting to the child's own values
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+Free. Before the stage (develop c02c3d5d) `templates/describe-and-regenerate` declared only `image_url`, `vision_model`,
+`language_model`, `seed`; `templates/best-of-n-to-video` declared `prompt`, `candidates`, `rubric`, `scale`,
+`num_inference_steps`, `video_prompt`, `seed`; `templates/compose-workflows` declared `width`, `height`,
+`image_generation_workflow`, `image_num_inference_steps`, `image_prompt`, `video_generation_workflow`, `video_prompt`,
+`video_num_inference_steps`, `seed`.
+1. `get_workflow(name=N, variables_only=true)` for N = `templates/describe-and-regenerate`, `templates/best-of-n-to-video`,
+   `templates/compose-workflows`, and the children `models/flux-dev`, `templates/ltx2/image-to-video`, `models/z-image`.
+2. `get_workflow(name=N)` (full) for `templates/describe-and-regenerate` and `templates/sub-workflow`; read `description`.
+3. `list_workflows(traits="composes-workflows")`; find the three templates' `variable_names`.
+expected:
+- describe-and-regenerate adds `image_workflow` = `../models/flux-dev.json`, `num_images_per_prompt` = 1,
+  `num_inference_steps` = 25, `width` = 768, `height` = 768. The last four equal `models/flux-dev`'s own defaults (today
+  1 / 25 / 768 / 768); a parent default that differs from the child's is a **finding** (the plan's rule).
+- best-of-n-to-video adds `video_width` = 768, `video_height` = 768, `num_frames` = 401, equal to
+  `templates/ltx2/image-to-video`'s `width`, `height`, `num_frames`. Its existing variables are unchanged.
+- compose-workflows adds `num_images_per_prompt` = **1** (the one exception: `models/z-image` defaults to 4, Don ruled 1
+  for Q3). Its other variables are unchanged, `video_num_inference_steps` included.
+- 2: describe-and-regenerate's description names `image_workflow` and says a `preference:` default waits on #1626 (any
+  wording). sub-workflow's description says its `lora` is fixed on purpose, as a minimal demo. Any variable name either
+  description quotes is one the template declares; a quoted undeclared name is a **finding**.
+- 3: each template's `variable_names` includes its new names. No variable named `device` was added to any flux3 parent
+  (Q2 cut it); one appearing there is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1430 — the flux3 upsampler builtins declare `model_name`, `revision` and `max_new_tokens`
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+Free. Before the stage the probe below warned three times, `... declares no variable 'max_new_tokens' - the value is
+dropped. Declared: device, prompt` (and the same for `model_name` and `revision`); the `_edit` builtin's warning listed
+`Declared: device, images, instruction`. `get_workflow` answered `Unknown workflow` for `builtin:flux3_klein_upsample`
+with or without `.json`.
+1. `validate_workflow(workflow=P(B, A), workspace="regression-complete")`, where P(B, A) is
+   `{"id": "probe1642", "variables": {"request": "a dog"}, "steps": [{"name": "upsample", "workflow": {"path": B,
+   "arguments": A}, "result": {"content_type": "text/plain"}}]}`, for:
+   - B = `builtin:flux3_klein_upsample.json`, A = `{"prompt": "variable:request", "model_name":
+     "black-forest-labs/flux-3-image-klein", "revision": "main", "max_new_tokens": 512, "zz_probe": 1}`;
+   - B = `builtin:flux3_klein_upsample_edit.json`, A = `{"instruction": "variable:request", "model_name":
+     "black-forest-labs/flux-3-image-klein", "revision": "main", "max_new_tokens": 512, "zz_probe": 1}`.
+2. `get_workflow(name="builtin:flux3_klein_upsample.json", variables_only=true)` and the same for `_edit` (and without
+   `.json`).
+3. `get_workflow(name="templates/flux3/upsample-then-generate")`: its `upsample` step's `workflow.arguments`.
+expected:
+- 1: each answers `valid: true`. The only sub-workflow-argument warning is the one for `zz_probe`, and its `Declared:` list
+  holds `max_new_tokens`, `model_name` and `revision` beside the earlier names (`device`, `prompt` / `device`, `images`,
+  `instruction`). A "declares no variable" warning for any of the three is a **finding**.
+- 2: if `get_workflow` answers for a builtin, `max_new_tokens` = 3584 and `model_name` / `revision` are the pinned values
+  the builtin's description names (the description still names the pinned commit, and `revision` equals it). If it still
+  answers `Unknown workflow`, record that; it is not a finding against this stage (the plan adds no read path), and the
+  pinned values are then checked from a realized job's workflow in a flux3 case instead.
+- 3: the catalog flux3 parents still pass no `device`, `model_name`, `revision` or `max_new_tokens` (cuts 1 and 2); the
+  parent arguments are as before, `prompt: variable:request`.
+cleanup: none.
+metrics: none.
+
+### C-F1431 — the changed templates validate clean on defaults and with the pass-through overrides; off-grid overrides are still refused
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+Free. Workspace `regression-complete`. Before the stage every template below validated with exactly one warning, the
+seed-null one (`The seed variable 'seed' has no value, ...`); best-of-n with the step-2 overrides was refused,
+`Unknown variable 'num_frames'` (and `video_width`, `video_height`).
+1. `validate_workflow(name=N, workspace="regression-complete")` with no arguments for N = `templates/describe-and-regenerate`,
+   `templates/best-of-n-to-video`, `templates/compose-workflows`, `templates/sub-workflow`,
+   `templates/flux3/upsample-then-generate`, `templates/flux3/image-edit`, `templates/flux3/multi-reference`.
+2. With arguments:
+   - best-of-n-to-video, `{"candidates": ["a", "b"], "num_frames": 97, "video_width": 512, "video_height": 512}`;
+   - describe-and-regenerate, `{"num_inference_steps": 8, "width": 512, "height": 512}`;
+   - describe-and-regenerate, `{"image_workflow": "models/z-image", "num_inference_steps": 4}`;
+   - compose-workflows, `{"num_images_per_prompt": 2, "seed": 7}`.
+3. Refusal edges, best-of-n-to-video: `{"num_frames": 96}` (off LTX's 8n+1 grid), `{"video_width": 500}` (not a
+   multiple of 32), `{"num_frames": 1}` (under `min_frames` 9).
+expected:
+- 1: each `valid: true` with no warning but the seed-null one (or none, where the template pins a seed). In particular no
+  `declares no variable ... the value is dropped` warning from any composing step: a pass-through the child does not
+  declare is a **finding**.
+- 2: each `valid: true`, `checked_arguments` naming the values passed, with no new warning. The z-image row's
+  `downloads_required` no longer lists `black-forest-labs/FLUX.1-dev` (the variable path really swapped the child).
+- 3: each refused before anything is queued, naming the bound (8n+1, multiple of 32, min 9) at `arguments.<name>` or at the
+  composing step. Validating clean and leaving the child to floor or fail at run time is a **finding** (the child refused
+  the same value when run alone); if the rest of the stage holds, file it as its own issue rather than bouncing the stage.
+cleanup: none.
+metrics: none.
+
+### C-F1432 — a default-argument validate of describe-and-regenerate plans what it planned before the stage
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+Free. Baseline, read before the stage (develop c02c3d5d, cuda 3090, workspace `regression-complete`):
+`validate_workflow(name="templates/describe-and-regenerate")` gave `valid: true`, `plan.steps` 4, `downloads_required`
+exactly `[{"repo": "black-forest-labs/FLUX.1-dev", "gb": 31.4, "gated": "auto", ...}]`, `estimate` 5.7 min, basis
+`observed`. best-of-n-to-video with defaults gave `plan.steps` 10, `list_entries.candidates` 4, no downloads, basis
+`unknown` with `./ltx2/image-to-video.json` in `unpriced`.
+1. `validate_workflow(name="templates/describe-and-regenerate", workspace="regression-complete")`.
+2. `validate_workflow(name="templates/best-of-n-to-video", workspace="regression-complete")`.
+expected:
+- 1: `plan.steps` 4; `downloads_required` still names `black-forest-labs/FLUX.1-dev` (gated) as its own line, the plan's
+  named risk of a `variable:` path dropping the pre-flight download line. A missing FLUX.1-dev line is a **finding**.
+  `estimate.minutes` the same as the baseline's when the basis is still `observed`; if the basis changed (the plan's soft
+  "observed-cost bucketing" risk), record the new basis and minutes; that alone is not a finding.
+- 2: `plan.steps` 10 and `list_entries.candidates` 4; no new download line.
+- The resolved child arguments are today's: a default run of describe-and-regenerate still hands flux-dev 1 image, 25
+  steps, 768x768 (C-F1429 pins the defaults; this case pins that the plan did not change shape).
+cleanup: none.
+metrics: none.
+
+### C-F1433 — describe-and-regenerate's `image_workflow` naming nothing is refused at validation and at submit
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+Free. Before the stage the same path through `templates/compose-workflows`' `image_generation_workflow` was refused
+`valid: false` at `steps[0].workflow.path`: `Sub-workflow '../models/does-not-exist.json' could not be resolved. ... Looked
+in: ...`.
+1. `validate_workflow(name="templates/describe-and-regenerate", arguments={"image_workflow":
+   "../models/does-not-exist.json"}, workspace="regression-complete")`.
+2. The same with `"image_workflow": ""`.
+3. `run_workflow(workflow_path="templates/describe-and-regenerate", arguments={"image_workflow":
+   "../models/does-not-exist.json"}, acknowledged_cost={"fingerprint": "sha256:0", "minutes": null, "downloads": []},
+   workspace="regression-complete")`; then `list_jobs(workspace="regression-complete")`.
+expected:
+- 1: `valid: false`, the existing "could not be resolved" error at `steps[N].workflow.path`, N the regenerate step. No
+  `plan`.
+- 2: refused at validation (unresolvable or empty path), never a crash or a stack trace.
+- 3: refused, no job queued (no new job in `list_jobs`).
+cleanup: none (`cancel_job` and `delete_output(job_id=...)` if 3 queued one).
+metrics: none.
+
+### C-F1434 — best-of-n-to-video hands its frame count and size down to the LTX child
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+GPU: two SD 1.5 stills, two judge calls, one LTX-2.5 image-to-video at 97 frames 512x512. Workspace `regression-complete`.
+1. `validate_workflow(name="templates/best-of-n-to-video", arguments=A, workspace="regression-complete")`, A =
+   `{"candidates": ["a", "b"], "num_frames": 97, "video_width": 512, "video_height": 512, "seed": 1642}`; then
+   `run_workflow(workflow_path="templates/best-of-n-to-video", arguments=A, acknowledged_cost=<from validate>,
+   wait_seconds=55, workspace="regression-complete")`, `wait_for_job` as needed.
+2. `get_job(<id>)`; `get_job_workflow(<id>)`; `get_gallery_metadata` on the video output; `get_output_frames` on it.
+expected:
+- Completes. `get_job_workflow` (or the manifest) shows the video child ran with `num_frames` 97, `width` 512,
+  `height` 512; any of the three at 401 / 768 means the override never reached the child: a **finding**.
+- The video's metadata: 512x512, `frame_count` 97, `fps` 24, `duration_seconds` about 4.04.
+- No `declares no variable` warning in `job.warnings` or `get_job_events`.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F1435 — compose-workflows hands the parent's seed to its image child, and makes one still by default
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+GPU: three compose runs (z-image still + MiniMax H3 image-to-video each), plus one z-image-only inline composition.
+Workspace `regression-complete`. Before the stage `models/z-image` declared `seed: 42`, and compose-workflows passed it
+no seed, so the child ran at 42 whatever the parent's seed was.
+Arguments S(s) = `{"seed": s, "width": 512, "height": 320, "image_num_inference_steps": 4,
+"video_num_inference_steps": 2}` (if validate refuses a size or step count, use the smallest it accepts and record it;
+`num_images_per_prompt` left out on purpose, to read the Q3 default). Each run: `validate_workflow` with the same
+arguments first and pass its `acknowledged_cost`; `run_workflow(workflow_path="templates/compose-workflows", ...,
+wait_seconds=1500, workspace="regression-complete")`.
+1. Run S(7); run S(7) again; run S(8).
+2. For each: `get_job`, `get_job_workflow`, and the still from the image step.
+3. `compare_outputs` the run 1 still against run 2's, and run 1's against run 3's.
+4. `validate_workflow` then `run_workflow` an inline parent with `"seed": "variable:seed"` and `"variables": {"seed":
+   null}` whose one step composes `models/z-image` with `{"prompt": "a lighthouse", "seed": "variable:seed",
+   "num_images_per_prompt": 1, "num_inference_steps": 4, "width": 512, "height": 320}` (wait_seconds=55); `get_job`.
+expected:
+- 2: each run's image child reports seed 7, 7 and 8 respectively; seed 42 anywhere on the image child is a **finding**.
+  Each run makes exactly **one** still (Q3); four means z-image's own default leaked through.
+- 3: runs 1 and 2 give the same still (identical, or a match `compare_outputs` scores as the same image; if run 2 came
+  from the step cache, its events say so, and that is acceptable). Run 3's still differs.
+- 4: the job's seed is a drawn value, not null and not 42, and the child reports the same value as the parent (the
+  plan's "seed hand-down" risk: `variable:seed` handing down `None`).
+cleanup: `delete_output(job_id=<id>)` for all four jobs.
+metrics: none.
+
+### C-F1436 — the workflow guide's composition section states the pass-through convention
+pending: #1726
+source: tester, spec for #1726 from #1642's plan v1 (claude-opus-5-5 via anthropic)
+Free. Before the stage `get_guide("workflows", section="Composing a stored workflow")` (a `###` under "Authoring a
+workflow from an agent") covered path resolution, where the composed output is saved, and validation's
+cycle/undeclared-argument checks, and said nothing about literals versus variables.
+1. `get_guide("workflows", section="Composing a stored workflow")`.
+2. For each catalog name the new paragraph cites: `get_workflow(name=..., variables_only=true)`.
+expected:
+- 1: the section holds a paragraph saying, each in some wording: (a) pass a composed child's run-affecting values through
+  parent variables whose defaults equal the child's; (b) pass `seed` down when the child declares a non-null seed; (c) a
+  literal is for a value the composition fixes on purpose. Any of the three missing is a **finding**. If the paragraph
+  lives in a new subsection instead, that subsection resolves by name and the composition section points at it.
+- It does not promise a `validate_workflow` warning for a hard-coded literal (Q1 ruled test plus guide, no warning); a
+  claim that validate warns is a **finding** (validate an inline parent passing a literal for a declared child variable
+  to confirm it does not).
+- 2: every cited name resolves. An example it gives (`narration-long`, `compose-workflows`, the minimax enhance pair)
+  passes what the paragraph says it does, read from its `get_workflow` definition.
+cleanup: none.
+metrics: none.
+
 ## Performance
