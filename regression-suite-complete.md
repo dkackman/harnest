@@ -30667,4 +30667,325 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1364 — #1713 on a clean tree: `npm test` passes, `--check` exits 0, and the baseline still records the four proxies beside `files_over_hard_ceiling: 0`
+pending: #1713
+source: tester, spec for #1713 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Stage A has no MCP or browser surface. The plan has the tester run the ratchet from `ui/` on a scratch
+tree at `develop` after the merge, but a tester never runs commands in, or reads, the `diffusers-workflow` checkout.
+So, as in C-F1346: the tester checks the record. The stage's hand-off on #1713 (`gh issue view 1713 --repo
+dkackman/diffusers-workflow --comments`) must quote each command below with its exit code, its stdout and its stderr
+(kept apart), at the merged `develop` commit, and the tester adds `docs-review` so a source reader re-runs them. Every
+#1689 case below (C-F1365 to C-F1375, and C-F1379) works the same way.
+The commands, from `ui/` on a clean scratch tree at the merge commit:
+- `npm test`
+- `npm run metrics -- --check ../docs/stabilization/ui/baseline.json`
+- `npm run metrics` (the full listing, with detail)
+expected:
+- `npm test` exits 0. `--check` exits 0 with nothing on stdout in the `key: a -> b` form.
+- `docs/stabilization/ui/baseline.json` still holds `files_over_size_ceiling`, `complex_functions`, `long_functions`
+  and `duplicate_blocks` (none dropped), and gains `files_over_hard_ceiling: 0`. A proxy key removed from the baseline
+  is a **finding**: the plan keeps every number recorded.
+- No enforced key's baseline value is raised by the stage. A raised one is a **finding**.
+- `npm run metrics` detail for `complex_functions`, `long_functions` and `files_over_size_ceiling` lists items as
+  `file:line name (value)`, sorted, and `duplicate_blocks` detail carries line ranges, not only file names. A proxy
+  whose detail names nothing is a **finding** (the warnings must say what to look at).
+- A hand-off that claims these passed without the quoted commands, exit codes and separate stdout/stderr is a
+  **finding** (no record).
+cleanup: discard the scratch tree.
+metrics: none.
+
+### C-F1365 — a 70-line function and a 650-line `.svelte` file only warn, on stderr, naming the function and the file
+pending: #1713
+source: tester, spec for #1713 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`. Each step
+alone, `npm run metrics -- --check ../docs/stabilization/ui/baseline.json`, then revert:
+1. Add a new 70-line function `probeLong` to an existing `.ts` module under `src/lib` (well under the complexity
+   limit: straight-line statements).
+2. Pad an existing `.svelte` component under `src/lib` that is under 600 lines today to 650 lines (comments or
+   markup), so it crosses the 600-line `SIZE_CEILING` and stays under 900.
+3. Add a function `probeComplex` whose complexity is over `COMPLEXITY_LIMIT` (a chain of `if`s), under the line limit.
+4. Paste one existing component's 12-line markup block, unchanged, into a second component.
+expected:
+- Every step exits 0.
+- stderr carries a line beginning `warning (advisory): ` for the risen key: 1 `long_functions: N -> N+1`,
+  2 `files_over_size_ceiling: N -> N+1`, 3 `complex_functions: N -> N+1`, 4 `duplicate_blocks: N -> M` (M > N),
+  followed by the named items: 1 and 3 name the file, line and function (`probeLong`, `probeComplex`), 2 names the
+  file with its line count, 4 names both files with line ranges.
+- stdout has no line in the `key: a -> b` form for any step. A warning on stdout is a **finding**: the harness's
+  `check_ui` would read it as a regression.
+- An exit of 1 on any step is a **finding** (the proxy still gates). A warning that names no item is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1366 — `files_over_hard_ceiling` counts a 901-line file and not a 900-line one, for `.svelte`, `.ts` and `.css`
+pending: #1713
+source: tester, spec for #1713 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`. Each step
+alone, `--check` against the baseline, then revert:
+1. Pad an existing `.svelte` component under `src/lib` to exactly 900 lines.
+2. Pad the same file to exactly 901 lines.
+3. Pad an existing `.ts` module under `src/lib` to 901 lines.
+4. Pad `src/app.css` to 901 lines.
+5. Two files at 901 lines at once (2 and 3 together).
+expected:
+- 1 exits 0. stdout shows no `files_over_hard_ceiling` line; stderr shows the advisory `files_over_size_ceiling`
+  warning naming the file. A `files_over_hard_ceiling` rise at 900 lines is a **finding** (off by one).
+- 2, 3 and 4 each exit 1, and stdout shows exactly `files_over_hard_ceiling: 0 -> 1`. stderr may also carry the
+  advisory size warning. Exit 0 on 4 is a **finding**: the plan drops the app.css test because `app.css` falls under
+  both size keys.
+- 5 exits 1 with `files_over_hard_ceiling: 0 -> 2`.
+- A test file (`*.test.ts`) padded to 901 lines does not count (tests are outside `sourceFiles()`). If the hand-off
+  ran it, a count is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1367 — the enforced rules still fail as before, and an advisory rise beside one changes nothing on stdout
+pending: #1713
+source: tester, spec for #1713 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`. Each step
+alone, `--check` against the baseline, then revert. Note each step's stdout at the **parent** commit too (the same
+edit on a tree at the stage's parent), for comparison.
+1. In a component, add `notify.error(e.message)` inside a `catch (e)` (a raw error toast).
+2. Add a `window.confirm('x')` call in a component (a window dialog).
+3. Add an import cycle between two new `.ts` modules under `src/lib`.
+4. Do 1 together with C-F1365 step 1 (a raw toast plus a 70-line function).
+expected:
+- 1, 2 and 3 each exit 1, and their stdout lines are byte-identical to the parent commit's for the same edit. A
+  changed or missing stdout line is a **finding**: the enforced form is the harness's contract.
+- 4 exits 1. stdout carries only the enforced key's line; the `long_functions` rise is on stderr only, as
+  `warning (advisory): ...`. A `long_functions` line on stdout is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1368 — `app.css` at 650 lines passes `npm test`, and the 600-line design-rules test is gone
+pending: #1713
+source: tester, spec for #1713 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`: pad
+`src/app.css` to 650 lines with comments. Run `npm test`, then `--check` against the baseline.
+expected:
+- `npm test` exits 0. A failure in `design-rules.test.ts` naming `app.css`'s line count is a **finding**: the
+  600-line test was to be deleted (Q2).
+- `--check` exits 0, with the advisory `files_over_size_ceiling` warning on stderr naming `src/app.css`, and nothing
+  on stdout.
+- Docs review: `ui/scripts/design-rules.test.ts` holds no line-count assertion on `app.css`; the `patterns.css`
+  header and ARCHITECTURE.md's patterns.css line no longer call it "overflow" or say "it holds 600 lines", and say
+  what it holds.
+cleanup: revert and discard the scratch tree.
+metrics: none.
+
+### C-F1369 — `--compare` with only an advisory rise exits 0 with empty stdout; an enforced rise and unreadable input keep their codes
+pending: #1713
+source: tester, spec for #1713 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`. Write the
+clean tree's metrics to a file (`npm run metrics -- --write /tmp/base.json`, or however the script writes a
+snapshot), then:
+1. Make C-F1365 step 1's edit, write a second snapshot, and `--compare` the first against it.
+2. Make C-F1367 step 1's edit instead, snapshot, `--compare`.
+3. `--compare` a snapshot against a file that is not JSON.
+4. Lower an advisory value (delete an existing duplicated block, or shorten one long function), then `--write` the
+   baseline, and read the written value.
+expected:
+- 1 exits 0. stdout is empty; stderr carries the `warning (advisory): long_functions: ...` line. Any stdout line is a
+  **finding**.
+- 2 exits 1 with the enforced key's `key: a -> b` line on stdout.
+- 3 exits 2, as before the stage.
+- 4: the written baseline records the lowered advisory value. An advisory key `--write` skips is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1370 — #1713's tests and docs say which keys are enforced and which advisory, and the harness's `check_ui` reads stdout only
+pending: #1713
+source: tester, spec for #1713 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Docs review of the stage's merge diff, plus one record check.
+expected:
+- `ui/scripts/arch-metrics.test.ts` has cases for: an advisory key rising exits 0 and prints the stderr warning; an
+  enforced key rising exits 1 with the unchanged stdout line; `files_over_hard_ceiling` counts 901 lines and not 900;
+  the key list includes `files_over_hard_ceiling`. The script's own-complexity case is removed or is a warning. A
+  missing case is a **finding**.
+- The `ADVISORY` set holds exactly `files_over_size_ceiling`, `complex_functions`, `long_functions` and
+  `duplicate_blocks`. An extra key in it (an enforced rule demoted) is a **finding**.
+- ARCHITECTURE.md's ratchet row names the enforced and the advisory keys. ROADMAP's metric table and its "no metric
+  rises" lines, and `stage-b-ratchet.md`'s example, use an enforced key (`complex_functions: 12 -> 13` is no longer
+  an example of a failure). The script's header comment says the same. Any doc still saying every rise fails is a
+  **finding**.
+- The plan's open risk is settled on the record: the hand-off on #1713, or a harnest issue it links, says whether
+  harnest's `check_ui` parses stderr as well as stdout, and if it does, that a `warning (advisory): ` line is not
+  taken as a regression. No statement either way is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1371 — #1714 on a clean tree: `layering_violations` equals its baseline, and its detail names `ui/NoteEditor.svelte` → request
+pending: #1714
+source: tester, spec for #1714 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364, on #1714's hand-off. Scratch tree at the merge commit, from
+`ui/`: `npm test`, `npm run metrics -- --check ../docs/stabilization/ui/baseline.json`, `npm run metrics`.
+expected:
+- `npm test` and `--check` exit 0.
+- `baseline.json` gains `layering_violations: N`, and `npm run metrics` prints the same N. N > 0 at the stage's
+  merge unless #1669 landed first (then whatever #1669 left, named in the hand-off).
+- `detail.layering_violations` lists one `file:line from-folder -> to-folder` per edge, including
+  `ui/NoteEditor.svelte:<line> ui -> request`, the `ui/ReferenceField.svelte` → assets edges,
+  `noteDraft.svelte.ts` → request, `promptFile.ts` → editor, and `editor/ValidationPanel` and `editor/VariablesForm`
+  → workflow (the edges the plan's sweep found, as far as #1669 hasn't removed them). N equals the number of detail
+  lines. An edge the plan lists missing from the detail is a **finding**, unless the hand-off names the commit
+  that removed it.
+- Not listed: `job/*` → gallery, request, workflow or editor; `gallery/*` → request; `workflow/EnhanceDialog` →
+  editor (all declared). One of these in the detail is a **finding**.
+- No other enforced key's baseline value rose.
+cleanup: discard the scratch tree.
+metrics: none.
+
+### C-F1372 — a `ui` component importing `gallery/` counts, a type-only one counts too, and the reverse does not
+pending: #1714
+source: tester, spec for #1714 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`; N is
+C-F1371's value. Each step alone, `--check` against the baseline, then revert:
+1. In a `src/lib/ui/*.svelte` component, add a value import from a module in `src/lib/gallery/` and use it.
+2. Same file, `import type { <T> } from '../gallery/<module>'` only.
+3. In a `src/lib/gallery/` module that does not yet import `ui`, add an import from `src/lib/ui/` and use it.
+4. In a `src/lib/ui/*.test.ts` file (make one if none exists), add an import from `src/lib/gallery/`.
+expected:
+- 1 and 2 each exit 1, with `layering_violations: N -> N+1` on stdout, and the detail names the edited file with
+  `ui -> gallery`. Exit 0 on 2 is a **finding**: type-only imports count.
+- 3 exits 0, `layering_violations` still N.
+- 4: a test-file import never counts. A rise is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1373 — an undeclared feature folder counts every edge out of it, and the test fails naming the folder
+pending: #1714
+source: tester, spec for #1714 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`. Each step
+alone, then revert:
+1. Create `src/lib/newfeature/probe.ts` importing a module from `src/lib/request/` and using it. Run `--check` and
+   `npm test`.
+2. Same folder, importing a module from `src/lib/ui/` instead. Run `--check`.
+3. Repeat 1, and add `newfeature` to `LAYER_ALLOWS` with `request` allowed. Run `--check` and `npm test`.
+expected:
+- 1: `--check` exits 1 with `layering_violations: N -> N+1`, and `npm test` fails in `arch-metrics.test.ts` with a
+  message naming `newfeature`. Either passing is a **finding**.
+- 2: the plan says an undeclared folder "counts every edge out of it": `--check` exits 1. If it exits 0, the hand-off
+  must say the builder read the rule as "every edge but `ui` and top-level lib" and why; silence is a **finding**.
+- 3: `--check` exits 0 and `npm test` passes (a declared folder with an allowed edge).
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1374 — `LAYER_ALLOWS` is held both ways: allowed edges pass, reversed and undeclared feature edges count, `pages/` and `App.svelte` never count
+pending: #1714
+source: tester, spec for #1714 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364. Scratch tree at the merge commit, from `ui/`. Each step
+alone, `--check` against the baseline, then revert:
+1. A new import `job/` → `gallery/` in a `job` module that doesn't have one (allowed).
+2. `gallery/` → `job/` (reversed).
+3. `request/` → `gallery/` (request allows none).
+4. `assets/` → `request/` (assets allows none).
+5. A top-level `src/lib/*.ts` module → `src/lib/job/` (the shared layer).
+6. A file under `src/lib/pages/` (or `src/App.svelte`) → one module in each of `ui`, `job`, `editor`, `assets`.
+7. `editor/` → a top-level `src/lib/*.ts` module, and `request/` → `src/lib/ui/` (every feature may use the shared
+   layer).
+expected:
+- 1, 6 and 7 exit 0 with `layering_violations` at N.
+- 2, 3, 4 and 5 each exit 1 with `layering_violations: N -> N+1`, the detail naming the edge's two folders.
+- Any other result is a **finding**, naming the step.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1375 — #1714 ships the fixture tests, the ARCHITECTURE row, the `ui/CLAUDE.md` rule, and `arch-metrics.mjs` in `hot-zone.txt`
+pending: #1714
+source: tester, spec for #1714 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Docs review of the stage's merge diff.
+expected:
+- `ui/scripts/arch-metrics.test.ts` has fixture-tree cases: a ui → feature edge counts; feature → ui does not; an
+  undeclared folder counts; a type-only import counts; and the completeness check naming an undeclared folder. The
+  key-list case includes `layering_violations`. A missing one is a **finding**.
+- `LAYER_ALLOWS` matches Q3's default table (job → gallery, request, workflow, editor; gallery → request; workflow →
+  editor; editor, assets, request → none), or the hand-off names #1669's landed direction for any row that differs.
+- `layering_violations` is not in the `ADVISORY` set.
+- ARCHITECTURE.md gains a "UI layering" row owned by `arch-metrics.mjs` `LAYER_ALLOWS`; `ui/CLAUDE.md`'s *Rules for
+  new UI* gains a line naming the direction.
+- `docs/stabilization/hot-zone.txt` lists `ui/scripts/arch-metrics.mjs` (Q9), added after the metric landed.
+cleanup: none.
+metrics: none.
+
+### C-F1376 — on the Jobs page a cancelled chip and a running chip are different colours in both themes, and the cancelled text passes AA
+pending: #1715
+source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`. Run once `get_server_info` reports a commit containing the
+stage's merge. Workspace `regression-complete` with at least two jobs in its list. Spec: `mock {url_glob:
+"**/api/jobs?**"}` from the real answer, setting `jobs.0.status` to `"cancelled"`, `jobs.1.status` to `"running"`,
+`jobs.1.finished_at` to `null`; `goto /#/ws/regression-complete/jobs`; `wait_text {text: "cancelled"}`; `inspect`
+the row-0 status chip (`text: "cancelled"`) and the row-1 chip (`text: "running"`); `screenshot jobs_light`. Then
+switch theme with the UI's own theme control (find it by role and name from the first screenshot), `wait_text`
+again, inspect both chips again, `screenshot jobs_dark`. Read both screenshots.
+expected:
+- In each theme, the cancelled chip's `color` differs from the running chip's `background_color` and from its
+  `color`. The same value on both is a **finding** (the #1665 ambiguity).
+- In each theme, the contrast ratio of the cancelled chip's `color` against its own `background_color` (or, when
+  transparent, the closest ancestor's non-transparent `background_color` from `inspect`) is at least 4.5:1, by the
+  WCAG relative-luminance formula. Under 4.5 is a **finding**; show the arithmetic.
+- The cancelled colour differs between light and dark (two theme values), and the screenshots show the chips
+  visibly distinct. No page error.
+- Both screenshots are attached to the #1715 verification comment for Don's Q5 taste call; the stage stays open
+  until he rules. Closing #1715 without that ruling is a **finding**.
+cleanup: none (nothing queued).
+metrics: none.
+
+### C-F1377 — a stalled job's stall note is not the colour of its progress bar
+pending: #1715
+source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`, after the commit check in C-F1376. Pick any job J in
+`regression-complete`. `mock {url_glob: "**/api/jobs/<J>"}` setting `status` to `"running"` and `finished_at` to
+`null`, and drive the page's stall note: either `stream {url_glob: "**/api/jobs/<J>/events**"}` with a
+`phase_stall` event shaped like one from `get_job_events(kinds=["phase_stall"])` on any past job, or a running job
+whose last progress time is minutes old, whichever the page shows a stall for (name the one used in the record). If
+neither shows a stall note, report that, with the specs tried, as a `status:needs-info` question rather than a pass.
+`goto` J's job page, `wait_text` the stall wording, `inspect` the stall note and the progress bar (or the active
+dot beside it), in both themes as in C-F1376, and `screenshot job_stall_light` / `job_stall_dark`.
+expected:
+- In each theme, the stall note's `color` differs from the progress bar's or active dot's `background_color`. The
+  same value is a **finding**.
+- The stall note's colour equals the cancelled chip's from C-F1376 in the same theme (both read `--warn`). A third
+  colour is a note in the record, not a finding by itself.
+- No page error. Both screenshots go to Don with C-F1376's.
+cleanup: none.
+metrics: none.
+
+### C-F1378 — validation warnings, the dirty dot and required-field markers show the new `--warn`, never the `--live` colour
+pending: #1715
+source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. **Web UI, black-box**, through `ui-check`, after the commit check in C-F1376. Let W be
+the cancelled chip's `color` and L the running chip's `background_color`, per theme, from C-F1376. In each theme:
+1. Open a catalog template with a required variable from the Workflows page, and open its run form (stub `**/api/jobs?**`
+   and `**/api/jobs` so nothing is queued). `inspect` a required-field marker.
+2. Open a workflow in the editor and type one character into its text, so it is unsaved; `inspect` the unsaved
+   (dirty) marker in the tab or header.
+3. With `mock {url_glob: "**/api/validate**"}` from the real answer, add one warning to its warnings list (the
+   answer's own warning shape), click the editor's validate control, `wait_text` the warning text, `inspect` it.
+Leave the page without saving (the leave guard: decline saving; a save is blocked by the runner anyway).
+expected:
+- Each of the three inspected elements' `color` (or `background_color` for a dot) equals W, and none equals L. A
+  marker in L is a **finding**: the `--live` value reached a non-machine-state meaning.
+- No page error; `blocked` holds no write except stubbed ones.
+cleanup: none (nothing saved or queued).
+metrics: none.
+
+### C-F1379 — `npm test` fails when `--warn` is set back to `--live`'s value or below AA, and the wording no longer says amber
+pending: #1715
+source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1364, on #1715's hand-off. Scratch tree at the merge commit, from
+`ui/`. Each step alone, `npm test`, then revert:
+1. In one theme block of `src/app.css`, set `--warn` to that block's `--live` value.
+2. In one theme block, set some other colour token (not `--warn`) to that block's `--live` value.
+3. In the light theme block, set `--warn` to `#a08000` (about 3:1 on a light panel).
+expected:
+- 1 and 2 fail in `design-rules.test.ts`, naming the token and the theme block. A pass is a **finding**.
+- 3 fails the contrast case, naming `--warn` and the panel token. A pass is a **finding**.
+- On the clean tree `npm test` passes, and every one of the four theme blocks gives `--warn` a value different from
+  its `--live`.
+- Docs review: the `app.css` header and `ui/CLAUDE.md`'s colour line state which tokens carry colour and that the
+  `--live` list is held per file; ARCHITECTURE.md's status-chip line and the `StatusChip.svelte` header comment no
+  longer say "amber" for a cancelled take.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
 ## Performance
