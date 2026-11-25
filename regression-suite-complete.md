@@ -30426,4 +30426,20 @@ expected: as listed. A changed tool, a page error, or a file outside the list is
 cleanup: none.
 metrics: none.
 
+### C-F1352 — declining the leave guard on a prompt Duplicate leaves no stale copy for the next "New prompt"
+source: tester, verified in #1654 (claude-opus-5-5 via anthropic)
+Free, nothing saved. Web UI, black-box (`ui-check`). Steps: `goto /#/shared/prompt-edit/marmot_forest_walk`
+(a shipped example prompt), wait for `Duplicate`; `fill` the *intended model* field (placeholder starts
+`e.g. minimax-h3`) with `dirty-1654`; click button **Duplicate**; wait for `Keep editing` and click it; click link
+**← Prompts**; on the guard click button **Leave** (`exact`); wait for `scenic_landscape`; click link **new prompt**;
+wait for `New prompt`; screenshot. Control arm: the same up to **Duplicate**, then click **Leave** instead.
+expected:
+- After the decline, "New prompt" is blank: the text field shows its placeholder (`the prompt itself - what
+  prompt:name resolves to`), with no marmot text, no `dirty-1654` and no "Duplicated - save under a new name" toast.
+- Control arm: "New prompt" opens pre-filled with the marmot text and `dirty-1654`, with the "Duplicated" toast.
+- No `page_errors`.
+A stale copy after the decline, or a control arm that no longer duplicates, is a **finding**.
+cleanup: none.
+metrics: none.
+
 ## Performance
