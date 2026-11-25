@@ -28,6 +28,7 @@ rather than in a separate log.
 | R16 | Hardening round 2: the 2026-10-23 review (guard, drivers, fleet, regression cost, prompts) | done 2026-10-25: tasks 1–34 of `docs/superpowers/plans/2026-10-23-harness-hardening.md` landed; task 35 (measure) only partly done | R12, R8 |
 | R17 | Loop scheduler: one event-loop driver for both servers, concurrent sessions by resource (`gpu:S`, `free`, `suite`, trees), driver-owned deploys, per-session suite worktrees, `logs/loop/state.json` and a dashboard loop card | phase 1 built on branch `r17-loop-scheduler` (`harness/drivers/loop.py`; bash item runner `lib/run-item.sh`); cutover on lem pending. Baseline, 14 days of the bash loop (`scripts/gpu-busy.py`, `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`): lem GPU slot 18.4% busy, $6.50 per closed dw issue ($1,443 over 222 closes), a standing task every 5,327 s on average. Target: the slot busy share up, cost per close not up. Phase 1b and 2 below | R8, R13, R16 |
 | R18 | Agent sessions run as a separate OS user (`harnest-agent`) with a restricted ssh key and no read access to source for the tester | proposed (Don, 2026-11-19) | R17 |
+| R19 | Escalation delegate: a role that rules on Don's queue (default, amend or pass through) and hands him only taste, trust, direction, large spend and his own earlier rulings; it may add `status:plan-approved` | proposed (Don, 2026-11-25); replay of the closed rulings first | R15, R17 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1865,6 +1866,41 @@ What.
 reader list (e09ab6d) still let through file writers with no redirect (`dd`, `cp`, `install`, `sponge`), git
 `-c`/`GIT_EXTERNAL_DIFF`/`--textconv` turning a "read" subcommand into execution, and runners missing from
 the deny regex. These are logged here rather than chased one by one: name matching can't be the boundary.
+
+## R19 — Escalation delegate: rule on Don's queue, pass through what is his
+
+Status: proposed (Don, 2026-11-25). Spec: `docs/superpowers/specs/2026-11-25-escalation-delegate.md`.
+
+**Why.** Don works his queue by asking an Opus session for a recommendation and approving it.
+Of 256 rulings on closed escalated issues since 2026-11-01, about half took the default outright,
+and the departures were a short list of kinds: narrowing scope, deferring, withdrawing after a
+failed gate, taste verdicts, releasing resources or trust, and direction. An hourly Opus
+"delegate for Don" ruled about 31 times from 2026-11-21 to 11-23, amended three plans, escalated
+#1066 Q6 back to him correctly, and no later comment reverses any of its rulings.
+
+**What.**
+- A `delegate` role and a `delegate:rule` queue in `lib/classify.jq` over `owner:don` asks
+  (not parked deferrals, releases, advisories, external filings, or issues Don's own session
+  touched in the last `DELEGATE_QUIET_HOURS`).
+- It rules at the default, amends and rules (a `Delegate changed:` line), or passes through with
+  a recommendation (`delegate:passed`). It passes through `taste`, `trust`, new public surface or
+  a breaking change, spend over `DELEGATE_GPU_HOURS`/`DELEGATE_DOWNLOAD_GB`, an unsettled
+  `loosen`, a contradiction of Don's own earlier ruling, `Reversible: no`, and its own low
+  confidence.
+- **Changes the rule "only Don adds `status:plan-approved`" (Don, 2026-11-25):** Don or his
+  delegate, the delegate only with its ruling comment and never on a plan with a pass-through kind.
+- It never rules on harness changes (the human-approval principle above stands): on harnest it
+  takes `suite` curator escalations only.
+- `logs/delegate.jsonl`, a digest section listing every delegate ruling, and `overrule:` to
+  reverse one.
+- Model: Fable 5.2 (`claude-fable-5-2`) at `high`, pinned by id, unless the replay shows Opus 5.5
+  matches Don as often.
+
+**First:** replay about 100 closed rulings (every departure plus 40 defaults) through both models,
+scored on agreement and on pass-through recall where Don departed. Size its cost with Don first.
+
+**Done when.** Two weeks live with overrides under 5% of delegate rulings, and none in a
+pass-through kind the delegate ruled on.
 
 ## dw UI stabilization Phase 4: the UI's metrics ratchet (2026-10-02)
 
