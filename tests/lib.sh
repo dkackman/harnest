@@ -24,6 +24,10 @@ export GH_CALLS="$T/gh-calls"; : > "$GH_CALLS"
 export DW_TOKEN=test-token; unset DW_TOKEN_LEM DW_TOKEN_MINI_AI
 # and the real secrets file is never read (a test that wants one names it)
 export HARNEST_ENV_FILE=/dev/null
+# R19's delegate is on by default; the suite's fixture boards and driver runs
+# predate it and expect every owner:don ask to stay Don's. The delegate's own
+# tests (classify-cases.json, test-delegate.sh, test-guard.sh) turn it on.
+export DELEGATE_IN_LOOP=0
 # and a release marker is signed with a throwaway key, never Don's real one
 export RELEASE_KEY_FILE="$T/release.key"
 mkdir -p "$T/bin"; export PATH="$T/bin:$PATH"

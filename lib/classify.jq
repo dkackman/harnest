@@ -93,7 +93,7 @@ def marked($kind): plan_version as $p | marker_versions($kind) | index($p) != nu
 def plan_drafted: any((.markers // [])[]; startswith("<!-- harnest:plan") and test("draft:"));
 
 # R19: an owner:don ask the delegate rules on for Don, when the snapshot
-# turns it on (DELEGATE_IN_LOOP=1 in issue_snapshot_read). Never a deferral
+# turns it on (DELEGATE_IN_LOOP, on unless 0, in issue_snapshot_read). Never a deferral
 # (parked or stabilization without a live ask), an ask already passed through
 # to Don (delegate:passed), one Don overruled (`overrule:`), or one his own
 # session commented on in the last quiet_secs: he may be working it. Never

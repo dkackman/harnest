@@ -149,7 +149,7 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   - it denies an edit that would make a failing case pass with no such record;
   - it escalates judgment calls to Don with `owner:don`: moves, merges, audit retirements,
     the security suite beyond a stale reference, and anything touching more than 3 cases.
-    With `DELEGATE_IN_LOOP=1` his escalation delegate rules on those first (R19, below).
+    His escalation delegate rules on those first (R19, below).
 - **The escalation delegate** (R19): `agents/delegate/` (core + `rule`), run by
   `run-loop.sh`'s `delegate_pass` (dw: the `delegate:rule` queue) and `delegate_suite_pass`
   (harnest suite escalations, `delegate_suite_requests`) on `DELEGATE_MODEL` (Opus 5.5 by

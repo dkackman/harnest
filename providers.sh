@@ -1686,11 +1686,11 @@ issue_snapshot() {
 # owner's comment first lines that start <!-- harnest:, and three derived
 # ones: external-parked, overrule (an `overrule:` comment, R19) and
 # don-session <createdAt> (a comment from Don's own session, R19)), and
-# `delegate` {on, quiet_secs} from DELEGATE_IN_LOOP / DELEGATE_QUIET_HOURS,
-# which turns on classify.jq's delegate:rule queue.
+# `delegate` {on, quiet_secs} from DELEGATE_IN_LOOP (on unless 0) /
+# DELEGATE_QUIET_HOURS, which turns on classify.jq's delegate:rule queue.
 issue_snapshot_read() {
   local issues raw markers dg=false quiet=7200 qh="${DELEGATE_QUIET_HOURS:-2}"
-  [ "${DELEGATE_IN_LOOP:-0}" = 1 ] && dg=true
+  [ "${DELEGATE_IN_LOOP:-1}" = 1 ] && dg=true
   case "$qh" in ''|*[!0-9]*) ;; *) quiet=$((qh * 3600)) ;; esac
   issues="$(gh issue list --repo "$TICKET_REPO" --state open --limit 500 \
     --json number,title,labels,author,parent,blockedBy,subIssuesSummary 2>/dev/null)" || return 1

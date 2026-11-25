@@ -97,7 +97,7 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   lead to recheck its triggers. A parked `owner:don` issue is Don's, and the digest lists
   it under "Deferred".
 - **Don's escalation delegate** (R19, `docs/superpowers/specs/2026-11-25-escalation-delegate.md`;
-  on with `DELEGATE_IN_LOOP=1`). A live ask with `owner:don` (`needs-approval`, `plan-review`,
+  on by default (`DELEGATE_IN_LOOP=0` turns it off)). A live ask with `owner:don` (`needs-approval`, `plan-review`,
   `needs-info`) goes to `delegate:rule` instead of Don (`classify.jq`), and a harnest `suite`
   escalation to `delegate:suite`. The delegate rules at the default, amends and rules
   (`Delegate changed:`), or passes it through (`delegate:passed`, with a recommendation); it

@@ -1138,12 +1138,12 @@ delegate_record() {
 
 # delegate_suite_requests — the suite-change requests on this repo the curator
 # escalated to Don (owner:don + status:needs-approval) that the delegate rules
-# on for him (R19), only with DELEGATE_IN_LOOP=1, ascending. Not one another
+# on for him (R19), unless DELEGATE_IN_LOOP=0, ascending. Not one another
 # login filed, one already passed through to him (delegate:passed), one he
 # overruled (`overrule:`), or one his own session commented on within
 # DELEGATE_QUIET_HOURS. A `harness` change never: only suite requests.
 delegate_suite_requests() {
-  [ "${DELEGATE_IN_LOOP:-0}" = 1 ] || return 0
+  [ "${DELEGATE_IN_LOOP:-1}" = 1 ] || return 0
   local quiet=7200 qh="${DELEGATE_QUIET_HOURS:-2}"
   case "$qh" in ''|*[!0-9]*) ;; *) quiet=$((qh * 3600)) ;; esac
   gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite --label owner:don --label status:needs-approval \
