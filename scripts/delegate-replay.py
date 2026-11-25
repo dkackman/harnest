@@ -11,6 +11,16 @@
         folded into the plan before it; it is never picked. The pilot's 20 cases and their labels go in
         logs/delegate-replay/key.json by hand.
 
+    scripts/delegate-replay.py run [--models M,M] [--limit N]
+        Runs each case in key.json through each model (alternating, so a
+        stop leaves every model with the same cases): `claude -p` with the
+        delegate's core plus the replay instructions, the case as the
+        message, read-only tools in a detached tree of the case's repo as of
+        the ask, no MCP. Writes logs/delegate-replay/runs/<model>/<id>.json
+        and skips a run already there. Stops before the session that would
+        take the total past DELEGATE_REPLAY_BUDGET_USD (default 100),
+        counting the runs already on disk.
+
 SOURCE_DIR (the README's) names the dw clone whose origin/develop gives each
 case's dw commit.
 """
@@ -20,7 +30,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -61,13 +74,122 @@ def cases(args) -> int:
     return 0
 
 
+MODELS = ("claude-fable-5-2", "claude-opus-5-5")
+
+
+def _tree(repo: str, when: str, commit: str | None, work: Path) -> Path:
+    """A detached checkout of the case's repo as of the ask."""
+    if repo.endswith("diffusers-workflow"):
+        src = os.path.expanduser(os.environ.get("SOURCE_DIR") or "~/src/dkackman/dw-agent")
+        ref = commit or dr.develop_at(src, when)
+    else:
+        src = str(REPO)
+        ref = subprocess.run(
+            ["git", "-C", src, "rev-list", "-1", f"--before={when}", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
+    path = work / (Path(src).name + "-" + (ref or "head")[:12])
+    if not path.exists():
+        subprocess.run(["git", "-C", src, "worktree", "add", "-q", "--detach", str(path), ref or "HEAD"], check=True)
+    return path
+
+
+def _drop_tree(path: Path) -> None:
+    for src in (os.path.expanduser(os.environ.get("SOURCE_DIR") or "~/src/dkackman/dw-agent"), str(REPO)):
+        subprocess.run(["git", "-C", src, "worktree", "remove", "--force", str(path)], capture_output=True)
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _session(model: str, effort: str, system: Path, message: str, cwd: Path) -> dict:
+    p = subprocess.run(
+        [
+            "claude",
+            "-p",
+            message,
+            "--model",
+            model,
+            "--effort",
+            effort,
+            "--append-system-prompt-file",
+            str(system),
+            "--output-format",
+            "json",
+            "--permission-mode",
+            "dontAsk",
+            "--allowedTools",
+            "Read",
+            "Glob",
+            "Grep",
+            "--strict-mcp-config",
+        ],
+        cwd=str(cwd),
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=3600,
+    )
+    try:
+        out = json.loads(p.stdout)
+    except ValueError:
+        out = {"result": p.stdout, "is_error": True}
+    out["returncode"] = p.returncode
+    out["stderr"] = p.stderr[-2000:]
+    return out
+
+
+def run(args) -> int:
+    key = json.loads((OUT / "key.json").read_text())["cases"]
+    ids = list(key)[: args.limit] if args.limit else list(key)
+    models = [m for m in args.models.split(",") if m]
+    budget = float(os.environ.get("DELEGATE_REPLAY_BUDGET_USD") or 100)
+    effort = os.environ.get("DELEGATE_EFFORT") or "high"
+    spent, costs = 0.0, []
+    for m in models:
+        for f in (OUT / "runs" / m).glob("*.json"):
+            c = json.loads(f.read_text()).get("total_cost_usd") or 0.0
+            spent += c
+            costs.append(c)
+    core = (REPO / "agents" / "delegate" / "core.md").read_text()
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        system = work / "system.md"
+        system.write_text(core + "\n" + dr.REPLAY_INSTRUCTIONS)
+        for cid in ids:
+            case = json.loads((OUT / "cases" / f"{cid}.json").read_text())
+            tree = None
+            for m in models:
+                dest = OUT / "runs" / m / f"{cid}.json"
+                if dest.exists():
+                    continue
+                if dr.would_exceed(spent, costs, budget):
+                    print(f"stopping: ${spent:.2f} spent, the next session would pass ${budget:.0f}")
+                    return 0
+                tree = tree or _tree(case["repo"], case["asked_before"], case.get("dw_commit"), work)
+                out = _session(m, effort, system, dr.render_case(case), tree)
+                out["answer"] = dr.parse_answer(out.get("result") or "")
+                out["model"], out["case"], out["effort"] = m, cid, effort
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(json.dumps(out, indent=1))
+                c = out.get("total_cost_usd") or 0.0
+                spent += c
+                costs.append(c)
+                a = out["answer"] or {}
+                print(f"{cid} {m}: {a.get('outcome', '?')}/{a.get('verdict', '?')} ${c:.2f} (total ${spent:.2f})")
+            if tree:
+                _drop_tree(tree)
+    print(f"done: ${spent:.2f}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="delegate-replay.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("cases")
     c.add_argument("--since", default="2026-10-15")
+    r = sub.add_parser("run")
+    r.add_argument("--models", default=",".join(MODELS))
+    r.add_argument("--limit", type=int, default=0)
     args = ap.parse_args(argv)
-    return {"cases": cases}[args.cmd](args)
+    return {"cases": cases, "run": run}[args.cmd](args)
 
 
 if __name__ == "__main__":

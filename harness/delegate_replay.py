@@ -156,3 +156,73 @@ def develop_at(source_dir: str, when: str) -> str | None:
         text=True,
     )
     return p.stdout.strip() or None
+
+
+# -- the run ------------------------------------------------------------------
+
+# Appended to the delegate's core for a replay: the live session's actions
+# (rule.md) are replaced by one JSON answer, and nothing is written anywhere.
+REPLAY_INSTRUCTIONS = """
+# Session: replay (no actions)
+
+This is a replay of an ask Don has already answered. The issue below is
+exactly as it stood when he was asked; you don't see his answer. Decide as
+the core says, but do not run `gh`, post, label or edit anything. Your
+working directory is the repo as it was at that moment: read what the ask
+cites there with `Read`, `Glob` and `Grep`.
+
+End your reply with one JSON object and nothing after it:
+
+{"outcome": "rule" | "amend" | "pass",
+ "verdict": "default" | "amended" | "declined" | "deferred" | "decided",
+ "kinds": ["<kind>", ...],
+ "reason": "<one line: why this outcome>",
+ "ruling_text": "<the comment you would post, in the core's shape>"}
+
+`verdict` is what you rule, or for a pass-through what you recommend:
+`default` (the ask's default), `amended` (the default with a change),
+`declined` (don't build or close), `deferred` (park with triggers), `decided`
+(no default was offered and you pick an option).
+"""
+
+
+def render_case(case: dict) -> str:
+    """The case as the user message: the issue as it stood at the ask."""
+    parts = [
+        f"# {case['repo']}#{case['number']}: {case['title']}",
+        f"Labels when asked: {', '.join(case['labels']) or '(none)'}",
+        "",
+        "## Issue body",
+        case["body"],
+    ]
+    for c in case["comments"]:
+        parts += ["", f"## Comment ({c['createdAt']})", c["body"]]
+    return "\n".join(parts)
+
+
+def parse_answer(text: str) -> dict | None:
+    """The last JSON object in the reply, or None."""
+    end = text.rfind("}")
+    while end != -1:
+        start = text.rfind("{", 0, end)
+        while start != -1:
+            try:
+                obj = json.loads(text[start : end + 1])
+                if isinstance(obj, dict) and "outcome" in obj:
+                    return obj
+            except ValueError:
+                pass
+            start = text.rfind("{", 0, start)
+        end = text.rfind("}", 0, end)
+    return None
+
+
+# A ruling's cost before any is measured (the lead's p90 on Opus is $3.29).
+FIRST_GUESS_USD = 3.5
+
+
+def would_exceed(spent: float, costs: list[float], budget: float) -> bool:
+    """True when the next session, at the median cost so far, would take the
+    total past the budget."""
+    nxt = sorted(costs)[len(costs) // 2] if costs else FIRST_GUESS_USD
+    return spent + nxt > budget

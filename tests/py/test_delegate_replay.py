@@ -82,5 +82,24 @@ class CutTest(unittest.TestCase):
         self.assertEqual(dr.answer(ISSUE, 4)["first_line"], "Don's ruling: **hand back**.")
 
 
+class RunTest(unittest.TestCase):
+    def test_render_holds_the_ask_not_the_answer(self):
+        text = dr.render_case(dr.cut(ISSUE, 1, EVENTS, "dkackman/diffusers-workflow", None))
+        self.assertIn("**Decision for Don:** build it?", text)
+        self.assertIn("owner:don", text)
+        self.assertNotIn("approved at the defaults", text)
+
+    def test_parse_answer_takes_the_last_object(self):
+        reply = 'I read {"a": 1}.\n\n{"outcome": "pass", "verdict": "default", "kinds": ["taste"]}'
+        self.assertEqual(dr.parse_answer(reply)["outcome"], "pass")
+        self.assertIsNone(dr.parse_answer("no json here"))
+
+    def test_budget_stops_before_the_session_that_would_cross_it(self):
+        self.assertFalse(dr.would_exceed(0, [], 100))
+        self.assertTrue(dr.would_exceed(97.0, [], 100))
+        self.assertFalse(dr.would_exceed(97.0, [1.0, 2.0, 2.5], 100))
+        self.assertTrue(dr.would_exceed(98.5, [1.0, 2.0, 2.5], 100))
+
+
 if __name__ == "__main__":
     unittest.main()
