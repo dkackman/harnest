@@ -42,7 +42,10 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from harness import REPO  # noqa: E402
+from harness import (
+    REPO,  # noqa: E402
+    session,  # noqa: E402
+)
 from harness import delegate_replay as dr  # noqa: E402
 
 OUT = REPO / "logs" / "delegate-replay"
@@ -118,12 +121,29 @@ def _session(model: str, effort: str, system: Path, message: str, cwd: Path) -> 
             str(system),
             "--output-format",
             "json",
+            # The sibling drivers' fence: only these tools exist, no user
+            # settings, hooks or plugins, no MCP, and the release key and
+            # credential dirs unreadable. The case is issue text, which
+            # may hold a third party's comment.
+            "--tools",
+            "Read,Glob,Grep",
+            *session.ISOLATION_FLAGS,
             "--permission-mode",
             "dontAsk",
             "--allowedTools",
             "Read",
             "Glob",
             "Grep",
+            "--disallowedTools",
+            *session.RELEASE_KEY_RULES,
+            "Read(~/.ssh/**)",
+            "Read(~/.aws/**)",
+            "Read(~/.config/gh/**)",
+            "Bash",
+            "Write",
+            "Edit",
+            "WebFetch",
+            "WebSearch",
             "--strict-mcp-config",
         ],
         cwd=str(cwd),
