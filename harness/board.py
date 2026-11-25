@@ -29,7 +29,7 @@ BOARD_QUEUES = frozenset(PRIORITY) - {"curator", "tester:closures", "tester:task
 # to the first server the driver drives (lem's, while it drives lem), as
 # run-loop.sh's shared_passes_here has it. A stranded issue nobody claims is
 # that server's to unstrand too (stranded_here).
-SHARED = frozenset({"reviewer:arch", "reviewer:docs", "tester:spec", "tester:handoff"})
+SHARED = frozenset({"reviewer:arch", "reviewer:docs", "tester:spec", "tester:handoff", "delegate:rule"})
 
 # Design and decompose read a lead worktree at origin/develop and make no
 # claim, so an unclaimed one may run in any offering server's lead tree: it

@@ -443,6 +443,26 @@ REVIEWER_PERMISSION_FLAGS=(
 )
 REVIEWER_TOOLS="Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
 
+# Permission flags for the escalation delegate (roadmap R19, run-loop.sh
+# delegate_pass). It rules on one owner:don ask for Don: it reads the thread
+# and the dw tree at origin/develop (its cwd), posts one ruling comment
+# (staged with Write in /tmp, posted with --body-file, as the curator does)
+# and swaps the labels the ruling names. No dw MCP, no edits. The guard
+# (guard_settings delegate) lets it add status:plan-approved only after its
+# own ruling comment on that issue, never with a pass-through kind listed.
+DELEGATE_PERMISSION_FLAGS=(
+  --settings "$(guard_settings delegate)"
+  --permission-mode dontAsk
+  --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+  --allowedTools
+    "ToolSearch" "TodoWrite" "Read" "Glob" "Grep"
+    "Write(/tmp/**)" "Write(//tmp/**)"
+    "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
+    "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
+  --disallowedTools "${RELEASE_KEY_RULES[@]}" "Edit" "WebFetch" "WebSearch"
+)
+DELEGATE_TOOLS="Bash,Read,Write,Glob,Grep,ToolSearch,TodoWrite"
+
 # Permission flags for run-release.sh's review and notes sessions (R14
 # item 2). Read-only against the release candidate (its cwd, a detached
 # worktree), read-only git, `gh issue view`/`list` only - it files nothing:
@@ -1669,16 +1689,20 @@ issue_snapshot() {
 # `delegate` {on, quiet_secs} from DELEGATE_IN_LOOP / DELEGATE_QUIET_HOURS,
 # which turns on classify.jq's delegate:rule queue.
 issue_snapshot_read() {
-  local issues markers dg=false quiet=7200 qh="${DELEGATE_QUIET_HOURS:-2}"
+  local issues raw markers dg=false quiet=7200 qh="${DELEGATE_QUIET_HOURS:-2}"
   [ "${DELEGATE_IN_LOOP:-0}" = 1 ] && dg=true
   case "$qh" in ''|*[!0-9]*) ;; *) quiet=$((qh * 3600)) ;; esac
   issues="$(gh issue list --repo "$TICKET_REPO" --state open --limit 500 \
     --json number,title,labels,author,parent,blockedBy,subIssuesSummary 2>/dev/null)" || return 1
-  markers="$( { gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label feature --json number,comments \
+  # The gh reads first, on their own: a failed one fails the snapshot, so a
+  # marker that keeps an issue from the delegate (overrule, don-session) is
+  # never silently missing. Piped straight into jq, jq's status hid it.
+  raw="$( { gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label feature --json number,comments \
              && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label idea --json number,comments \
              && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --search "-author:$TICKET_OWNER" --json number,comments \
-             && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label owner:don --json number,comments; } 2>/dev/null \
-    | jq -s --arg me "$TICKET_OWNER" '[.[][] | {key: (.number | tostring), value:
+             && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label owner:don --json number,comments; } 2>/dev/null)" \
+    || return 1
+  markers="$(printf '%s\n' "$raw" | jq -s --arg me "$TICKET_OWNER" '[.[][] | {key: (.number | tostring), value:
         [.comments[] | select(.author.login == $me) | . as $c | .body
          | if startswith("Parked for human review: filed by @") then "<!-- harnest:external-parked -->"
            elif startswith("<!-- harnest:") then split("\n")[0]
@@ -2004,6 +2028,7 @@ role_prompt() {
     curator:review)     set -- core review ;;
     reviewer:docs)      set -- core docs ;;
     reviewer:arch)      set -- core arch ;;
+    delegate:rule)      set -- core rule ;;
     release:review)     set -- core review ;;
     release:notes)      set -- core notes ;;
     regression:whole)   set -- core run-cases sweep ;;

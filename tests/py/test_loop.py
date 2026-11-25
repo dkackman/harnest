@@ -178,6 +178,11 @@ class HelpersTest(unittest.TestCase):
         self.assertAlmostEqual(loop.cost_of(f.name), 1.75)
         self.assertIsNone(loop.cost_of("/nonexistent"))
 
+    def test_the_delegate_is_a_pass_with_a_tree_of_its_own(self):
+        self.assertEqual(loop.PASS["delegate:rule"], "delegate")
+        self.assertEqual(loop.TREE_FAMILY["delegate:rule"], "reviewer")
+        self.assertEqual(loop.label_of(Item("delegate:rule", 9, "lem")), "delegate:#9")
+
     def test_knob(self):
         os.environ["LOOP_FREE_SLOTS"] = "x"
         try:

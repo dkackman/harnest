@@ -53,6 +53,10 @@ class ItemsTest(unittest.TestCase):
         }
         self.assertEqual(board.items(rows), [Item("reviewer:docs", 8, "lem"), Item("tester:spec", 9, "lem")])
 
+    def test_a_delegate_ruling_runs_once_on_the_first_server(self):
+        rows = {"lem": [r(9, "delegate:rule")], "mini-ai": [r(9, "delegate:rule")]}
+        self.assertEqual(board.items(rows), [Item("delegate:rule", 9, "lem")])
+
     def test_unclaimed_design_and_decompose_get_candidates(self):
         rows = {
             "lem": [r(7, "lead:design"), r(6, "lead:decompose")],

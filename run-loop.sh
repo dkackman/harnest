@@ -194,6 +194,11 @@ CURATOR_REVIEW_BUDGET_USD="${CURATOR_REVIEW_BUDGET_USD:-3}"
 REVIEWER_MODEL="${REVIEWER_MODEL:-$TESTER_MODEL}"
 REVIEWER_PROVIDER="${REVIEWER_PROVIDER:-$TESTER_PROVIDER}"
 REVIEWER_BUDGET_USD="${REVIEWER_BUDGET_USD:-2}"
+# R19's escalation delegate: pinned by id, like the tester (the replay chose
+# Opus 5.5; docs/superpowers/specs/2026-11-25-escalation-delegate-pilot.md).
+DELEGATE_MODEL="${DELEGATE_MODEL:-claude-opus-5-5}"
+DELEGATE_PROVIDER="${DELEGATE_PROVIDER:-$TESTER_PROVIDER}"
+DELEGATE_BUDGET_USD="${DELEGATE_BUDGET_USD:-2}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 # Per-session spend caps (--max-budget-usd; 0 = uncapped) and the context
 # size at which a session auto-compacts instead of growing. Non-Anthropic
@@ -329,6 +334,7 @@ TRIAGE_EFFORT="${TRIAGE_EFFORT:-$TESTER_EFFORT}"
 LEAD_EFFORT="${LEAD_EFFORT:-$EFFORT}"
 CURATOR_EFFORT="${CURATOR_EFFORT:-$EFFORT}"
 REVIEWER_EFFORT="${REVIEWER_EFFORT:-$TESTER_EFFORT}"
+DELEGATE_EFFORT="${DELEGATE_EFFORT:-high}"
 
 # Reject a bad model/provider (or a fallback the role's provider can't serve)
 # before the first cycle rather than three minutes into it. This is the only
@@ -339,13 +345,14 @@ resolve_model_env "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" || exit 1
 resolve_model_env "$LEAD_PROVIDER" "$LEAD_MODEL" || exit 1
 resolve_model_env "$CURATOR_PROVIDER" "$CURATOR_MODEL" || exit 1
 resolve_model_env "$REVIEWER_PROVIDER" "$REVIEWER_MODEL" || exit 1
+resolve_model_env "$DELEGATE_PROVIDER" "$DELEGATE_MODEL" || exit 1
 validate_fallback_model "$IMPLEMENTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TESTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TRIAGE_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$LEAD_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$CURATOR_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$REVIEWER_PROVIDER" "$FALLBACK_MODEL" || exit 1
-for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT" "$LEAD_EFFORT" "$CURATOR_EFFORT" "$REVIEWER_EFFORT"; do
+for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT" "$LEAD_EFFORT" "$CURATOR_EFFORT" "$REVIEWER_EFFORT" "$DELEGATE_EFFORT"; do
   effort_flags anthropic "$e" >/dev/null || exit 1
 done
 
@@ -1075,6 +1082,31 @@ $(issue_context "$n")" \
   done < <(queue_issues "reviewer:$kind" | cut -f1,2)
 }
 
+# delegate_pass — one escalation-delegate session (roadmap R19) per owner:don
+# ask in the delegate:rule queue (lib/classify.jq; only with DELEGATE_IN_LOOP=1),
+# on the loop running the shared passes. It reads the merged tree at
+# origin/develop (PLUGIN_TREE: the driver gives each delegate item a tree of
+# its own, as it does a reviewer's) and rules, amends, or passes the ask
+# through to Don (agents/delegate/).
+delegate_pass() {
+  local n
+  shared_passes_here || { echo "[delegate] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
+  while IFS=$'\t' read -r n _; do
+    [ -n "$n" ] || continue
+    still_ready "$n" "delegate:rule" \
+      || { echo "[delegate:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
+    run_agent delegate "#$n" "$DELEGATE_BUDGET_USD" "$PLUGIN_TREE" "$DELEGATE_PROVIDER" "$DELEGATE_MODEL" "$DELEGATE_EFFORT" rule \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a RULING session for Don's ask on issue #$n only. Then stop.
+
+You are $DELEGATE_MODEL via $DELEGATE_PROVIDER. Your working directory is dw at origin/develop @ $(git -C "$PLUGIN_TREE" rev-parse --short HEAD 2>/dev/null || echo unknown).
+
+The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
+
+$(issue_context "$n")" \
+      "${ISOLATION_FLAGS[@]}" --tools "$DELEGATE_TOOLS" "${DELEGATE_PERMISSION_FLAGS[@]}"
+  done < <(queue_issues "delegate:rule" | cut -f1,2)
+}
+
 # curator_requests — the open suite-change requests on this repo the curator
 # rules on, ascending. Not filtered on status:needs-approval: Don hands an
 # escalation back by removing owner:don, and often clears the status too.
@@ -1316,8 +1348,9 @@ drain_left() {
   shared_passes_here || shared=0
   { [ "$LEAD_DESIGN_IN_LOOP" = 1 ] && [ "$DW_FROZEN" = 0 ]; } || design=0
   while IFS=$'\t' read -r n q parent _; do
-    case "$q" in implementer:*|tester:*|lead:*|reviewer:*|stranded|external) ;; *) continue ;; esac
+    case "$q" in implementer:*|tester:*|lead:*|reviewer:*|delegate:*|stranded|external) ;; *) continue ;; esac
     case "$q" in lead:design|lead:decompose) [ "$design" = 1 ] || continue ;; esac
+    case "$q" in delegate:*) [ "$shared" = 1 ] || continue ;; esac
     case "$q" in lead:design|lead:decompose|reviewer:*)
       [ "$shared" = 1 ] || claimed_here "$n" "$parent" || continue ;;
     esac

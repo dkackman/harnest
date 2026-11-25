@@ -71,6 +71,7 @@ PASS = {
     "tester:handoff": "tester",
     "reviewer:arch": "reviewer-arch",
     "reviewer:docs": "reviewer-docs",
+    "delegate:rule": "delegate",
     "curator": "curator",
     "tester:closures": "tester-closures",
     "tester:task": "tester-task",
@@ -100,8 +101,8 @@ def tree_family(q):
         return "tester-gpu"
     if q.startswith("tester:"):
         return "tester-free"
-    if q.startswith("reviewer:"):
-        return "reviewer"
+    if q.startswith("reviewer:") or q == "delegate:rule":
+        return "reviewer"  # a delegate reads a merged tree too, of its own
     return None
 
 
@@ -157,6 +158,7 @@ def role_model(role):
         "lead": os.environ.get("LEAD_MODEL") or tester,
         "reviewer": os.environ.get("REVIEWER_MODEL") or tester,
         "curator": os.environ.get("CURATOR_MODEL") or tester,
+        "delegate": os.environ.get("DELEGATE_MODEL") or "claude-opus-5-5",
         "regression": os.environ.get("REGRESSION_MODEL") or "claude-sonnet-5-5",
     }.get(role, "")
 

@@ -754,7 +754,10 @@ isn't found until you re-run the script.
 | `DELEGATE_IN_LOOP` | `0` | `1` turns on R19's escalation delegate: `lib/classify.jq` routes an `owner:don` ask (`needs-approval`, `plan-review`, `needs-info`) to `delegate:rule` instead of `don`, and the loop runs it. At `0` every ask stays Don's, as before |
 | `DELEGATE_QUIET_HOURS` | `2` | the delegate leaves an ask alone for this many hours after a comment from Don's own session on it ("in Don's session"): he may be working it |
 | `DELEGATE_REPLAY_BUDGET_USD` | `100` | R19's replay (`scripts/delegate-replay.py run`): stop before the session that would take the replay's total (every run on disk) past this many dollars |
-| `DELEGATE_EFFORT` | `high` | the delegate's `--effort` (the R19 replay now; the live role in phase 2) |
+| `DELEGATE_MODEL` | `claude-opus-5-5` | the escalation delegate's model (R19), by exact id: the replay picked Opus 5.5 over Fable 5.2 (`docs/superpowers/specs/2026-11-25-escalation-delegate-pilot.md`) |
+| `DELEGATE_PROVIDER` | `$TESTER_PROVIDER` | the delegate's provider |
+| `DELEGATE_BUDGET_USD` | `2` | per-session `--max-budget-usd` for a delegate ruling (the replay's median was $0.16, p90 $0.26) |
+| `DELEGATE_EFFORT` | `high` | the delegate's `--effort`, live and in the R19 replay |
 | `LOOP_POLL_SECS` | `60` | R17 loop driver: how often it reads the board and runs its housekeeping when nothing wakes it (a session's end, a deploy's end, a rate limit); `logs/loop/state.json` is rewritten at least this often. While nothing runs and only your decisions are left, housekeeping backs off, doubling up to `SLEEP_MAX_SECS`; the board is still read every poll, so a hand-back starts within one |
 | `LOOP_HEALTH_SECS` | `30` | R17 loop driver: how often it samples each server's `/api/health` for the card-busy figure in `state.json` |
 | `DEPLOY_RETRY_SECS` | `300` | R17 loop driver: after a failed deploy, how long before it tries once more; a second failure parks the waiting verifies and answers with you (`environment`). From the first failure the server's gpu slot stays held (nothing verifies against a head that can't be told) until a deploy succeeds or, after the park, the server passes its preflight again |

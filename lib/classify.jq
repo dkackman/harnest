@@ -96,12 +96,15 @@ def plan_drafted: any((.markers // [])[]; startswith("<!-- harnest:plan") and te
 # turns it on (DELEGATE_IN_LOOP=1 in issue_snapshot_read). Never a deferral
 # (parked or stabilization without a live ask), an ask already passed through
 # to Don (delegate:passed), one Don overruled (`overrule:`), or one his own
-# session commented on in the last quiet_secs: he may be working it.
+# session commented on in the last quiet_secs: he may be working it. Never
+# an issue another login filed: only Don hands one of those in, even once
+# the loop has parked it with him (park_external_issues).
 def don_session_times:
   [ (.markers // [])[] | capture("^<!-- harnest:don-session (?<t>[0-9TZ:.-]+) -->") | .t
     | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 ];
-def delegable($d; $now; $idle):
+def delegable($d; $now; $idle; $me):
   ($d.on == true)
+  and (.author.login == $me)
   and (has("status:needs-approval") or has("status:plan-review") or has("status:needs-info"))
   and (has("delegate:passed") | not)
   and ((has("parked") and $idle) | not)
@@ -150,7 +153,7 @@ def parent_phase:
     # not a deferral: a lead's failed park recheck (harnest#266).
     # run-digest.sh lane_of applies the same rule.
     ((has("status:needs-approval") or has("status:needs-info")) | not) as $idle
-    | if delegable($delegate; $now; $idle) then
+    | if delegable($delegate; $now; $idle; $me) then
         {queue: "delegate:rule", reason: "for the delegate: \($st | join(","))"}
       else
       {queue: "don", reason: ((if has("parked") and $idle then "deferred (parked): "

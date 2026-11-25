@@ -30,6 +30,7 @@ class NeedsTest(unittest.TestCase):
         self.assertEqual(needs(it("lead:design"), "lem"), {"leadtree:lem", "free"})
         self.assertEqual(needs(it("reviewer:arch", server=None), "lem"), {"free"})
         self.assertEqual(needs(it("curator", None, None), "lem"), {"free"})
+        self.assertEqual(needs(it("delegate:rule"), "lem"), {"free"})
         self.assertEqual(needs(it("regression", None), "lem"), {"gpu:lem"})
 
     def test_unknown_raises(self):
