@@ -29203,4 +29203,108 @@ the #1648 regression: each trigger drops the reply still out.
 cleanup: none (mocks only, nothing queued).
 metrics: none.
 
+### C-F1298 — a one-shot `dialogue-short` at a new frame count is priced from its own bucket's history, rescaled by frames
+pending: #1696
+source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
+Free when the history exists: `validate_workflow` only. Workspace `regression-complete`. Before #1696, a caller's `shots`
+list with a `num_frames` outside the template's default entries (124, 141) threw away its bucket's history. On
+2026-11-25 this workspace held a one-shot bucket of 10 runs at 9.2 min, yet 260 frames quoted the curated 8.7 `derived`.
+
+Definitions used by C-F1298 to C-F1301:
+- `<base>` = `{"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav"}`.
+- `<shot(F)>` = `{"name": "deflect", "num_frames": F, "prompt": "subject_definitions:\n<Subject 1> is the heavyset man in
+  <Picture 1>, mid 40s, shaved head, open gray flannel shirt over a dark t-shirt.\n\nsummary:\n[reference generation]
+  The man shrugs and says <d>Not my problem.</d>", "references": [{"reference_type": "variable:subject_reference_type",
+  "from_previous_result": "draw_character_b"}, {"reference_type": "variable:voice_reference_type", "from_file":
+  "variable:character_b_voice"}]}`. Put the prompt on one line, with the `\n` as written.
+- Every call is `validate_workflow(name="templates/minimax/dialogue-short", workspace="regression-complete",
+  arguments=<base> + {...})`. All other variables stay at their defaults (9 steps, turbo LoRA, `{int4}`, `sparse`,
+  960x544).
+
+Setup (only if step 1 below doesn't answer `basis: "observed"`): build the bucket with one run.
+`run_workflow(name="templates/minimax/dialogue-short", workspace="regression-complete", arguments=<base> + {"shots":
+[<shot(124)>]}, acknowledged_cost=<step 1's bound ack>, wait_seconds=55, note="C-F1298 one-shot bucket")`, then
+`wait_for_job` until it is done. It costs about 9 min of GPU. Delete its outputs (`delete_output(job_id=...)`), not the
+job: its history row is the fixture.
+
+1. `{"shots": [<shot(124)>]}`. Read `minutes` (call it X0), `basis` and `runs`.
+2. `{"shots": [<shot(175)>]}`.
+3. `{"shots": [<shot(260)>]}`.
+expected:
+- Step 1: `basis: "observed"`, `runs` ≥ 1. This is the bucket that steps 2 and 3 must use.
+- Steps 2 and 3: `basis: "derived"`. `scaled` names an observed figure, in minutes, and the frame count it was measured
+  at. For example, `scaled from the observed 9.2 min at 124 frames: num_frames`. Call these X and N. N is the bucket's
+  median summed frames, so it can differ from 124 if the bucket holds runs at other counts. X is the bucket's own
+  figure, within 0.1 of X0 when `runs` ≥ 3.
+- With `runs` ≥ 3: `minutes` is within 5% of X × M / N, where M is 175 or 260. On the 2026-11-25 history that is about
+  13.0 and 19.3. This assumes the cost row has no `fixed_minutes` (none on 2026-11-25). If it ever gains one, F, the
+  figure is F + (X − F) × M / N.
+- With `runs` 1 or 2: the thin bucket is tempered toward the curated figure scaled to the same frames, so `tempered: true`
+  is present with `curated_minutes`. `minutes` is within 5% of (runs/3) × X × M / N + (1 − runs/3) × `curated_minutes`.
+- In neither case is `minutes` the curated-scaled figure: 21.2 × M / 637, which is 5.8 at 175 and 8.7 at 260.
+It is a **finding** if step 2 or 3:
+- answers `basis: "observed"` (an unscaled figure at a frame count nobody ran);
+- answers a `scaled` that begins `scaled from the curated` while step 1 is `observed`;
+- lands outside the 5% band;
+- has a `scaled` that doesn't name both the observed minutes and N.
+cleanup: none if no setup run was needed. Otherwise only the setup job's outputs, removed in setup.
+metrics: none.
+
+### C-F1299 — the rescale is `low_confidence` only past a 2x reach from its runs, at either side of the edge
+pending: #1696
+source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
+Free. The same workspace, definitions and setup as C-F1298, run first. Read N from C-F1298 step 2's `scaled`. The
+values below assume N = 124. With another N, pick the valid counts (17k + 5, 124-345) nearest inside and outside 2N.
+1. `{"shots": [<shot(175)>]}`: ratio 1.41.
+2. `{"shots": [<shot(243)>]}`: ratio 1.96, just inside 2.0.
+3. `{"shots": [<shot(260)>]}`: ratio 2.10, just outside.
+4. `{"shots": [<shot(345)>]}`: ratio 2.78, the template's maximum.
+expected:
+- Steps 1 and 2: `basis: "derived"`, rescaled per C-F1298, with no `low_confidence` key, or `low_confidence: false`.
+- Steps 3 and 4: `basis: "derived"`, rescaled per C-F1298, with `low_confidence: true`. Step 4's `minutes` is still
+  within 5% of X × 345 / N. The flag marks the reach; it doesn't drop the figure. A `valid: false` from the VRAM
+  ceiling at 345 is not this case's finding: skip step 4 and say so.
+It is a **finding** if 1 or 2 is flagged, or if 3 or 4 is not. This case uses only today's defaults, so nothing else
+(LoRA, `weights_dtype`, `attention_backend`) moves to raise the flag on its own.
+The lower edge (ratio below 0.5) needs a bucket at 260 frames or more, which this workspace doesn't hold. It is not
+covered here.
+cleanup: none.
+metrics: none.
+
+### C-F1300 — a different bucket gets no borrowed history: other steps or another shot count price as before
+pending: #1696
+source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
+Free. The same workspace, definitions and setup as C-F1298, run first (X and N from its step 2).
+1. `{"num_inference_steps": 12, "shots": [<shot(175)>]}`. 12 steps is a bucket with no runs here.
+2. `{"shots": [<shot(124)>, <shot(124)>]}`. Two shots: another bucket, at frames the defaults hold.
+3. `{"shots": [<shot(175)>, <shot(124)>]}`. Two shots, summed 299 frames.
+expected:
+- Step 1: the curated-scaled quote, as before #1696. That is `basis: "derived"`, with `scaled` beginning
+  `scaled from the curated` and naming steps 12 vs 9, and `minutes` ≈ 21.2 × (12/9) × (175/637) ≈ 7.8 (7.8 on
+  2026-11-25). If this workspace has since run a 12-step one-shot bucket, step 1 instead rescales that bucket's own
+  figure (C-F1298's rule). Either way, X from the 9-step bucket must not appear in `scaled`.
+- Step 2 sets the reference. If it answers `basis: "observed"` (a two-shot bucket exists), step 3 is that figure
+  rescaled by 299/248 per C-F1298. Otherwise (`catalog`, or `derived` from the curated figure), step 3 is the
+  curated-scaled quote: `derived`, ≈ 21.2 × 299/637 ≈ 10.0 (10.0 on 2026-11-25).
+It is a **finding** if step 1 or 3's `scaled` names the one-shot 9-step bucket's observed X, or if its `minutes` is
+X × M / N for that bucket. That is history borrowed across a driver that differs.
+cleanup: none.
+metrics: none.
+
+### C-F1301 — a shot list at the defaults' frame counts still quotes `observed`, unscaled
+pending: #1696
+source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
+Free. The same workspace and definitions as C-F1298.
+1. `<base>` alone: the template's own five shots, 637 frames.
+2. `{"shots": [<shot(124)>]}`.
+expected:
+- Step 1: `basis: "observed"`, `runs` ≥ 1, and `minutes` equal to `get_workflow("templates/minimax/dialogue-short")`'s
+  `observed.cold_minutes` rounded to one decimal, when the listing's `observed` is this workspace's. It was 38.6 over
+  5 runs on 2026-11-25. There is no `scaled` key and no `low_confidence` from the rescale.
+- Step 2: `basis: "observed"`, the bucket's own figure, with no `scaled` key (9.2 over 10 runs on 2026-11-25).
+It is a **finding** if either answers `derived`, or carries a `scaled` naming frames. The rescale must apply only
+when a frame count moves off the bucket's runs, never to a quote that already matches them.
+cleanup: none.
+metrics: none.
+
 ## Performance
