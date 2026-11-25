@@ -12319,4 +12319,76 @@ cleanup: if step 2 created the request, `delete_request("m-f492-outfit-probe", w
 (with the `acknowledged_cost` it asks for).
 metrics: none.
 
+### M-F493 — `anchor: "keystone"` on the hybrid key is refused at validate and at run on a server without the flag, naming `DW_EXPERIMENTAL_HYBRID_WINDOWS`
+pending: #1572
+source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` from noise. **Free**: validate, plus one `run_workflow` that must be
+refused before queuing. Same server (flag off, the deployed default), workspace and fixture as M-F478.
+The legal `anchor` values are `"none"` (the default: S1-S3 behaviour) and `"keystone"` (plan v3, design 7 and Q9).
+Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow(workspace="regression-model-specific",
+inline_workflow=W_hyb)` with HW = (a) `{"anchor": "keystone"}`; (b) `{"anchor": "keystone", "switch_step": 0}`
+(S5's arm a+k); (c) `{"anchor": "keystone", "switch_step": 3, "handoff": "finished"}` (S5's arm b+k);
+(d) `{"anchor": "none"}`; (e) `{"anchor": "keystone"}` with NF 690 (past the 345-frame ceiling); (f) HW
+`"variable:hw"` with `variables: {"hw": {"anchor": "keystone"}}`. Then `run_workflow(workspace=
+"regression-model-specific", inline_workflow=W_hyb)` with (a)'s values and an `acknowledged_cost` built from the
+shape the refusal or `get_schema` documents (any fingerprint: the flag refusal must come first).
+expected:
+- (a)–(f): `valid: false`, an error at `gen` naming `experimental_hybrid_windows` and `DW_EXPERIMENTAL_HYBRID_WINDOWS`.
+- (a)–(f): no error names `anchor` as wrong: both values are legal, so the only refusal is the flag one (plus, for
+  (e), a possible 345-frame ceiling error beside it, as M-F478 (b); a ceiling error *alone* is a finding).
+- (b), (c): no `switch_step` or `handoff` error either: `anchor` combines with both phases' settings.
+- The `run_workflow`: refused with the flag named, and no job id returned. If a job is queued, `cancel_job` it at once
+  and record it as a finding.
+It is a **finding** if any of (a)–(f) validates clean, carries an `anchor` error, or is refused without the flag
+named.
+cleanup: cancel any job the run queued (none expected).
+metrics: none.
+
+### M-F494 — a bad `anchor` is refused at validate by its own rule, naming `none` and `keystone`, before the flag check
+pending: #1572
+source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
+M-F478; arm (j) also needs the `qa-cast/priya-portrait.jpg` fixture. Plan v3 S4: "anything else is refused at
+validate before the flag check, like `switch_step`".
+Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow` with HW = (a) `{"anchor": "bogus"}`;
+(b) `{"anchor": "Keystone"}` (wrong case); (c) `{"anchor": ""}`; (d) `{"anchor": "capstone"}` (the anchor plan v3
+cut, design 10); (e) `{"anchor": 1}`; (f) `{"anchor": true}`; (g) `{"anchor": ["keystone"]}`; (h)
+`{"anchor": null}`; (i) `{"anchor": "bogus", "switch_step": 9}` (two bad fields); (j) `{"anchor": "keystone"}` with
+`image: "asset:qa-cast/priya-portrait.jpg"` added to `gen`'s arguments (a user image beside the internal anchor).
+expected:
+- (a)–(g): `valid: false`, an error naming `experimental_hybrid_windows` and `anchor` and listing the allowed values
+  `none` and `keystone`, present whether or not the flag error also is.
+- (h): either refused like (a)–(g) or treated as the default `"none"` (then only the flag refusal); record which.
+  Clean is a finding.
+- (i): both the `anchor` and the `switch_step` error are reported (record if only one is; one at a time is not a
+  finding, a flag-only refusal is).
+- (j): `valid: false`. Setting an anchor does not open the hybrid key to a user image (plan v3: the key keeps
+  refusing `image`, `last_image`, `keyframes` and `references`; the anchor is internal). Record whether the refusal
+  names `image` as a conflict or only the flag.
+It is a **finding** if any of (a)–(g) is refused only by the flag (no `anchor` error), an `anchor` error does not
+name the allowed values, or any arm validates clean.
+cleanup: none.
+metrics: none.
+
+### M-F495 — with `anchor` in the build and absent from the key, the S1/S2 cases still hold and the field has no MCP surface
+pending: #1572
+source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` and windowed refine. **Free**: validate and reads, plus M-F480's one
+GPU step (or a cited same-commit green run of M-F356, as M-F480 allows). Same server (flag off) and workspace as
+M-F478.
+Steps:
+1. M-F478, M-F479, M-F480, M-F481, M-F483 and M-F484 as written (none of their HW values carries `anchor`).
+2. M-F482 as written, adding `anchor`, `keystone` and `capstone` to its search terms, read in the hybrid-windows
+   context: a hit for the sequence-anchor keystone (#1187) or another feature's own `anchor` is not this case's; one
+   that documents `anchor` as a field of `experimental_hybrid_windows`, or `"none"`/`"keystone"` as its values, is.
+expected:
+- Step 1: each case's own expected result, unchanged. No error or warning in any of them names `anchor` (the field
+  defaults to `"none"`, so its absence changes nothing the caller sees).
+- Step 2: M-F482's expected result, and no MCP text documents the hybrid key's `anchor` field (plan v3: no schema
+  entry, no MCP tool text, `SURFACE_BUDGET` untouched).
+It is a **finding** if any step-1 case's result moves, an `anchor` error or warning appears with the field absent,
+or the field is documented on the MCP surface before a promotion plan is approved.
+cleanup: as each cited case.
+metrics: none.
+
 ## Performance
