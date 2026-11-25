@@ -21,6 +21,11 @@
         take the total past DELEGATE_REPLAY_BUDGET_USD (default 100),
         counting the runs already on disk.
 
+    scripts/delegate-replay.py score [--out FILE]
+        Scores every model's runs against key.json (harness.delegate_replay
+        .score) and writes the tables and every disagreement, side by side,
+        to FILE (default logs/delegate-replay/score.md).
+
 SOURCE_DIR (the README's) names the dw clone whose origin/develop gives each
 case's dw commit.
 """
@@ -180,6 +185,48 @@ def run(args) -> int:
     return 0
 
 
+def score(args) -> int:
+    key = json.loads((OUT / "key.json").read_text())["cases"]
+    lines = [
+        "| Model | Answered | Verdict agreement | Pass-through recall | Pass-through precision |"
+        " Cost total | Median | p90 | 10-15 rulings/day |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    detail = []
+    for mdir in sorted((OUT / "runs").glob("*")):
+        runs = {f.stem: json.loads(f.read_text()) for f in mdir.glob("*.json")}
+        s = dr.score(key, runs)
+        med = s["cost_median"] or 0.0
+        lines.append(
+            f"| {mdir.name} | {s['answered']}/{s['runs']} | {s['verdict_agreement_pct']}% | "
+            f"{s['pass_recall_pct']}% | {s['pass_precision_pct']}% | ${s['cost_total']:.2f} | "
+            f"${med:.2f} | ${s['cost_p90'] or 0:.2f} | ${10 * med:.0f}-{15 * med:.0f} |"
+        )
+        detail += ["", f"## {mdir.name}", ""]
+        if s["unparsed"]:
+            detail.append(f"No JSON answer: {', '.join(s['unparsed'])}")
+        for title, ids in (
+            ("Missed pass-throughs (it ruled on a call that was Don's)", s["missed_passes"]),
+            ("Extra pass-throughs (it sent Don a call it could have made)", s["extra_passes"]),
+            ("Verdict differs from Don's", s["verdict_disagreements"]),
+        ):
+            detail += [f"### {title}: {len(ids)}", ""]
+            for cid in ids:
+                a, k = runs[cid]["answer"], key[cid]
+                detail += [
+                    f"- **{cid}** ({k['kind']}). Don: {k['verdict']}, {'his call' if k['pass_through_expected'] else 'delegable'}."
+                    f" {k['summary']}",
+                    f"  Delegate: {a.get('outcome')}/{a.get('verdict')}, kinds {', '.join(a.get('kinds') or [])}."
+                    f" {a.get('reason', '')}",
+                ]
+            detail.append("")
+    out = Path(args.out) if args.out else OUT / "score.md"
+    out.write_text("# R19 pilot replay: scores\n\n" + "\n".join(lines) + "\n" + "\n".join(detail) + "\n")
+    print("\n".join(lines))
+    print(f"written: {out}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="delegate-replay.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -188,8 +235,10 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("--models", default=",".join(MODELS))
     r.add_argument("--limit", type=int, default=0)
+    sc = sub.add_parser("score")
+    sc.add_argument("--out", default="")
     args = ap.parse_args(argv)
-    return {"cases": cases, "run": run}[args.cmd](args)
+    return {"cases": cases, "run": run, "score": score}[args.cmd](args)
 
 
 if __name__ == "__main__":

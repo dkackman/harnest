@@ -101,5 +101,38 @@ class RunTest(unittest.TestCase):
         self.assertTrue(dr.would_exceed(98.5, [1.0, 2.0, 2.5], 100))
 
 
+class ScoreTest(unittest.TestCase):
+    KEY = {
+        "a": {"verdict": "default", "pass_through_expected": True},
+        "b": {"verdict": "amended", "pass_through_expected": False},
+        "c": {"verdict": "default", "pass_through_expected": False},
+        "d": {"verdict": "declined", "pass_through_expected": True},
+    }
+
+    def ruled(self, outcome, verdict, cost=1.0):
+        return {"answer": {"outcome": outcome, "verdict": verdict}, "total_cost_usd": cost}
+
+    def test_score(self):
+        runs = {
+            "a": self.ruled("pass", "default"),
+            "b": self.ruled("amend", "amended", 2.0),
+            "c": self.ruled("pass", "default", 3.0),
+            "d": self.ruled("rule", "default", 4.0),
+            "e": self.ruled("rule", "default"),  # not in the key
+        }
+        s = dr.score(self.KEY, runs)
+        self.assertEqual(s["answered"], 4)
+        self.assertEqual(s["verdict_agreement_pct"], 75)
+        self.assertEqual(s["pass_recall_pct"], 50)
+        self.assertEqual(s["pass_precision_pct"], 50)
+        self.assertEqual(s["missed_passes"], ["d"])
+        self.assertEqual(s["extra_passes"], ["c"])
+        self.assertEqual(s["verdict_disagreements"], ["d"])
+
+    def test_an_unparsed_reply_is_listed_not_scored(self):
+        s = dr.score(self.KEY, {"a": {"answer": None, "total_cost_usd": 0.5}})
+        self.assertEqual((s["answered"], s["unparsed"], s["pass_recall_pct"]), (0, ["a"], None))
+
+
 if __name__ == "__main__":
     unittest.main()

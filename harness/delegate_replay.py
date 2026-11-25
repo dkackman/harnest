@@ -226,3 +226,42 @@ def would_exceed(spent: float, costs: list[float], budget: float) -> bool:
     total past the budget."""
     nxt = sorted(costs)[len(costs) // 2] if costs else FIRST_GUESS_USD
     return spent + nxt > budget
+
+
+# -- scoring --------------------------------------------------------------------
+
+
+def score(key: dict, runs: dict) -> dict:
+    """One model's runs ({case id: run json}) against the key's cases.
+
+    - verdict agreement: the delegate's verdict (ruled or recommended) equals
+      Don's, over the cases it answered;
+    - pass-through recall: of the asks that were Don's, the share it passed
+      through (each miss is a call it took from him);
+    - pass-through precision: of the asks it passed through, the share that
+      were Don's (the rest is queue it left him for nothing);
+    - cost: total, median and p90 per ruling.
+    """
+    answered = {cid: r["answer"] for cid, r in runs.items() if cid in key and r.get("answer")}
+    agree = [cid for cid, a in answered.items() if a.get("verdict") == key[cid]["verdict"]]
+    expected = {cid for cid in answered if key[cid]["pass_through_expected"]}
+    passed = {cid for cid, a in answered.items() if a.get("outcome") == "pass"}
+    costs = sorted(r.get("total_cost_usd") or 0.0 for r in runs.values())
+
+    def pct(n, d):
+        return round(100.0 * n / d) if d else None
+
+    return {
+        "runs": len(runs),
+        "answered": len(answered),
+        "unparsed": sorted(set(runs) - set(answered)),
+        "verdict_agreement_pct": pct(len(agree), len(answered)),
+        "pass_recall_pct": pct(len(expected & passed), len(expected)),
+        "pass_precision_pct": pct(len(expected & passed), len(passed)),
+        "missed_passes": sorted(expected - passed),
+        "extra_passes": sorted(passed - expected),
+        "verdict_disagreements": sorted(set(answered) - set(agree)),
+        "cost_total": round(sum(costs), 2),
+        "cost_median": round(costs[len(costs) // 2], 2) if costs else None,
+        "cost_p90": round(costs[min(len(costs) - 1, int(len(costs) * 0.9))], 2) if costs else None,
+    }
