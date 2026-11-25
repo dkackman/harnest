@@ -55,7 +55,11 @@ def is_delegated(body: str) -> bool:
 
 def rulings(issue: dict) -> list[int]:
     """Indexes of the comments that are Don's own rulings."""
-    return [k for k, c in enumerate(issue.get("comments") or []) if is_ruling(c.get("body")) and not is_delegated(c.get("body"))]
+    return [
+        k
+        for k, c in enumerate(issue.get("comments") or [])
+        if is_ruling(c.get("body")) and not is_delegated(c.get("body"))
+    ]
 
 
 def labels_at(events: list[dict], when: str) -> list[str]:
@@ -115,9 +119,18 @@ def _gh(args: list[str]) -> str:
 def closed_issues(repo: str, since: str) -> list[dict]:
     out = _gh(
         [
-            "issue", "list", "-R", repo, "--state", "closed", "--limit", "1000",
-            "--search", f"updated:>={since}",
-            "--json", "number,title,labels,body,comments",
+            "issue",
+            "list",
+            "-R",
+            repo,
+            "--state",
+            "closed",
+            "--limit",
+            "1000",
+            "--search",
+            f"updated:>={since}",
+            "--json",
+            "number,title,labels,body,comments",
         ]
     )
     return json.loads(out)
@@ -130,13 +143,16 @@ timelineItems(first:250,itemTypes:[LABELED_EVENT,UNLABELED_EVENT]){nodes{__typen
 
 def label_events(repo: str, number: int) -> list[dict]:
     owner, name = repo.split("/")
-    out = _gh(["api", "graphql", "-f", f"query={_TIMELINE}", "-F", f"o={owner}", "-F", f"n={name}", "-F", f"i={number}"])
+    out = _gh(
+        ["api", "graphql", "-f", f"query={_TIMELINE}", "-F", f"o={owner}", "-F", f"n={name}", "-F", f"i={number}"]
+    )
     return json.loads(out)["data"]["repository"]["issue"]["timelineItems"]["nodes"]
 
 
 def develop_at(source_dir: str, when: str) -> str | None:
     p = subprocess.run(
         ["git", "-C", source_dir, "rev-list", "-1", f"--before={when}", "origin/develop"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     return p.stdout.strip() or None

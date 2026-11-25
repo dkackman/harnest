@@ -37,15 +37,24 @@ class RulingTest(unittest.TestCase):
         self.assertEqual(dr.rulings(ISSUE), [1, 4])
 
     def test_ruling_shapes(self):
-        for body in ("**Don's ruling (2026-11-17): approve.**", "Ruling: option 2.", "Approved, all four items",
-                     "**Don approved (2026-11-16, in session):**", "**Ruling carried out:** x"):
+        for body in (
+            "**Don's ruling (2026-11-17): approve.**",
+            "Ruling: option 2.",
+            "Approved, all four items",
+            "**Don approved (2026-11-16, in session):**",
+            "**Ruling carried out:** x",
+        ):
             self.assertTrue(dr.is_ruling(body), body)
         for body in ("<!-- harnest:specced v1 -->", "Close-out of #1577", "**Decision for Don:** x"):
             self.assertFalse(dr.is_ruling(body), body)
 
     def test_overnight_delegation_is_not_dons(self):
         self.assertTrue(dr.is_delegated("Ruling (for Don, under his overnight delegation): the default."))
-        self.assertTrue(dr.is_delegated("**Ruling: retarget to lem (the default).** x\n\n— ruled by the lead session under Don's delegation"))
+        self.assertTrue(
+            dr.is_delegated(
+                "**Ruling: retarget to lem (the default).** x\n\n— ruled by the lead session under Don's delegation"
+            )
+        )
         self.assertFalse(dr.is_delegated("**Don's ruling: the default.** This ruling approves it."))
 
 
@@ -63,7 +72,10 @@ class CutTest(unittest.TestCase):
 
     def test_a_plan_that_already_holds_the_ruling_is_leaked(self):
         self.assertFalse(dr.cut(ISSUE, 1, EVENTS, "dkackman/diffusers-workflow", None)["leaked"])
-        folded = dict(ISSUE, comments=[c("**Q1** [scope] x. **Ruled: otherwise.**", "2026-11-01T10:00:00Z")] + ISSUE["comments"][1:])
+        folded = dict(
+            ISSUE,
+            comments=[c("**Q1** [scope] x. **Ruled: otherwise.**", "2026-11-01T10:00:00Z")] + ISSUE["comments"][1:],
+        )
         self.assertTrue(dr.cut(folded, 1, EVENTS, "dkackman/diffusers-workflow", None)["leaked"])
 
     def test_answer_is_the_ruling(self):

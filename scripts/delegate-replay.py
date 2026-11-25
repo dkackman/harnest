@@ -47,8 +47,14 @@ def cases(args) -> int:
                 case = dr.cut(issue, k, events, repo, commit)
                 (OUT / "cases" / f"{case['id']}.json").write_text(json.dumps(case, indent=1))
                 (OUT / "answers" / f"{case['id']}.json").write_text(json.dumps(dr.answer(issue, k), indent=1))
-                index.append((case["id"], when[:10], "leaked" if case["leaked"] else "clean",
-                              dr.first_line(issue["comments"][k]["body"])[:200]))
+                index.append(
+                    (
+                        case["id"],
+                        when[:10],
+                        "leaked" if case["leaked"] else "clean",
+                        dr.first_line(issue["comments"][k]["body"])[:200],
+                    )
+                )
     index.sort()
     (OUT / "index.tsv").write_text("".join("\t".join(row) + "\n" for row in index))
     print(f"{len(index)} cases in {OUT}")
