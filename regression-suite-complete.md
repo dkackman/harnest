@@ -30296,4 +30296,134 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1346 — #1707 on a clean tree: `npm test` passes and the arch-metrics ratchet exits 0 against the unchanged baseline
+pending: #1707
+source: tester, spec for #1707 from #1690's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Stage A has no MCP or browser surface. The plan (Q1) has the tester run these on a scratch tree from
+`ui/` at `develop` after the merge, but a tester never runs commands in, or reads, the `diffusers-workflow` checkout.
+So the tester checks the record: the stage's hand-off on #1707 (`gh issue view 1707 --repo dkackman/diffusers-workflow
+--comments`) must quote each command below with its exit code and the lines named, at the merged `develop` commit,
+and the tester adds `docs-review` so a source reader re-runs them. Every #1690 case below (C-F1347 to C-F1351) works
+the same way: the hand-off quotes the run, and the docs reviewer re-runs it.
+The commands, from `ui/` on a clean scratch tree at the merge commit:
+- `npm test`
+- `npm run metrics -- --check ../docs/stabilization/ui/baseline.json`
+expected:
+- `npm test` exits 0, and its output lists `freshness.test.ts`, `arch-metrics.test.ts` and `design-rules.test.ts`
+  as passing.
+- The `--check` run exits 0, and the hand-off quotes the `unguarded_mutations` value it printed. A rise in that value
+  compared with the parent commit is a **finding** unless the same stage fixed the missed write (plan fix 1).
+- `docs/stabilization/ui/baseline.json` is not edited by the stage. A raised `unguarded_mutations` (or any other
+  raised key) in it is a **finding**: the plan says the baseline is never raised.
+- A hand-off that claims these passed without the quoted commands and exit codes is a **finding** (no record).
+cleanup: discard the scratch tree.
+metrics: none.
+
+### C-F1347 — an exported class whose method calls an `api` write now counts as an unguarded mutation; a class that only reads does not
+pending: #1707
+source: tester, spec for #1707 from #1690's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1346. Setup on a scratch tree at the merge commit, from `ui/`:
+read the baseline `unguarded_mutations` value N from `npm run metrics -- --check ../docs/stabilization/ui/baseline.json`.
+1. Add a new plain `.ts` module under `src/lib` with `export class Probe { save() { return api.<write>(...) } }`, using
+   a write function the existing `unguarded_mutations` rule already counts when called from a plain exported function.
+   Call `new Probe().save()` from a component, with no guard (written the way an existing counted unguarded write is).
+   Run `--check`.
+2. Revert 1. Add the same module, but `save()` calls only an `api` read. Use it the same way. Run `--check`.
+3. Revert 2. Add 1's class, but don't use it from any component. Run `--check`.
+expected:
+- 1 exits 1 and prints `unguarded_mutations: N -> N+1`. Exit 0 is a **finding**: `declared` still skips classes.
+- 2 and 3 exit 0 with `unguarded_mutations` still N. A rise in 2 is a **finding**: a read counted as a write.
+- The stage adds a vitest case of its own (in `ui/scripts/arch-metrics.test.ts`) in which a module with an exported
+  class whose method calls `api.<write>` is counted in `writingExports`. A missing test is a **finding**.
+- The exported classes that exist today (`apiErrors.ts`, `request/fakeLedger.ts`, `workflow/runForm.ts`) leave
+  `unguarded_mutations` at its pre-stage value on the clean tree (C-F1346). If it rose, the stage fixed the write;
+  a rise covered by a raised baseline is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1348 — a `<script module>` read is seen by the freshness rule, in a page with or without an instance script
+pending: #1707
+source: tester, spec for #1707 from #1690's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1346. Setup on a scratch tree at the merge commit, from `ui/`.
+Pick a page (a route component in the freshness table) that has an instance `<script>` and declares no read of the
+helper used below. Pick a `.ts` helper the freshness table already treats as reading through `api`.
+1. Add `<script module>import { <helper> } from '<relative path>';</script>` to that page and call the helper from the
+   module script. Run `npm test`.
+2. Revert 1. Do the same, but the module script makes a direct `api` read instead of importing a helper. Run `npm test`.
+3. Revert 2. In a page or component that has **only** a `<script module>` block (no instance script; make one if
+   none exists), import and call the same reading helper. Run `npm test`.
+4. Revert 3. Repeat 1, then also declare that read for the page wherever the freshness table declares a page's reads.
+   Run `npm test`.
+expected:
+- 1, 2 and 3 fail in `freshness.test.ts`, and the failure names the page (or component) edited. A pass is a
+  **finding**: the module script is still invisible.
+- 3 fails by naming the file, not by a crash or a `TypeError` over a missing instance script. A crash is a
+  **finding**.
+- 1's import is also reported by `strayHelperReads` (the stray-helper check names it), if the page is not a place the
+  helper is allowed. Silence from that check is a **finding**.
+- 4 passes: a read declared once covers the module script's read. Asking for it twice is a **finding**.
+- The stage adds a vitest case in which a component whose `<script module>` imports a reading helper is seen by
+  `read` and by `strayHelperReads`. A missing test is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1349 — `readingExports` ignores a property name, an object key and a shadowing local, and still follows a real call through a local
+pending: #1707
+source: tester, spec for #1707 from #1690's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Record and docs-review route as in C-F1346. Setup on a scratch tree at the merge commit, from `ui/`.
+Pick a top-level reading helper `R` (one `readingExports` marks today) and a non-reading exported helper `H` in a
+`.ts` module that a page uses without declaring `R`'s read. Make each edit to `H` alone, run `npm test`, then revert:
+1. `H` touches `obj.R` (property access on some other object).
+2. `H` builds `{ R: 1 }` (a property-assignment key).
+3. `H` takes a parameter named `R` and calls it.
+4. `H` declares `const R = ...` (and, separately, `let R` and `function R() {}`) in its own body and uses it.
+5. Inside a nested block in `H`, `{ const R = () => 0; R(); }`.
+6. `H` calls the real `R` through a local alias: `const f = R; f();`.
+7. `H` calls the real `R` directly: `R()`.
+expected:
+- 1 to 5 pass: `H` is not marked as reading, so the page is not asked to declare `R`'s read. A failure asking for
+  it is a **finding**: the text match survives.
+- 6 and 7 fail in `freshness.test.ts`, naming the page that uses `H`: a real use of `R` is still followed. A pass is
+  a **finding** (the fix made the rule permissive).
+- The stage adds vitest cases for the property-access and shadowing-parameter forms, and for a real call through a
+  local. A missing one is a **finding**.
+cleanup: revert the probe edits and discard the scratch tree.
+metrics: none.
+
+### C-F1350 — #1707 removes nothing the freshness rule demands: no table entry, exception or declared read is dropped
+pending: #1707
+source: tester, spec for #1707 from #1690's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Docs review: the diff of the stage's merge against its parent, for `ui/src/lib/freshness.test.ts` (the
+freshness table, its exceptions) and every page's declared reads.
+expected:
+- No freshness-table entry, exception, or page's declared read is removed or narrowed. Any removal is a **finding**
+  unless the stage stopped and handed back to `owner:lead` as a `loosen` ask naming each entry and why it moved
+  (the ruling's gate), and the removal did not land in this stage.
+- An entry the stage added (a real read the text match hid) is named in the hand-off with the page and the read. An
+  added entry the hand-off doesn't name is a **finding**.
+- The four complex functions in `freshness.test.ts` (`freshnessOf`, `declarations`, `readingLocals`,
+  `helperCalled`) are not split or rewritten beyond what fixes 2 and 3 need (Q2).
+cleanup: none.
+metrics: none.
+
+### C-F1351 — #1707 ships the comments and the docs line, adds no shared analyser module, and changes no served surface
+pending: #1707
+source: tester, spec for #1707 from #1690's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Part docs review (as C-F1350), part over MCP and the web UI.
+Docs review:
+- The comment near `writingExports` in `ui/scripts/arch-metrics.mjs` and the header of `freshness.test.ts` each gain
+  one line: the two declaration walkers must handle the same statement kinds, naming the other file's function.
+- ARCHITECTURE.md's freshness row says both Svelte script blocks are read.
+- No new module (`ui/scripts/analysis.mjs` or any shared analyser) is added, and the stage's diff touches only
+  `ui/scripts/arch-metrics.mjs`, `ui/scripts/arch-metrics.test.ts`, `ui/src/lib/freshness.test.ts` and the docs line,
+  plus any source file fix 1 had to fix (named in the hand-off). Any other file is a **finding**.
+Over MCP and the UI (the tester runs these):
+- `get_server_info()` answers, and the commit it reports contains the stage's merge.
+- `ui-check` with `[{"step":"goto","path":"/"},{"step":"wait_text","regex":".+","timeout_ms":15000},
+  {"step":"goto","path":"/gallery"},{"step":"wait_text","regex":".+","timeout_ms":15000}]` reports every step `ok`
+  and no `page_errors`.
+expected: as listed. A changed tool, a page error, or a file outside the list is a **finding**.
+cleanup: none.
+metrics: none.
+
 ## Performance
