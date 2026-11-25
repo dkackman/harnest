@@ -12391,4 +12391,124 @@ or the field is documented on the MCP surface before a promotion plan is approve
 cleanup: as each cited case.
 metrics: none.
 
+### M-F496 — `templates/qwen/transparent` is an image template on the base Qwen-Image-2.1 that says it makes a transparent PNG
+pending: #1709
+source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `Qwen/Qwen-Image-2.1` (the base, `QwenImage21Pipeline`), not `Qwen/Qwen-Image-2.1-Turbo`.
+**Free**: reads only. Workspace `regression-model-specific`.
+Steps:
+1. `list_workflows(shape="image")`.
+2. `get_workflow("templates/qwen/transparent")` (full form).
+3. `get_workflow("templates/qwen/transparent", variables_only=true)`.
+expected:
+- Step 1: an entry named `templates/qwen/transparent` with `shape` `image`. Its `summary` says the result is a
+  transparent (or RGBA / alpha) PNG: at least one of "transparent", "transparency", "RGBA" or "alpha", and "PNG".
+  Its `traits` do not include `needs-input-media` or `image-conditioned` (it is text-to-image).
+- Step 2:
+  - every pipeline step loads `model_name` `Qwen/Qwen-Image-2.1`; none names `Qwen-Image-2.1-Turbo`;
+  - the step whose output is the deliverable has `result.content_type` `image/png`;
+  - `subject` is a declared variable;
+  - `width` and `height` are variables, and `constraints` (or `variable_constraints`) gives each a modulus of 32;
+  - the description states the Qwen Research licence is non-commercial, and that a jpeg result flattens (loses)
+    the alpha channel.
+- Step 3: `width` 1024, `height` 1024, and the step count defaults to 40 (a `num_inference_steps` variable at 40,
+  or a fixed `num_inference_steps: 40` on the step, read in step 2). `subject` has a non-null default, since
+  plan v2 says the template validates clean at its defaults (if `subject` is `required: true` instead, record it;
+  M-F497's step 1 then decides).
+It is a **finding** if the entry is missing from `shape="image"`, the summary doesn't say transparent/RGBA PNG,
+the model is anything but the base, the result is not `image/png`, the defaults differ from 1024×1024 at 40
+steps, or the description omits the non-commercial licence or the jpeg-flattens note.
+cleanup: none.
+metrics: none.
+
+### M-F497 — `templates/qwen/transparent` validates clean at its defaults and refuses an off-grid width or height, for free
+pending: #1709
+source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `Qwen/Qwen-Image-2.1` (base). **Free**: validate only; nothing is run. Workspace
+`regression-model-specific` (pass `workspace=` on every call).
+Steps: `validate_workflow(name="templates/qwen/transparent", arguments=A)` with A =
+(a) none (omit `arguments`); (b) `{"subject": "a red apple with a green leaf"}`; (c) `{"width": 1000}`;
+(d) `{"height": 1000}`; (e) `{"width": 1040, "height": 1024}` (16 off the grid); (f) `{"width": 1056, "height": 800}`
+(both on the grid, not square); (g) `{"width": 1024, "height": 1024, "subject": "a glass bottle"}`;
+(h) `{"subject": ""}`.
+expected:
+- (a), (b), (f), (g): `valid: true`, no error, and a `plan` whose `estimate` is present (any `basis`, `unknown`
+  allowed: the template may land with no measured `cost`). `downloads_required` names nothing outside
+  `Qwen/Qwen-Image-2.1`; in particular no `Qwen-Image-2.1-Turbo` repo (the plan takes no new download). Whether
+  the base itself is listed depends on the server's cache: record it.
+- (c), (d), (e): `valid: false`, with an error at `arguments.width` (c, e) or `arguments.height` (d) naming the
+  multiple of 32. It is refused, not a warning that the value was rounded: the base entry refuses off-grid with
+  no snap, and the template's constraint is the same rule.
+- (h): record whether an empty `subject` is refused or validates clean. Either is acceptable (the plan names no
+  rule for it); a server error or a crash is a finding.
+It is a **finding** if (a) is not clean (a required argument with no default included), any of (c)–(e)
+validates clean or only warns, any on-grid arm is refused, or a Turbo download is required.
+cleanup: none.
+metrics: none.
+
+### M-F498 — `templates/qwen/transparent` builds its prompt with the vendor RGBA wrapper around `subject`, with no new syntax
+pending: #1709
+source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `Qwen/Qwen-Image-2.1` (base). **Free**: reads and validate only. Workspace
+`regression-model-specific`.
+The vendor wrapper (plan v2, Design): `This is an RGBA image with transparency. {subject}. The image has alpha
+channel and the background is transparent.`
+Steps:
+1. `get_workflow("templates/qwen/transparent")`. Find the `prompt` argument of the pipeline step. If it is a
+   `prompt:<name>` reference, `get_prompt(<name>)` and read that prompt's text; if it names a previous step's
+   result, read that step's arguments the same way, until you reach the text that holds the wrapper.
+2. `validate_workflow(name="templates/qwen/transparent", arguments={"subject": "a red apple with a green leaf"})`.
+expected:
+- Step 1: the text that becomes the prompt contains, in this order: `This is an RGBA image with transparency.`,
+  then a substitution of `subject` (the `variable:subject` reference or the stored prompt's `subject`
+  placeholder), then `The image has alpha channel and the background is transparent.`. Both halves are present
+  word for word (case and punctuation as above); `subject` appears once between them.
+- The composition uses only syntax the server already documents (`get_guide("workflows")`'s References section:
+  `variable:`, `prompt:`, `previous_result:`); no other reference form appears.
+- Step 2: `valid: true` with no unknown-reference or unknown-syntax error or warning.
+It is a **finding** if either half of the wrapper is missing or reworded, `subject` is outside it or repeated, or
+the template relies on a reference form the References section does not describe. The resolved prompt of a real
+run is M-F499's.
+cleanup: none.
+metrics: none.
+
+### M-F499 — one seeded run of `templates/qwen/transparent` gives a 1024×1024 RGBA PNG of the subject on a transparent ground, with the wrapper in the recorded prompt
+pending: #1709
+source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `Qwen/Qwen-Image-2.1` (base, `QwenImage21Pipeline`, ~32 GB). **Spends GPU time**: one image at
+1024×1024 × 40 steps. Run it only on a server where the base is already cached: if M-F497's `validate_workflow`
+lists `Qwen/Qwen-Image-2.1` in `downloads_required`, record "base not cached, skipped" and do not take the
+download in this case (plan v2: the one real run goes where the base is cached, on lem). Workspace
+`regression-model-specific`.
+Steps:
+1. `validate_workflow(name="templates/qwen/transparent", arguments=A, workspace="regression-model-specific")` with
+   A = `{"subject": "a red apple with a green leaf", "seed": 1709}` (if the template declares no `seed` variable,
+   drop it and record that the run is unseeded; then assert only the structural rows below, not the picture).
+2. `run_workflow` with the same A, `acknowledged_cost` bound from step 1's plan (`minutes: null` on basis
+   `unknown`), a `note` "M-F499 transparent apple", `wait_seconds=55`; follow `still_running: true` with
+   `wait_for_job`.
+3. `get_job`; then `get_gallery_metadata(<the png output>, include_workflow=true)`.
+4. `get_output_image(<the png>)`, then the four 96×96 corner crops (`crop` `[0,0,96,96]`, `[928,0,96,96]`,
+   `[0,928,96,96]`, `[928,928,96,96]`) and one centre crop `[384,384,256,256]`.
+5. If step 3's `media` names no channel count, mode or alpha field: `download_output` the png and run `file` on it.
+expected:
+- Step 2/3: the job `succeeded`, with one output whose name ends `.png`; `job.warnings` carries no
+  jpeg-flatten or alpha-dropped warning.
+- Step 3: `media.width` 1024 and `media.height` 1024. The image has an alpha channel: `media` reports it (mode
+  `RGBA`, 4 channels, or an alpha flag), or step 5's `file` says `RGBA` (e.g. `8-bit/color RGBA`). An RGB or
+  palette PNG with no alpha is a finding.
+- Step 3, embedded metadata: the recorded prompt (the `prompt` argument as run) is exactly
+  `This is an RGBA image with transparency. a red apple with a green leaf. The image has alpha channel and the
+  background is transparent.`, allowing only whitespace differences; the model is `Qwen/Qwen-Image-2.1`. A prompt
+  that is the bare subject, or that holds the wrapper twice, is a finding. (`get_job_workflow(job_id)` is the
+  fallback if the PNG carries no embedded workflow.)
+- Step 4, seeded run only: the full view shows one red apple with a green leaf and nothing else (no scene, table
+  or backdrop). The corner crops show no painted background: transparent, or the flat colour the viewer renders
+  transparency as (record which). The centre crop shows the apple. A fully opaque scene behind the apple is a
+  finding even if the PNG carries an alpha channel.
+It is a **finding** if the job fails, the output is not a 1024×1024 PNG with alpha, the recorded prompt lacks the
+wrapper, or (seeded) the background is painted rather than transparent.
+cleanup: `delete_output(job_id=<id>)`, and delete step 5's downloaded copy.
+metrics: none.
+
 ## Performance
