@@ -29145,4 +29145,22 @@ expected:
 cleanup: cancel the second queued job, let the rest finish, and `delete_output(job_id=...)` each finished run.
 metrics: none.
 
+### C-F1295 — a file name with `..` inside it is served; a `..` path segment is still refused
+source: tester, verified in #1629 (claude-opus-5-5 via anthropic)
+CPU only, seconds. Workspace `regression-complete`. Need any short video asset or earlier video output (call it
+`<clip>`). Run an inline `rc1295dotted`: one `trim_video` step with `video: <clip>`, `start_frame: 0`, `num_frames: 24`,
+and `result: {content_type: "video/mp4", file_base_name: "take..2"}`. Validate first and bind `acknowledged_cost`. Then
+call `list_gallery(folder="rc1295dotted", media=true)` and `get_gallery_metadata` on the file it lists (`<path>`, of
+the form `rc1295dotted/<run id>/take..2-....mp4`). Then call `get_gallery_metadata` on each of
+`rc1295dotted/<run id>/../<run id>/<file>`, `../default/outputs/<path>`, `..`, and `<path>` with every `/` replaced by
+a backslash and a `\..\` segment inserted after the folder.
+expected:
+- The run writes `take..2-....mp4`. `list_gallery(media=true)` lists it with a `duration_seconds`, and
+  `get_gallery_metadata` on it returns `fps`, `frame_count` and `duration_seconds`. A "disallowed pattern" refusal or a
+  missing media field for this file is the #1629 regression: `..` inside a name is not traversal.
+- Each of the four `..`-segment names is refused with "path contains a disallowed pattern". Any of them answering with
+  metadata, or with a server path, is a **finding** (a boundary escape: file it as an advisory, not an issue).
+cleanup: `delete_output(job_id=...)` for the run.
+metrics: none.
+
 ## Performance
