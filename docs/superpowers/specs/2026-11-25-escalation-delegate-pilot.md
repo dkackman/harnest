@@ -95,7 +95,7 @@ only he had, an operator action on a server.
 
 | Opus 5.5, 103 clean cases | v2 prompt | v3 prompt |
 |---|---|---|
-| Don's calls passed through (35) | 79% (8 missed) | **89% (4 missed)** |
+| Don's calls passed through (38) | 79% (8 missed) | **89% (4 missed)** |
 | Of what it passed, Don's call | 68% (14 extra) | 62% (21 extra) |
 | Ruled itself | 51 | 44 |
 | Cost, total / per ruling | $18.11 / $0.16 | $17.30 / $0.16 |
@@ -138,9 +138,8 @@ A single replay can't separate a prompt change from noise at this size.
 ## What this means for the queue
 
 On these 103 asks the v3 delegate would rule on 48 and send Don 55. Of those 55:
-- 31 were his calls;
-- 21 he would have approved as recommended;
-- 3 were left over from before the fixes.
+- 34 were his calls;
+- 21 he would have approved as recommended.
 
 So about half the queue goes, and what remains is mostly his. Of the 48 it took:
 - 4 were his: one real miss (#1325-18), one safe (#1260), two arguable;
