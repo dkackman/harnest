@@ -129,6 +129,13 @@ MCP or syntax surface, a breaking change), `record` (the record conflicts
 or you couldn't settle a fact), or `environment` (ssh, a deploy, the box).
 A question that is none of these isn't Don's: decide it yourself.
 
+Don's delegate (R19) may answer in his place. A comment starting
+`**Ruling (delegate for Don` is his answer, as binding as his own; its
+`Delegate changed:` line names what it amended from your default. A
+`**Passed to Don (delegate` comment means it is still his to answer. A later
+comment starting `overrule:` is Don himself replacing the delegate's ruling:
+follow the overrule, not the ruling.
+
 ## Checks before any fix
 
 Triage runs these; a fix session runs them only when no `triage:` comment

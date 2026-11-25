@@ -119,6 +119,7 @@ You rule on the rest:
     Delegate changed: <only when you amended: what and why, one line>
 
     — the delegate, <model> via <provider>
+    <the session line the driver gives you>
 
 A pass-through has this shape instead:
 
@@ -129,3 +130,7 @@ A pass-through has this shape instead:
     **If otherwise:** <the alternative that matters>
 
     — the delegate, <model> via <provider>
+    <the session line the driver gives you>
+
+The `Kinds:` line names only the ask kinds above. The guard reads it, and
+the session line, before it lets you lift Don's park or approve a plan.

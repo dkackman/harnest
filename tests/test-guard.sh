@@ -1436,29 +1436,61 @@ uirow 0 Write "/tmp/dw-ui-guard-other-$$.json"
 rm -f "$uspec" "/tmp/dw-ui-guard-link-$$.json"
 
 # --- the escalation delegate (R19): it rules on one issue, lifts Don's park
-# and approves a plan only right after its own ruling on that issue.
+# and approves a plan only right after its own ruling on that issue, which
+# carries this session's token (HARNEST_DELEGATE_NONCE).
 # #21: a fresh ruling; #22: a fresh pass-through; #23: an hour-old ruling;
-# #24: a fresh ruling listing a taste question; #25: gh fails.
+# #24: a fresh ruling listing a taste question; #25: gh fails; #26: another
+# session's token; #27: posted by someone else; #28: no Kinds line; #29: an
+# unknown kind.
 now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 old="$(date -u -r $(( $(date +%s) - 3600 )) +%Y-%m-%dT%H:%M:%SZ)"
+tok=0123456789abcdef0123456789abcdef
+mk() { # mk <when> <author> <body>: the --jq answer for the newest comment
+  jq -cn --arg t "$1" --arg a "$2" --arg b "$3" '{createdAt: $t, author: $a, body: $b}'
+}
+sl="<!-- harnest:delegate-session $tok -->"
+c21="$(mk "$now" dkackman "**Ruling (delegate for Don, x): approved.**
+Kinds: scope, none
+
+$sl")"
+c22="$(mk "$now" dkackman "**Passed to Don (delegate, x): taste.**
+Kinds: taste
+$sl")"
+c23="$(mk "$old" dkackman "**Ruling (delegate for Don, x): approved.**
+Kinds: scope
+$sl")"
+c24="$(mk "$now" dkackman "**Ruling (delegate for Don, x): approved.**
+Kinds: scope, \`taste\`
+$sl")"
+c26="$(mk "$now" dkackman "**Ruling (delegate for Don, x): approved.**
+Kinds: scope
+<!-- harnest:delegate-session ffffffffffffffffffffffffffffffff -->")"
+c27="$(mk "$now" someone-else "**Ruling (delegate for Don, x): approved.**
+Kinds: scope
+$sl")"
+c28="$(mk "$now" dkackman "**Ruling (delegate for Don, x): approved.**
+$sl")"
+c29="$(mk "$now" dkackman "**Ruling (delegate for Don, x): approved.**
+Kinds: scope, whatever
+$sl")"
+for i in 21 22 23 24 26 27 28 29; do v="c$i"; printf '%s' "${!v}" > "$T/c$i.json"; done
 stub_gh 'case "$*" in
-  *"view 21"*) printf "%s" "{\"createdAt\":\"'"$now"'\",\"body\":\"**Ruling (delegate for Don, x): approved.**\\nKinds: scope, none\"}" ;;
-  *"view 22"*) printf "%s" "{\"createdAt\":\"'"$now"'\",\"body\":\"**Passed to Don (delegate, x): taste.**\\nKinds: taste\"}" ;;
-  *"view 23"*) printf "%s" "{\"createdAt\":\"'"$old"'\",\"body\":\"**Ruling (delegate for Don, x): approved.**\\nKinds: scope\"}" ;;
-  *"view 24"*) printf "%s" "{\"createdAt\":\"'"$now"'\",\"body\":\"**Ruling (delegate for Don, x): approved.**\\nKinds: scope, taste\"}" ;;
+  *"view 25"*) exit 1 ;;
+  *"view 2"[1-9]*) n="$(printf "%s" "$*" | sed -E "s/.*view (2[0-9]).*/\1/")"; cat "'"$T"'/c$n.json" ;;
   *) exit 1 ;;
 esac'
-# drow <expect> <issue> <command>: a delegate call working <issue> on dw
+# drow <expect> <issue> <command> [token]: a delegate call working <issue> on dw
 drow() {
-  local want="$1" issue="$2" cmd="$3" rc
+  local want="$1" issue="$2" cmd="$3" t="${4-$tok}" rc
   jq -n --arg c "$cmd" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: "/tmp"}' \
-    | HARNEST_ISSUE="$issue" HARNEST_TICKET_REPO=dkackman/diffusers-workflow python3 "$guard" delegate >/dev/null 2>&1
+    | HARNEST_ISSUE="$issue" HARNEST_TICKET_REPO=dkackman/diffusers-workflow HARNEST_DELEGATE_NONCE="$t" \
+      python3 "$guard" delegate >/dev/null 2>&1
   rc=$?
-  eq "delegate@#$issue: $cmd" "$want" "$rc"
+  eq "delegate@#$issue${t:+}: $cmd" "$want" "$rc"
 }
 R=dkackman/diffusers-workflow
 printf '**Ruling (delegate for Don, x): approved.**\n' > /tmp/ruling.md
-for n in 21 22 23 24 25; do
+for n in 21 22 23 24 25 26 27 28 29; do
   drow 0 $n "gh issue view $n --repo $R --comments"
   drow 0 $n "gh issue list --repo $R --label owner:don"
   drow 0 $n "gh issue comment $n --repo $R --body-file /tmp/ruling.md"
@@ -1475,6 +1507,18 @@ drow 2 24 "gh issue edit 24 --repo $R --add-label status:plan-approved"
 drow 0 24 "gh issue edit 24 --repo $R --remove-label owner:don --remove-label status:plan-review --add-label owner:lead"
 drow 2 25 "gh issue edit 25 --repo $R --remove-label owner:don --add-label owner:lead"
 drow 2 25 "gh issue edit 25 --repo $R --add-label status:plan-approved"
+# another session's token, someone else's comment, no or an unknown kind, no token at all
+for n in 26 27 28 29; do
+  drow 2 $n "gh issue edit $n --repo $R --remove-label owner:don --add-label owner:lead"
+  drow 2 $n "gh issue edit $n --repo $R --add-label status:plan-approved"
+done
+drow 2 21 "gh issue edit 21 --repo $R --remove-label owner:don --add-label owner:lead" ""
+drow 2 21 "gh issue edit 21 --repo $R --add-label status:plan-approved" "short"
+# gh is gh issue only
+drow 2 21 "gh api repos/$R/issues/21/labels -X POST -f labels[]=status:plan-approved"
+drow 2 21 "gh api graphql -f query=x"
+drow 2 21 "gh pr list --repo $R"
+drow 2 21 "gh repo view $R"
 # only its own issue, with the repo named; nothing that closes, files, moves or deletes
 drow 2 21 "gh issue comment 22 --repo $R --body-file /tmp/ruling.md"
 drow 2 21 "gh issue edit 22 --repo $R --add-label delegate:passed"

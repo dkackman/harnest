@@ -109,6 +109,13 @@ dependency or download. Don approves the batch in one command. Any other plan bl
 until he rules on it. Don't stretch a kind to fit the batch lane: a wrong
 `[none]` is approved without being read.
 
+Don's delegate (R19) may answer in his place. A comment starting
+`**Ruling (delegate for Don` is his answer, as binding as his own; its
+`Delegate changed:` line names what it amended from your default. A
+`**Passed to Don (delegate` comment means it is still his to answer. A later
+comment starting `overrule:` is Don himself replacing the delegate's ruling:
+follow the overrule, not the ruling.
+
 ## Phase markers
 
 The driver reads a feature's phase from comments whose first line is a

@@ -960,42 +960,68 @@ DELEGATE_RULING = "**Ruling (delegate for Don"
 # Kinds a delegate ruling never approves a plan under (agents/delegate/core.md,
 # "What is Don's to decide"): they always pass through.
 DELEGATE_NEVER_APPROVES = {"taste", "trust"}
+# Every kind an ask carries (R15, plus the implementer's environment and the
+# curator's suite): a Kinds: line naming anything else is not a ruling.
+DELEGATE_KINDS = {"taste", "default", "spend", "trust", "loosen", "scope", "record", "none", "environment", "suite"}
 
 
 def delegate_ruling(words):
-    """The kinds of the delegate's ruling on the issue this command names, when
-    that issue's newest comment is a delegate ruling (agents/delegate/core.md's
-    shape) posted in the last DELEGATE_RULING_SECS; else None. A pass-through
-    comment is not a ruling. Any doubt (no number, gh failing) is None, so the
-    rules that ask for a ruling fail closed."""
+    """The kinds of this delegate session's ruling on the issue the command
+    names, or None. It counts only when that issue's newest comment:
+    - starts `**Ruling (delegate for Don` (a pass-through is not a ruling);
+    - was posted by the login the agents run as (the ticket repo's owner);
+    - carries this session's token, `<!-- harnest:delegate-session <token> -->`
+      with <token> = HARNEST_DELEGATE_NONCE, which the driver makes per
+      session, so no other session's comment (or anyone's) stands in for it;
+    - is under DELEGATE_RULING_SECS old;
+    - has a Kinds: line naming only known kinds.
+    Any doubt (no number, no token, gh failing) is None: the rules fail closed."""
     nums = one_issue(words)
-    if not nums:
+    nonce = os.environ.get("HARNEST_DELEGATE_NONCE", "")
+    owner = os.environ.get("HARNEST_TICKET_REPO", "").partition("/")[0]
+    if not nums or len(nonce) < 16 or not owner:
         return None
     repo = flag_values(words, "--repo", "-R")
-    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "comments", "--jq", ".comments[-1] // {}"]
+    cmd = [
+        "gh",
+        "issue",
+        "view",
+        nums[0].lstrip("#"),
+        "--json",
+        "comments",
+        "--jq",
+        ".comments[-1] // {} | {body, createdAt, author: .author.login}",
+    ]
     if repo:
         cmd += ["--repo", repo[-1]]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
         last = json.loads(out.stdout) if out.returncode == 0 else {}
         body = (last.get("body") or "").lstrip()
-        if not body.startswith(DELEGATE_RULING):
+        if not body.startswith(DELEGATE_RULING) or last.get("author") != owner:
+            return None
+        if "<!-- harnest:delegate-session %s -->" % nonce not in body:
             return None
         posted = calendar.timegm(time.strptime(last["createdAt"][:19], "%Y-%m-%dT%H:%M:%S"))
         if time.time() - posted > DELEGATE_RULING_SECS:
             return None
     except Exception:
         return None
-    kinds = re.search(r"^Kinds:\s*(.*)$", body, re.M)
-    return {k.strip().strip("`").lower() for k in (kinds.group(1).split(",") if kinds else []) if k.strip()}
+    line = re.search(r"^Kinds:[ \t]*(.+)$", body, re.M)
+    kinds = {k for k in re.split(r"[^a-z]+", line.group(1).lower()) if k} if line else set()
+    if not kinds or kinds - DELEGATE_KINDS:
+        return None
+    return kinds
 
 
 def delegate_scope_rule(words):
     """The delegate rules on one issue (HARNEST_ISSUE, on HARNEST_TICKET_REPO):
     it reads anything, but comments on and edits only that issue, naming the
     repo, and never creates, closes, deletes, transfers, pins or locks one."""
-    if len(words) < 3 or os.path.basename(words[0]) != "gh" or words[1] != "issue":
+    if not words or os.path.basename(words[0]) != "gh":
         return
+    if len(words) < 3 or words[1] != "issue":
+        deny("the delegate's gh is `gh issue` only: no gh api, pr, repo or other subcommand.")
     sub = words[2]
     if sub in ("view", "list", "status"):
         return

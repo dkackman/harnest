@@ -7,6 +7,10 @@ Seventeen files:
 - `test-approve-batch.sh`: `scripts/approve-batch.sh` on a fake-gh board. It approves only
   issues still in the batch lane, skips the rest untouched, asks once, and logs each
   approval.
+- `test-delegate.sh`: R19's escalation delegate outside the guard and the classifier:
+  `delegate_record` (run-loop.sh) logging a ruling, an amendment or a pass-through to
+  `logs/delegate.jsonl` from the comment the session posted, and the digest's Delegate rulings
+  section. The delegate's guard rows are in `test-guard.sh`, its queue in `classify-cases.json`.
 - `test-classify.sh`: `lib/classify.jq` over fixture boards in `tests/classify-cases.json`,
   one per protocol state. Add a board when you add or change a state; a board's
   `expect_reason` checks reasons too, for a state a driver reads by reason.

@@ -758,6 +758,7 @@ isn't found until you re-run the script.
 | `DELEGATE_PROVIDER` | `$TESTER_PROVIDER` | the delegate's provider |
 | `DELEGATE_BUDGET_USD` | `2` | per-session `--max-budget-usd` for a delegate ruling (the replay's median was $0.16, p90 $0.26) |
 | `DELEGATE_EFFORT` | `high` | the delegate's `--effort`, live and in the R19 replay |
+| `DIGEST_DELEGATE_HOURS` | `24` | how far back `run-digest.sh`'s Delegate rulings section reads `logs/delegate.jsonl` |
 | `LOOP_POLL_SECS` | `60` | R17 loop driver: how often it reads the board and runs its housekeeping when nothing wakes it (a session's end, a deploy's end, a rate limit); `logs/loop/state.json` is rewritten at least this often. While nothing runs and only your decisions are left, housekeeping backs off, doubling up to `SLEEP_MAX_SECS`; the board is still read every poll, so a hand-back starts within one |
 | `LOOP_HEALTH_SECS` | `30` | R17 loop driver: how often it samples each server's `/api/health` for the card-busy figure in `state.json` |
 | `DEPLOY_RETRY_SECS` | `300` | R17 loop driver: after a failed deploy, how long before it tries once more; a second failure parks the waiting verifies and answers with you (`environment`). From the first failure the server's gpu slot stays held (nothing verifies against a head that can't be told) until a deploy succeeds or, after the park, the server passes its preflight again |

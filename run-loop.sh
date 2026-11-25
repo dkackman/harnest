@@ -1095,16 +1095,45 @@ delegate_pass() {
     [ -n "$n" ] || continue
     still_ready "$n" "delegate:rule" \
       || { echo "[delegate:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
+    # This session's token: its ruling carries it, and the guard lets it act
+    # on a ruling (lift the park, approve a plan) only when the issue's newest
+    # comment holds it (guard.py delegate_ruling).
+    HARNEST_DELEGATE_NONCE="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    export HARNEST_DELEGATE_NONCE
     run_agent delegate "#$n" "$DELEGATE_BUDGET_USD" "$PLUGIN_TREE" "$DELEGATE_PROVIDER" "$DELEGATE_MODEL" "$DELEGATE_EFFORT" rule \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a RULING session for Don's ask on issue #$n only. Then stop.
 
-You are $DELEGATE_MODEL via $DELEGATE_PROVIDER. Your working directory is dw at origin/develop @ $(git -C "$PLUGIN_TREE" rev-parse --short HEAD 2>/dev/null || echo unknown).
+You are $DELEGATE_MODEL via $DELEGATE_PROVIDER. End your ruling or pass-through comment with this line, exactly: <!-- harnest:delegate-session $HARNEST_DELEGATE_NONCE -->
+
+Your working directory is dw at origin/develop @ $(git -C "$PLUGIN_TREE" rev-parse --short HEAD 2>/dev/null || echo unknown).
 
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
 
 $(issue_context "$n")" \
       "${ISOLATION_FLAGS[@]}" --tools "$DELEGATE_TOOLS" "${DELEGATE_PERMISSION_FLAGS[@]}"
+    delegate_record "$n"
+    unset HARNEST_DELEGATE_NONCE
   done < <(queue_issues "delegate:rule" | cut -f1,2)
+}
+
+# delegate_record <n> — one line in logs/delegate.jsonl for the delegate's
+# comment on #n, read back from the issue: ts, issue, outcome (ruled,
+# amended or passed), kinds, the comment's first line, model and the
+# session's cost. The digest's Delegate rulings section reads it, and its
+# override count comes from Don's `overrule:` comments. Nothing is written
+# when the session posted no ruling.
+delegate_record() {
+  local n="$1" last cost
+  last="$(gh issue view "$n" --repo "$TICKET_REPO" --json comments --jq '.comments[-1] // {}' 2>/dev/null)" || return 0
+  cost="$(grep -o 'cost=\$[0-9.]*' "$LAST_SESSION" 2>/dev/null | tail -n 1 | cut -d'$' -f2)"
+  printf '%s\n' "$last" | jq -c --arg n "$n" --arg repo "$TICKET_REPO" --arg model "$DELEGATE_MODEL" --arg cost "${cost:-}" '
+    (.body // "" | ltrimstr(" ")) as $b
+    | (if ($b | startswith("**Ruling (delegate for Don")) then (if ($b | test("(?m)^Delegate changed:")) then "amended" else "ruled" end)
+       elif ($b | startswith("**Passed to Don (delegate")) then "passed" else empty end) as $o
+    | {ts: .createdAt, repo: $repo, issue: ($n | tonumber), outcome: $o,
+       kinds: ([$b | capture("(?m)^Kinds:\\s*(?<k>.*)$").k // "" | split(",")[] | gsub("[` ]"; "") | select(. != "")]),
+       line: ($b | split("\n")[0] | gsub("\\*"; "") | .[:200]), model: $model,
+       cost: (if $cost == "" then null else ($cost | tonumber) end)}' >> "$LOGS/delegate.jsonl" 2>/dev/null || true
 }
 
 # curator_requests — the open suite-change requests on this repo the curator

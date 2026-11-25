@@ -16,11 +16,12 @@ Read the thread and decide what Don's hand-back asks for:
 - **A draft plan** (its first line says `draft:`): a design session before
   you was cut off. Resume from the step its status names (step 2b); don't
   redo the sweep it records.
-- **Don answered or redirected.** Fold his answers into the plan as the
+- **Don (or his delegate, core "Asking Don") answered or redirected.** Fold his answers into the plan as the
   next version (steps 2–6 as far as the answers reach). Don't re-litigate
   a question he answered. The "changed since" comment carries one line
   naming each question where he picked other than your default, with its
-  kind: `Don changed: Q3 [default], Q5 [spend]`, or `Don changed: nothing`.
+  kind: `Don changed: Q3 [default], Q5 [spend]`, or `Don changed: nothing`
+  (`Delegate changed: ...` when the delegate ruled).
   That line is how the lanes get measured. A batch approval ("Approved with
   the batch: plan vN, its defaults") is an approval like any other.
 - **Don declined it** ("don't build", "not doing this"): record it and

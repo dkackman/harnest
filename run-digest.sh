@@ -33,6 +33,9 @@ HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"
 # ruled on by the curator (agents/curator/review.md); this list is how Don
 # skims its decisions and reverses one by reopening it with a comment.
 DIGEST_CURATOR_DAYS="${DIGEST_CURATOR_DAYS:-7}"
+# How far back the "delegate rulings" section looks (R19): the delegate's
+# rulings from logs/delegate.jsonl, for Don to skim and overrule.
+DIGEST_DELEGATE_HOURS="${DIGEST_DELEGATE_HOURS:-24}"
 
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
 command -v gh >/dev/null     || { echo "gh CLI not on PATH" >&2; exit 1; }
@@ -62,6 +65,22 @@ curator_section() {
   [ -n "$closed$escalated" ] || return 0
   printf '\n## Curator rulings on suite requests (%s, last %s days)\n\nReverse one by reopening it with a comment saying what you want instead.\n\n%s\n%s\n' \
     "$HARNESS_REPO" "$DIGEST_CURATOR_DAYS" "$escalated" "$closed"
+}
+
+# delegate_section: the escalation delegate's rulings and pass-throughs in
+# the window (logs/delegate.jsonl, written by delegate_pass; R19), and how
+# many asks it holds now. No model call.
+delegate_section() {
+  local since rows held
+  since="$(( $(date +%s) - DIGEST_DELEGATE_HOURS * 3600 ))"
+  rows="$(jq -r --argjson s "$since" '
+      select((.ts // "" | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601? // 0) >= $s)
+      | "- #\(.issue) \(.outcome)\(if (.kinds | length) > 0 then " (" + (.kinds | join(", ")) + ")" else "" end): \(.line)"' \
+      "$LOGS/delegate.jsonl" 2>/dev/null || true)"
+  held="$(printf '%s\n' "$board" | awk -F'\t' '$2 == "delegate:rule"' | wc -l | tr -d ' ')"
+  [ -n "$rows" ] || [ "$held" != 0 ] || return 0
+  printf '\n## Delegate rulings (last %s h)\n\nRuled or amended for you, or passed through to you with a recommendation. Reverse a ruling with a comment that starts `overrule:` saying what you want instead.%s\n\n%s\n' \
+    "$DIGEST_DELEGATE_HOURS" "$([ "$held" = 0 ] || printf ' %s ask(s) wait for the delegate now.' "$held")" "${rows:-none in the window}"
 }
 
 # The board, classified once: Don's queue and the stranded list both come
@@ -149,6 +168,7 @@ print(sum(1 for f in glob.glob("regression-suite-*.md") for c, b in r.case_block
 }
 
 curator="$(curator_section)"
+delegate="$(delegate_section)"
 requirements="$(requirements_section)"
 advisories="$(advisories_section)"
 stranded="$(stranded_section)"
@@ -218,7 +238,7 @@ if [ "${#issues[@]}" -eq 0 ]; then
   out="# owner:don digest — $(date '+%F %H:%M')
 
 nothing parked with owner:don
-$advisories$stranded$harness$curator$requirements"
+$delegate$advisories$stranded$harness$curator$requirements"
   printf '%s\n' "$out" | tee "$LOGS/digest.md"
   exit 0
 fi
@@ -273,7 +293,7 @@ ${#issues[@]} parked; median $median days parked.
 
 $table
 $(batch_section)$(deferred_section)
-$advisories$stranded$harness$curator$requirements"
+$delegate$advisories$stranded$harness$curator$requirements"
 printf '%s\n' "$out" | tee "$LOGS/digest.md"
 if [ -n "$DIGEST_ISSUE" ]; then
   printf '%s\n' "$out" | gh issue comment "$DIGEST_ISSUE" --repo "$TICKET_REPO" --body-file - >/dev/null \
