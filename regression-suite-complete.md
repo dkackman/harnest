@@ -31294,4 +31294,371 @@ reports this case **not run** on #1717, naming the gap; it is never passed by re
 cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not already gone.
 metrics: none.
 
+### C-F1394 — `shot_bed_drop` fires on a voiced shot whose gaps fall 27 dB under a loud bed on both sides (the storm cut)
+pending: #1718
+source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+This case builds **the bed-drop cut**, which C-F1395 through C-F1399 and C-F1402 through C-F1405 reuse with other
+`arguments`. It is CPU only and deterministic: fixed assets, fixed gains, no model. Workspace `regression-complete`.
+Calibration (free):
+1. `assess_output(name="asset:uploads/qa-cast/room-bed.wav", probe="analyze_shots", workspace="regression-complete")`.
+   Its one shot's `noise_floor_dbfs` is **F_bed**.
+2. The same call on `asset:qa-cast/priya-voice.wav` gives **R_voice** (`rms_dbfs`) and **P_voice** (`peak_dbfs`).
+3. For each arm, a target floor T becomes a gain `T - F_bed` dB. The voice gain is `g_voice = V - R_voice`, where V
+   is the arm's voice level. If `P_voice + g_voice` is above -1 dBFS for any arm, the case is **blocked** (the voice
+   would clip). Report it as not run, naming the numbers. It is not a finding.
+
+**Workflow W** (`inline_workflow`, id `qa-c-f1394`). Its `variables` are `g_left`, `g_mid`, `g_right` and `g_voice`,
+all in dB, each defaulting to 0.0. Its steps, in this order:
+- `bedloop`: `loop_audio(audio="asset:uploads/qa-cast/room-bed.wav", target_frames=124, fps=24)`, saved as
+  `audio/wav` in `intermediate`.
+- `bed_l`, `bed_m`, `bed_r`: `gain_audio(audio="previous_result:bedloop", gain_db="variable:g_left")`, then the same
+  with `g_mid` and with `g_right`.
+- `voice_cut`: `slice_audio(audio="asset:qa-cast/priya-voice.wav", start_frame=0, num_frames=124, fps=24)`.
+- `voice`: `gain_audio(audio="previous_result:voice_cut", gain_db="variable:g_voice")`.
+- `voice_hole`: `gain_audio(audio="previous_result:voice", gain_db=-80, start_seconds=1.5, duration_seconds=1.5)`.
+  This is a fixed 1.5 s hole, 29% of the shot, so the shot's p10 floor lands inside it, at the bed's level.
+- `mid`: `mix_audio(audios=["previous_result:voice_hole", "previous_result:bed_m"])`.
+- `sh_l`: `pair_audio(video="asset:qa-cast/ep3-shot1-incident.mp4", audio="previous_result:bed_l", fit="video")`.
+- `sh_m`: `pair_audio(video="asset:qa-cast/ep3-shot2-reply.mp4", audio="previous_result:mid", fit="video")`.
+- `sh_r`: `pair_audio(video="asset:qa-cast/ep3-shot1-incident.mp4", audio="previous_result:bed_r", fit="video")`.
+- Each of the three is saved as `video/mp4` in `shots`, with `file_base_name` `left`, `mid` and `right`.
+- `cut`: `concat_videos(videos=["previous_result:sh_l", "previous_result:sh_m", "previous_result:sh_r"], fps=24,
+  sample_rate=32000)`, saved as `video/mp4` in `final` with `file_base_name` `cut`.
+- `cut2`: the same `concat_videos` over `sh_l` and `sh_m` only, saved in `final` with `file_base_name` `cut2`.
+- `shots_json`: `analyze_shots(video="previous_result:cut", shots=[{"name":"left","start_frame":0,"num_frames":124},
+  {"name":"mid","start_frame":124,"num_frames":124},{"name":"right","start_frame":248,"num_frames":124}])`, saved as
+  `application/json` in `final`.
+
+Write each step in the suite's usual inline form, `{"name": ..., "task": {"command": ..., "arguments": {...}},
+"result": {...}}`, as C-F058 does.
+
+**Storm arm.** Floors L/M/R are -25 / -52 / -25 and V is -24. Run it:
+`validate_workflow(inline_workflow=W, arguments={g_left, g_mid, g_right, g_voice}, workspace="regression-complete")`,
+then `run_workflow(...same..., acknowledged_cost=<bound from validate>, wait_seconds=55, note="C-F1394 storm arm")`.
+
+Then:
+- `assess_output(name=<the job's cut output>, workspace="regression-complete")`
+- the same with `probe="analyze_shots"`
+- `get_output_text` on the `shots_json` output
+
+Preconditions, checked on the `analyze_shots` probe (not findings):
+- Shots 1 and 3 have `noise_floor_dbfs` within ±3 dB of -25.
+- Shot 2's floor is between -56 and -48.
+- Shot 2's `rms_dbfs` is above -30.
+
+If a precondition misses, nudge the matching gain by the miss and rerun once. If it still misses, the case is
+blocked, and the report names the readings.
+
+If the probe reports the cut as a single shot (`concat_videos` recorded no `media.shots`), the `shots_json` task output
+is the record to judge. Report that gap as a note.
+
+expected:
+- **Exactly one `shot_bed_drop` finding.** It has severity `warn`, and its `at.shot` names the cut's second shot.
+- **The second shot's `floor_below_neighbours_db`** is above 20, about 27. It equals shot 1's or shot 3's
+  `noise_floor_dbfs` (whichever is louder) minus shot 2's own, within 0.1 dB.
+- **Shots 1 and 3** each carry the field as their single neighbour's floor (shot 2's) minus their own. That is about
+  -27, a **negative** number: the field is not clamped at 0. Neither shot fires.
+- **No `shot_dead_air`** on any shot. The hole sits near -52, above the absolute floor.
+- **The `says` text** names a bed remedy: `slice_audio`, `loop_audio`, `mix_audio` and `find_loop_bed`. It also says
+  to ignore the warning at a deliberate scene change.
+- **The `shots_json` record** carries the same per-shot `floor_below_neighbours_db` values as the probe, within 0.1 dB.
+
+A **finding** is any of these:
+- no `shot_bed_drop`, or one on the wrong shot
+- a field that is missing, wrong by more than 0.1 dB, or clamped to 0
+- `shot_dead_air` firing on this cut
+- a `says` text without the remedy or the scene-change caveat
+
+cleanup: keep this job's id for C-F1402 through C-F1405 when they run in the same session, and pass it to
+`delete_output(job_id=<id>)` at the session's end.
+metrics: none.
+
+### C-F1395 — `shot_bed_drop` stays silent on the same three shots at a quiet-room level
+pending: #1718
+source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+This uses C-F1394's calibration and workflow W. Floors L/M/R are -55 / -55 / -55 and V is -24, so every shot's floor
+sits in a low room tone and shot 2 still carries voice. Validate it, run it (`wait_seconds=55`), then call
+`assess_output` on the cut (default form and `probe="analyze_shots"`).
+
+The precondition (not a finding): all three floors lie between -58 and -52, and shot 2's `rms_dbfs` is above -30.
+
+expected:
+- No `shot_bed_drop` and no `shot_dead_air`.
+- Every shot's `floor_below_neighbours_db` is present and numeric, with an absolute value under 5.
+- `rules_applied` lists `shot_bed_drop`.
+
+A `shot_bed_drop` on any shot is a **finding**: a quiet room's normal pauses read as a hole. So is a null or missing
+field on a three-shot cut.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F1396 — `shot_bed_drop`'s 20 dB threshold, and the louder neighbour on a one-sided cut
+pending: #1718
+source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+This uses C-F1394's calibration and workflow W, with V at -24 in every arm. There are three runs. Validate each, run
+it (`wait_seconds=55`), then call `assess_output(probe="analyze_shots")` on its cut.
+
+| arm | L / M / R floor | shot 2 field, about | shot 2 expected |
+|---|---|---|---|
+| below | -36 / -52 / -36 | 16 | no finding |
+| above | -28 / -52 / -28 | 24 | `shot_bed_drop` |
+| one-sided | -25 / -52 / -55 | 27, from the left | `shot_bed_drop` |
+
+Preconditions, as in C-F1394 (each floor within ±3 dB of its target, shot 2's rms above -30). Rerun once on a miss.
+A threshold arm whose *measured* shot 2 field lies between 18 and 22 cannot judge the 20 dB edge. Nudge `g_left` and
+`g_right` until it sits clear of that band.
+
+expected:
+- **Every arm.** Each shot's field equals its louder adjacent shot's floor minus its own floor, within 0.1 dB.
+- **below:** no `shot_bed_drop`.
+- **above:** exactly one `shot_bed_drop`, on shot 2.
+- **one-sided:**
+  - Shot 2 fires, and its field is measured against the **left** shot (the louder neighbour), not the right one or
+    an average of the two.
+  - Shot 3's field is shot 2's floor minus its own, about +3. Shot 3 does not fire.
+  - Shot 1's field is about -27.
+
+A **finding** is any of these:
+- a field measured against the quieter or averaged neighbour
+- a fire at 16 dB, or silence at 24 dB
+- a finding on any shot besides shot 2
+
+cleanup: `delete_output(job_id=<id>)` for each run.
+metrics: none.
+
+### C-F1397 — `shot_bed_drop` is skipped on a shot that is quiet throughout (the `shot_dead_air` quiet guard)
+pending: #1718
+source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+This uses C-F1394's calibration and workflow W. The floors are the storm arm's (-25 / -52 / -25), but V is -40, so
+shot 2's `rms_dbfs` falls at or below -30 while its gaps still sit near -52. Validate it, run it, then call
+`assess_output` on the cut in the default form and with `probe="analyze_shots"`.
+
+The precondition (not a finding): shot 2's `rms_dbfs` is at or below -30, and its floor is between -56 and -48. If
+the rms comes out above -30, lower `g_voice` by the excess plus 2 and rerun once.
+
+expected:
+- Shot 2's `floor_below_neighbours_db` is still reported, at about 27. The field is measured whatever the guard does.
+- There is **no** `shot_bed_drop` finding on any shot.
+- `rules_applied` still lists `shot_bed_drop`.
+
+A `shot_bed_drop` on shot 2 is a **finding**: the guard was not applied. So is a field nulled because the shot is quiet.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F1398 — `floor_below_neighbours_db` is null on a single-shot file and one-neighboured on a two-shot cut
+pending: #1718
+source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+This reuses C-F1394's storm-arm job. If that job is gone, rerun it as written there. All of these calls take
+`workspace="regression-complete"`.
+1. `assess_output(name=<the storm job's shots/mid output>, probe="analyze_shots")`. This is the voiced shot on its
+   own, with gaps near -52: the exact shot that fires inside the cut.
+2. `assess_output(name="asset:qa-cast/priya-voice.wav", probe="analyze_shots")`. This is a plain audio file.
+3. `assess_output(name=<the storm job's cut2 output>, probe="analyze_shots")`. This is the two-shot cut [left, mid].
+
+expected:
+- **Calls 1 and 2.** Each reports one shot whose `floor_below_neighbours_db` is `null`, not 0 and not absent. Neither
+  reports a `shot_bed_drop`. Their `rules_applied` list `shot_bed_drop`.
+- **Call 3** reports two shots.
+  - Shot 2 (the last shot) has its single neighbour's floor minus its own, about 27, and it fires `shot_bed_drop`.
+  - Shot 1 has about -27 and does not fire.
+
+A **finding** is any of these:
+- a numeric field, or any finding, on a single shot
+- a missing field
+- an error on the two-shot cut, or its last shot measured against anything but shot 1
+
+cleanup: none of its own; C-F1394's cleanup covers the job.
+metrics: none.
+
+### C-F1399 — `rules_applied` lists `shot_bed_drop` in every form `analyze_shots` runs in
+pending: #1718
+source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+This reuses C-F1394's storm-arm job and assets that already exist. Every call is free and takes
+`workspace="regression-complete"`.
+1. `assess_output(name=<storm cut>)`, the default form.
+2. The same call with `probe="analyze_shots"`.
+3. The same call with `detail=true`.
+4. `assess_output(name="asset:qa-cast/ep49-episode.mp4")`. This is an unrelated three-shot cut at 44.1 kHz.
+5. `assess_output(name="asset:uploads/qa-cast/room-bed.wav")`. This is a single audio file.
+6. `get_output_text` on the storm job's `shots_json` output.
+
+expected:
+- **Calls 1 through 5.** Each one's `rules_applied` contains `shot_bed_drop`.
+- **Call 3** also carries the per-shot `floor_below_neighbours_db` in its detailed shot records.
+- **Call 4.** Each shot carries a numeric field, and whether it fires matches its own numbers: a fire exactly when
+  the field is above 20 and the shot's rms is above -30.
+- **Call 6.** The task-form records carry the field for every shot.
+
+A **finding** is any of these:
+- a form where `rules_applied` omits `shot_bed_drop` while `analyze_shots` ran
+- a shot record without the field
+- a fire, or a silence, that contradicts the shot's own field and rms
+
+cleanup: none of its own.
+metrics: none.
+
+### C-F1400 — the docs and the `dw:minimax-h3` skill describe `shot_bed_drop`
+pending: #1718
+source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+These are free reads.
+1. `get_guide("tasks", section="analyze_shots")`, or the section that documents its answer.
+2. The rule table in `get_guide("tasks")`. Find the section from the guide's index.
+3. The rule table in `get_guide("workflows")`, found the same way.
+4. The `dw:minimax-h3` skill's watching-a-run reference, loaded through the plugin.
+
+expected:
+- **Call 1** documents the per-shot `floor_below_neighbours_db`: the louder adjacent shot's floor minus this shot's,
+  null for a single shot.
+- **Calls 2 and 3.** Each rule table has a `shot_bed_drop` row. The row states the 20 dB threshold against the louder
+  neighbour, severity warn, and the quiet guard at -30 dBFS rms.
+- **Call 4.** The reference has a sentence on the new rule. It says a bed drop is a relative drop under the
+  neighbours' bed, not digital silence, next to its existing line on what dead air means.
+
+A guide or skill that is missing any of these is a **finding**, as is one that gives a different threshold or guard
+than the rule's behaviour in C-F1394 to C-F1397.
+cleanup: none.
+metrics: none.
+
+### C-F1401 — `assemble-and-score` shows the three bed variables, and its defaults leave the film's loudness and length unchanged
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+Setup:
+1. Run C-F1394's storm arm. Then, for each name `qa-beddrop/left.mp4`, `qa-beddrop/mid.mp4` and
+   `qa-beddrop/right.mp4`, check that the name is free (`get_gallery_metadata` answers "Unknown asset"). Then
+   `keep_output` the job's three `shots` outputs under those names. A taken name is reused if it is this case's own
+   leftover; otherwise the case picks a fresh suffix.
+2. `get_workflow("templates/assemble-and-score")` and `list_workflows(shape="utility")` (or whichever shape lists it).
+3. **The baseline (B0).** This is an inline copy of the template as `get_workflow` returns it, with the steps
+   `bed_slice`, `bed_resampled` and `bed` removed and `mixed`'s third entry (and its gain) dropped. It is the
+   template as it stood before Stage B.
+4. The common arguments, **A0**:
+   - `shots`: `["asset:qa-beddrop/left.mp4", "asset:qa-beddrop/mid.mp4", "asset:qa-beddrop/right.mp4"]`
+   - `score`: `"asset:qa-cast/ep15-song.mp3"`
+   - `total_frames`: 372
+   - `sample_rate`: 44100
+   - everything else at its default
+5. Validate and run (`wait_seconds=55`) three times:
+   - the template with A0 and no bed variables
+   - the template with A0 plus `bed_gain: 0.0`
+   - B0 with A0
+6. Run `assess_output` on each film, and `get_gallery_metadata` on each.
+
+expected:
+- **Step 2.** The variables include `bed_start_seconds` (default 0.0), `bed_seconds` (1.0) and `bed_gain` (0.0). The
+  steps include `bed_slice`, `bed_resampled` and `bed`, in that order, before `mixed`.
+  - The `list_workflows` entry names the three variables.
+  - The description carries a sentence on the bed.
+  - `validate_workflow`'s estimate still prices the template at 0.2 min.
+- **Step 5.** All three runs succeed.
+- **Step 6.** The three films agree on:
+  - integrated loudness within 0.1 LU
+  - peak within 0.1 dB
+  - `frame_count` (372)
+  - `duration_seconds` within 0.01 s
+
+A **finding** is any of these:
+- a missing variable, or a default other than the ones listed
+- a default run that differs from B0 beyond those tolerances: the zero-gain bed leaks into the mix
+- a changed length
+
+cleanup: `delete_output(job_id=...)` for each run. Leave the three `qa-beddrop/` assets for C-F1402 through C-F1405
+when they run in the same session; otherwise `delete_asset` them with `acknowledged_cost=true`.
+metrics: none.
+
+### C-F1402 — a bed sliced from shot 1 and looped under the cut heals the storm cut's bed drop
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+Setup: the `qa-beddrop/` assets and A0 from C-F1401 (make them as C-F1401 says if they are gone). Run the template
+with A0 plus these arguments:
+- `score_gain`: 0.0, so only the world track and the bed are heard
+- `bed_start_seconds`: 1.0
+- `bed_seconds`: 3.0, a window inside shot 1's steady bed
+- `bed_gain`: 1.0
+
+Validate it, run it (`wait_seconds=55`), then call `assess_output(name=<film>, probe="analyze_shots")` and the
+default form.
+
+As a control, run the same arguments with `bed_gain: 0.0`. Its assessment must show C-F1394's `shot_bed_drop` on
+shot 2. If it doesn't, the case is blocked and the report says so; it is not a finding against B.
+
+expected:
+- **With `bed_gain` 1.0**, the job succeeds and the film carries no `shot_bed_drop` on any shot.
+- Shot 2's `noise_floor_dbfs` is within 10 dB of shot 1's.
+- Shot 2's `floor_below_neighbours_db` is 10 or under.
+- No `shot_dead_air` and no `seam_hole`.
+
+A `shot_bed_drop` that survives the bed, or a shot 2 floor more than 10 dB under shot 1's, is a **finding**.
+cleanup: `delete_output(job_id=...)` for both runs.
+metrics: none.
+
+### C-F1403 — a zero-length bed window, or one starting past the end of the cut, fails the job instead of making a silent film
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+Setup: A0 from C-F1401, with `bed_gain` 1.0 in both arms.
+- **Arm 1:** `bed_seconds: 0`.
+- **Arm 2:** `bed_start_seconds: 100.0` and `bed_seconds: 1.0`. The cut is 15.5 s.
+
+For each arm, call `validate_workflow`. If it validates, `run_workflow` (`wait_seconds=55`), then `get_job`.
+
+expected, each arm:
+- One of two outcomes:
+  - `validate_workflow` refuses it with a message naming `bed_seconds` or the `bed_slice` step (allowed for arm 1,
+    since `slice_audio`'s duration must be above zero), or
+  - the job ends `failed` with an error naming `bed_slice`, `bed` or the loop.
+- No film is produced.
+
+A **finding** is any of these:
+- a `succeeded` job in either arm, whether its film is silent, unbedded or full length
+- a failure whose message names neither the bed variable nor a bed step
+
+cleanup: `delete_output(job_id=...)` for any job that ran.
+metrics: none.
+
+### C-F1404 — a bed window running past the end of the cut is shortened, never padded with silence
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+Setup: A0 from C-F1401 over the `qa-beddrop/` assets, run with these arguments so the film is the bed alone:
+- `score_gain`: 0.0
+- `world_gain`: 0.0
+- `bed_gain`: 1.0
+- `bed_start_seconds`: 14.0
+- `bed_seconds`: 5.0, running 3.5 s past the 15.5 s cut, inside shot 3's steady bed
+
+If validate refuses a zero `world_gain`, use 0.001 and say so in the report.
+
+Validate it, run it (`wait_seconds=55`), then call:
+- `get_job` (for `job.warnings`)
+- `get_job_events`
+- `assess_output(name=<film>)` in the default form and with `probe="analyze_shots"`
+
+expected:
+- The job succeeds.
+- Neither `job.warnings` nor the events carry a slice-past-end or padding warning from `bed_slice`.
+- **The film is a steady loop of the 1.5 s that exists:**
+  - no `shot_dead_air` and no `seam_hole`
+  - every shot's `noise_floor_dbfs` within 6 dB of the others'
+
+A silence-padded window (3.5 s of nothing in every 5 s loop) shows as dead air or as a floor that collapses in some
+shots. Either is a **finding**, as is a padding warning or a failed job.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F1405 — `shot_bed_drop`'s `says` names the `assemble-and-score` bed variables once Stage B lands
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F1394's storm-arm cut. Rerun it as written there if the job is gone. Call
+`assess_output(name=<storm cut>, workspace="regression-complete")`.
+
+expected:
+- The one `shot_bed_drop` finding's `says` text names `bed_start_seconds`, `bed_seconds` and `bed_gain` on
+  `assemble-and-score`, as the remedy.
+- It still points at `find_loop_bed` to choose the window.
+- It still says to ignore the warning at a deliberate scene change.
+
+A `says` that still names only the hand-built `slice_audio` → `loop_audio` → `mix_audio` chain, or that drops the
+scene-change caveat, is a **finding**.
+cleanup: `delete_output(job_id=<storm job>)`. Then `delete_asset` the three `qa-beddrop/` assets with
+`acknowledged_cost=true`, once no other case this session still needs them.
+metrics: none.
+
 ## Performance
