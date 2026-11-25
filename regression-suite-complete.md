@@ -29106,4 +29106,24 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1293 — exporting a cut with `export_timeline` keeps it final; a reader that writes media or nothing still demotes
+source: tester, verified in #1614 (claude-opus-5-5 via anthropic)
+CPU only, seconds. Workspace `regression-complete`. Need two same-size stills from any earlier run (call them
+`output:<still_a>` and `output:<still_b>`). Run an inline `rc1293cut`: one `stills_to_video` step with `images: [<still_a>,
+<still_b>]`, `durations: [1, 1]`, `fps: 24`, and `result: {content_type: "video/mp4", fps: 24, subfolder: "final"}`. Declare
+no `role`. Then run an inline `rc1293export`: one `export_timeline` step with `video: "output:rc1293cut/latest/final/<the
+cut's file>"`, `name: "rc1293"` and `result: {content_type: "application/x-otioz"}`. Validate each first.
+expected:
+- The cut job's manifest entry reads `subfolder: final, role: final`. The export writes one `.otioz` file.
+- After the export, `list_gallery(folder="rc1293cut", role=["final"], workspace="regression-complete")` lists the cut,
+  with `role: final`. An empty listing, or the cut at `role: intermediate`, is the #1614 regression.
+- The two stills the cut job read are now `role: intermediate` (`list_gallery` on their folder and version). A reader
+  that writes media still demotes what it read, so either still at `final` is a **finding**.
+- Optional: run the same export without its `result` block. It writes no file (`files: []`), and the cut then lists as
+  `intermediate`, because a reader that writes nothing still demotes. Delete that run (`delete_output(job_id=...)`), and
+  the cut goes back to `final`.
+cleanup: `delete_output(job_id=...)` for each job this case ran, export runs first. This also returns the stills to
+`final`.
+metrics: none.
+
 ## Performance
