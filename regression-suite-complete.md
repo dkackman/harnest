@@ -29483,4 +29483,30 @@ template's estimate.
 cleanup: none.
 metrics: none.
 
+### C-F1308 — the run dialog unticks and refuses a row the live plan made stale while it was open
+source: tester, verified in #1651 (claude-opus-5-5 via anthropic)
+**Web UI, black-box**. Setup over MCP: `set_request(request="cf1308", workspace="regression-complete", revision=0,
+title="CF1308", goal="stale rows", why="C-F1308 fixture", items=[{key:"a", title:"Item A", workflow:"templates/expand-prompt",
+arguments:{prompt:"a red fox"}}, {key:"b", title:"Item B", workflow:"templates/expand-prompt", arguments:{prompt:"a blue owl"}}])`.
+`goto /#/ws/regression-complete/requests/cf1308`; click **Run 2…**; `wait_text` "Run 2 jobs" (validation done).
+1. `mock` the page's request read (`**/api/workspaces/regression-complete/requests/cf1308?**`), built from the real
+   answer, setting `revision` 2 and `items.1.dropped` true. `wait_text` "It was dropped from the plan." (the next poll,
+   within 30 s); `inspect` it. `record **/api/**`; `stub` POST `**/api/jobs?**` and `**/api/jobs`; click "Run 1 job";
+   two `fetch /api/health` to let it land; `recorded **/api/**`.
+2. Reload and reopen the dialog as in the setup. `mock` the same read, setting `revision` 2,
+   `items.0.arguments.prompt` "a green fox", and `items.1.attempts` `[{job:"other-cf1308", status:"queued"}]`.
+   `wait_text` "Its workflow or arguments changed after this opened"; `inspect` the run button.
+expected:
+- (1) Row B is unticked and shows "It was dropped from the plan." as a warning (`role="status"`, a `warn` class,
+  amber unlike the plain lines). The button reads "Run 1 job". The recorded POSTs to `/api/jobs` are exactly one,
+  for item `a` with prompt "a red fox". Nothing goes out for `b`.
+- (2) Row A shows the arguments-changed line, and row B "A job was queued for it after this opened.". Both are unticked.
+  The footer reads "nothing to run", and the button reads "Run 0 jobs" and carries `disabled`.
+- No page errors.
+A stale row that stays ticked or is POSTed is a **finding**: it duplicates a job or spends minutes on arguments the
+plan no longer holds.
+cleanup: `list_jobs(request="cf1308", workspace="regression-complete")` is empty (any real job: `cancel_job` it,
+and that is a finding). Then `delete_request(request="cf1308", revision=1, workspace="regression-complete")`.
+metrics: none.
+
 ## Performance
