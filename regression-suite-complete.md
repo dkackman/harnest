@@ -29126,4 +29126,23 @@ cleanup: `delete_output(job_id=...)` for each job this case ran, export runs fir
 `final`.
 metrics: none.
 
+### C-F1294 — a queued job's `waiting_for` names the busy card and the running minutes go up each time it is read
+source: tester, verified in #1618 (claude-opus-5-5 via anthropic)
+A few GPU minutes. Workspace `regression-complete`, with nothing else queued or running (`get_health`). Queue a job that
+runs at least 2.5 minutes on this host (`templates/flux3/upsample-then-generate` at its defaults is one), then right away
+queue two `templates/text-to-image` jobs behind it. Validate each first and bind `acknowledged_cost`. Read the first
+queued job with `get_job` at once, then again after a `wait_for_job` of about 130 s on the running job. Read the second
+queued job with `get_job` too.
+expected:
+- On a host with one card, the first queued job's `waiting_for` reads "queued behind the running job on <card>, N min
+  in and 0 queued job(s) ahead". `<card>` is the device `get_health` lists (e.g. `mps`, `cuda:0`), and it is named even
+  with no `--devices` set. "every card" or "a card" on a one-card host is the #1618 regression.
+- N on the second read is at least 2, and it is higher than on the first read. If N stays where it was at queue time,
+  that is the #1618 regression. `list_jobs(status="queued")` carries the same text.
+- The second queued job reads "... 1 queued job(s) ahead".
+- On a host with several cards, the text reads "N running jobs on every card (<card>, M min in; ...)", with each card
+  named.
+cleanup: cancel the second queued job, let the rest finish, and `delete_output(job_id=...)` each finished run.
+metrics: none.
+
 ## Performance
