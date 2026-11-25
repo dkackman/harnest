@@ -191,7 +191,7 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 |---|---|
 | Hand back an issue you were asked about (a park, a question, a failed deploy) | Comment your answer, then swap `owner:don` for `owner:implementer` (a bug) or `owner:lead` (a feature, idea or stage). |
 | Start a feature or an idea | Swap `owner:don` for `owner:lead`. A comment on scope or priority is optional. |
-| Approve a plan | Add `status:plan-approved` and swap to `owner:lead`. Only you can add that label. |
+| Approve a plan | Add `status:plan-approved` and swap to `owner:lead`. Only you, or your escalation delegate in a ruling (R19), can add that label. |
 | Approve the batch | Run the `scripts/approve-batch.sh <n>...` line from the digest's "Batch" section: plans the lead put in the batch lane (`lane:batch`, every question `[none]`). It shows each plan, asks once, and approves them as you. Leave one out to rule on it as usual. |
 | Ask for changes to a plan | Comment what you want, then swap to `owner:lead`. |
 | Decline a feature or idea | Comment "don't build", then swap to `owner:lead`. The lead records it, and a close-out closes it. |
@@ -201,6 +201,8 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 | Reject a bug | Add `wontfix`, then close it `not planned`. |
 | Answer a curator escalation (harnest) | Comment approve, deny or your amendment, then remove `owner:don`. |
 | Reverse a curator ruling (harnest) | Reopen it with a comment saying what you want instead. |
+| Overrule the escalation delegate (R19) | Comment `overrule: <what you want instead>` on the issue. The agent holding it follows your overrule, and the delegate never rules on that issue again. The digest's "Delegate rulings" section lists what it ruled. |
+| Keep an ask from the delegate | Add `delegate:passed`, or comment on it from your own session (it waits `DELEGATE_QUIET_HOURS` after that). |
 | Let an outside filer's issue into the loop | Hand it back as in the first row. It is never re-parked after that. |
 | Handle a private security finding | `./scripts/file-advisory.sh --list` (also on the board line and in the digest). Fix it out of band, or hand it to the implementer yourself without the details going public; publish the advisory once the fix ships, or close it. |
 | Approve an architecture exception | Add `arch-approved` to the issue and hand it back. It waives a blocking architecture-review finding, and a metrics-ratchet rise (a new `dw/` module, or a UI metric) when the same work raises `docs/stabilization/baseline.json` (or `docs/stabilization/ui/baseline.json`) by exactly that rise, in a commit saying why. |

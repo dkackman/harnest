@@ -96,6 +96,17 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   holds it at `wait` until every issue it is blocked by has closed, then hands it to the
   lead to recheck its triggers. A parked `owner:don` issue is Don's, and the digest lists
   it under "Deferred".
+- **Don's escalation delegate** (R19, `docs/superpowers/specs/2026-11-25-escalation-delegate.md`;
+  on with `DELEGATE_IN_LOOP=1`). A live ask with `owner:don` (`needs-approval`, `plan-review`,
+  `needs-info`) goes to `delegate:rule` instead of Don (`classify.jq`), and a harnest `suite`
+  escalation to `delegate:suite`. The delegate rules at the default, amends and rules
+  (`Delegate changed:`), or passes it through (`delegate:passed`, with a recommendation); it
+  passes through taste, trust, new public surface, spend over 2 h GPU or 20 GB, an unsettled
+  loosening, his own earlier ruling, anything irreversible, hands on a server, and every
+  harness change. It never takes another login's issue, an overruled one (`overrule:`), or one
+  Don's own session touched within `DELEGATE_QUIET_HOURS`. Its ruling is Don's answer; a later
+  `overrule:` comment is Don replacing it. It may add `status:plan-approved` (Don,
+  2026-11-25), only through the guard's `delegate` role.
 - Implementer commits reference the issue number (`fix(mcp): #42 - ...`), works on branches
   merged to `develop`, never `master`.
 - Breaking MCP interface changes get the `breaking-change` label plus a comment, so the tester

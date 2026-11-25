@@ -149,6 +149,15 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   - it denies an edit that would make a failing case pass with no such record;
   - it escalates judgment calls to Don with `owner:don`: moves, merges, audit retirements,
     the security suite beyond a stale reference, and anything touching more than 3 cases.
+    With `DELEGATE_IN_LOOP=1` his escalation delegate rules on those first (R19, below).
+- **The escalation delegate** (R19): `agents/delegate/` (core + `rule`), run by
+  `run-loop.sh`'s `delegate_pass` (dw: the `delegate:rule` queue) and `delegate_suite_pass`
+  (harnest suite escalations, `delegate_suite_requests`) on `DELEGATE_MODEL` (Opus 5.5 by
+  default), in a merged tree of its own, under `DELEGATE_PERMISSION_FLAGS` and the guard's
+  `delegate` role. Every ruling goes to `logs/delegate.jsonl` (`delegate_record`) and the
+  digest's Delegate rulings section. `scripts/delegate-replay.py` replays Don's closed rulings
+  through its prompt (cases, run, score); the results are
+  `docs/superpowers/specs/2026-11-25-escalation-delegate-pilot.md`.
 
   `run-digest.sh` lists its rulings, and Don reverses one by reopening it.
   Measurements are the complement of that rule, not an exception to it: `regression-perf/`

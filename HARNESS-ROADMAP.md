@@ -28,7 +28,7 @@ rather than in a separate log.
 | R16 | Hardening round 2: the 2026-10-23 review (guard, drivers, fleet, regression cost, prompts) | done 2026-10-25: tasks 1–34 of `docs/superpowers/plans/2026-10-23-harness-hardening.md` landed; task 35 (measure) only partly done | R12, R8 |
 | R17 | Loop scheduler: one event-loop driver for both servers, concurrent sessions by resource (`gpu:S`, `free`, `suite`, trees), driver-owned deploys, per-session suite worktrees, `logs/loop/state.json` and a dashboard loop card | phase 1 built on branch `r17-loop-scheduler` (`harness/drivers/loop.py`; bash item runner `lib/run-item.sh`); cutover on lem pending. Baseline, 14 days of the bash loop (`scripts/gpu-busy.py`, `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`): lem GPU slot 18.4% busy, $6.50 per closed dw issue ($1,443 over 222 closes), a standing task every 5,327 s on average. Target: the slot busy share up, cost per close not up. Phase 1b and 2 below | R8, R13, R16 |
 | R18 | Agent sessions run as a separate OS user (`harnest-agent`) with a restricted ssh key and no read access to source for the tester | proposed (Don, 2026-11-19) | R17 |
-| R19 | Escalation delegate: a role that rules on Don's queue (default, amend or pass through) and hands him only taste, trust, direction, large spend and his own earlier rulings; it may add `status:plan-approved` | proposed (Don, 2026-11-25); replay of the closed rulings first | R15, R17 |
+| R19 | Escalation delegate: a role that rules on Don's queue (default, amend or pass through) and hands him only taste, trust, direction, large spend and his own earlier rulings; it may add `status:plan-approved` | built 2026-11-25 on Opus 5.5 after a replay of 103 of Don's closed rulings (pass-through recall 89%, $0.16 a ruling; `docs/superpowers/specs/2026-11-25-escalation-delegate-pilot.md`); live with `DELEGATE_IN_LOOP=1`; measure two weeks of overrides | R15, R17 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1869,7 +1869,7 @@ the deny regex. These are logged here rather than chased one by one: name matchi
 
 ## R19 — Escalation delegate: rule on Don's queue, pass through what is his
 
-Status: proposed (Don, 2026-11-25). Spec: `docs/superpowers/specs/2026-11-25-escalation-delegate.md`.
+Status: built 2026-11-25 (phase 1 replay, phase 2 role); on with `DELEGATE_IN_LOOP=1`. Spec: `docs/superpowers/specs/2026-11-25-escalation-delegate.md`; plan: `docs/superpowers/plans/2026-11-25-escalation-delegate.md`; replay results: `docs/superpowers/specs/2026-11-25-escalation-delegate-pilot.md`.
 
 **Why.** Don works his queue by asking an Opus session for a recommendation and approving it.
 Of 256 rulings on closed escalated issues since 2026-11-01, about half took the default outright,
