@@ -29509,4 +29509,87 @@ cleanup: `list_jobs(request="cf1308", workspace="regression-complete")` is empty
 and that is a finding). Then `delete_request(request="cf1308", revision=1, workspace="regression-complete")`.
 metrics: none.
 
+### C-F1309 — a check linked to its own `check-NN` item leaves the shot's result, attempts and `needs` alone
+pending: #1699
+source: tester, spec for #1699 from #1617's plan v1 (claude-opus-5-5 via anthropic)
+CPU only, no GPU model. Input: the shared fixture `asset:qa-cast/ep6-shot1-priya.mp4` (any short clip with a
+soundtrack substitutes). Use `workspace="regression-complete"` on every call. Bind each run's
+`acknowledged_cost` from its own `validate_workflow(..., arguments=...)`.
+1. `set_request(request="cf1309", revision=0, title="CF1309", goal="check and export items", why="C-F1309 fixture",
+   prompt="C-F1309", items=[
+   {key:"shot-01", title:"Shot 1", workflow:"templates/relevel-clip", arguments:{clip:"asset:qa-cast/ep6-shot1-priya.mp4"}},
+   {key:"check-01", title:"Check shot 1", depends_on:["shot-01"], estimate_minutes:0.1, workflow:"templates/check-script",
+    arguments:{input_audio:"asset:qa-cast/ep6-shot1-priya.mp4"}},
+   {key:"cut", title:"Cut", depends_on:["shot-01"], workflow:"templates/relevel-clip", arguments:{clip:"asset:qa-cast/ep6-shot1-priya.mp4"}},
+   {key:"export", title:"Export", depends_on:["cut"], workflow:"templates/relevel-clip", arguments:{clip:"asset:qa-cast/ep6-shot1-priya.mp4"}}])`.
+   (Stored `arguments` take scalars only, so `lines` is given at run time, not in the plan.)
+   `get_request(request="cf1309")`: note `check-01`'s `ready`.
+2. The take: `run_workflow(workflow_path="templates/relevel-clip", arguments={"clip":"asset:qa-cast/ep6-shot1-priya.mp4"},
+   request="cf1309/shot-01", wait_seconds=55)`. Call its job T.
+3. The check, after T has succeeded: `run_workflow(workflow_path="templates/check-script",
+   arguments={"input_audio":"output:<T's video output>", "lines":["any line"]}, request="cf1309/check-01", wait_seconds=55)`
+   (the fixture asset in place of `output:` is equivalent). Call its job K; it must finish after T.
+4. `get_request(request="cf1309")`.
+expected:
+- (1) `check-01` reads `planned` with `ready: false` while `shot-01` has no take.
+- (4) `shot-01`: `status` `done`, `result.job` is T (not K), `attempts` holds exactly one entry (T), and no `choose`
+  entry in the request's or the item's `needs` names `shot-01`.
+- (4) `check-01`: `status` `done`, `result.job` is K, `attempts` is exactly [K], and its `result.output` is K's JSON
+  (`kind` `text`, or the file K's manifest lists), not a video.
+- (4) `cut` reads `ready: true` and `export` reads `ready: false`; neither has an attempt.
+It is a **finding** if K appears in `shot-01`'s `attempts` or as its `result`, or if `shot-01` raises a `choose`: the
+check is then a take of the shot, which is the #1523 field report this stage's guidance routes around.
+cleanup: `delete_output(job_id=K)`, `delete_output(job_id=T)`; read `get_request(request="cf1309")`'s `revision` and
+`delete_request(request="cf1309", revision=<it>)`.
+metrics: none.
+
+### C-F1310 — a link to a missing `export` item is refused before queueing, and succeeds once `set_request` adds it
+pending: #1699
+source: tester, spec for #1699 from #1617's plan v1 (claude-opus-5-5 via anthropic)
+CPU only. Same fixture and workspace rule as C-F1309.
+1. `set_request(request="cf1310", revision=0, title="CF1310", goal="export added mid-request", why="C-F1310 fixture",
+   prompt="C-F1310", items=[{key:"shot-01", title:"Shot 1", workflow:"templates/relevel-clip",
+   arguments:{clip:"asset:qa-cast/ep6-shot1-priya.mp4"}}, {key:"cut", title:"Cut", depends_on:["shot-01"],
+   workflow:"templates/relevel-clip", arguments:{clip:"asset:qa-cast/ep6-shot1-priya.mp4"}}])`. No `export` item.
+2. `validate_workflow` relevel-clip with `{"clip":"asset:qa-cast/ep6-shot1-priya.mp4"}`, then `run_workflow(...,
+   request="cf1310/export", acknowledged_cost=<bound>)`. Then `list_jobs(request="cf1310")`.
+3. `get_request(request="cf1310")`; `set_request` the same plan at that `revision`, with
+   `{key:"export", title:"Export", depends_on:["cut"], workflow:"templates/relevel-clip",
+   arguments:{clip:"asset:qa-cast/ep6-shot1-priya.mp4"}}` appended, `why="add export item"`.
+4. The same `run_workflow(..., request="cf1310/export", wait_seconds=55)` as step 2 (re-validate if the binding is
+   stale). Call its job E. `get_request(request="cf1310")`.
+expected:
+- (2) Refused before anything queues: the error says `unknown_item` and its message contains `has no item 'export'`.
+  `list_jobs(request="cf1310")` is empty.
+- (3) The write is accepted and `export` reads back with `depends_on: ["cut"]`, `status` `planned`.
+- (4) E queues and succeeds with `request` "cf1310", `item` "export". `export` reads `done` with `result.job` E and
+  `attempts` [E]. `cut` has no attempts and `result` null: the export did not become a take of the cut.
+It is a **finding** if step 2 queues a job, or step 4 is refused after the item exists.
+cleanup: `delete_output(job_id=E)`; read the `revision` and `delete_request(request="cf1310", revision=<it>)`.
+metrics: none.
+
+### C-F1311 — the request guidance tells an agent to give checks and exports items of their own
+pending: #1699
+source: tester, spec for #1699 from #1617's plan v1 (claude-opus-5-5 via anthropic)
+Free. Load `dw:script-to-video`, `dw:series-episodes` and `dw:long-form` with the `Skill` tool, and read
+`references/request.md` at the path `dw:script-to-video`'s base directory gives, as any skill consumer would.
+expected:
+- `request.md`'s items table has a per-shot check row: key `check-NN`, workflow `templates/check-script` (naming
+  `check-narration` and `face-drift-check` as alternatives), `depends_on: ["shot-NN"]`, and an `estimate_minutes`.
+- It has an `export` row: the packaging workflow, `depends_on: ["cut"]`.
+- Its "Run each item" section says to link a check to its own `check-NN` item and never to the shot it checks, and an
+  export to `export` and never to `cut`; and it gives the reason: every succeeded job linked to an item is a take of
+  it, and with nothing accepted the latest one is the item's `result`.
+- It says to rerun `check-NN` after a new take of `shot-NN`, and to add a missing check or export item with
+  `set_request` before running it, because the server refuses a link to an item the plan lacks.
+- Its statement of the result rule says to link only takes of that item to it.
+- `series-episodes`, where it runs `templates/check-script` against an episode, says to link it to
+  `check-<episode item>` (or run it unlinked for a one-off) and points to `request.md`.
+- `long-form`, where it describes the per-segment check and the export, has a line pointing to the same `request.md`
+  rule.
+- None of the three tells the reader to link a check or an export to the shot or the cut, anywhere.
+It is a **finding** if any rule above is missing or contradicted.
+cleanup: none.
+metrics: none.
+
 ## Performance
