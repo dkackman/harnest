@@ -30515,7 +30515,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1358 — the cuda bench gives `z-image-sdnq`, `flux3-klein` and `krea2` a measured cuda `cost`, or an open issue saying why not
-pending: #1711
 source: tester, spec for #1711 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Before the stage all three had `cost: null` in `list_workflows(configures="templates/text-to-image")`.
 1. `list_workflows(configures="templates/text-to-image")`; `get_workflow(name=<each of the three>)`.
@@ -30534,7 +30533,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1359 — each committed cuda bench figure is cited to a completed job at defaults whose duration matches it within 10%
-pending: #1711
 source: tester, spec for #1711 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Run it on a server whose `get_server_info` accelerator is cuda (the bench ran on lem); a job id from
 another server answers unknown here, which is a skip, not a finding. The job ids come from #1711's hand-off
@@ -30551,7 +30549,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1360 — a non-default argument on a newly benched entry prices as a pre-bench entry's does, not as the catalog figure
-pending: #1711
 source: tester, spec for #1711 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU; holds on any server, because it compares a newly benched entry with a control that already had
 its figure. Workspace `regression-complete`.
