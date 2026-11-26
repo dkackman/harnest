@@ -28810,4 +28810,26 @@ expected:
 cleanup: `delete_output(job_id=<id>)` for the job.
 metrics: none.
 
+### C-F1543 — an image's embedded `seed` is the one that rendered it; the run's own seed becomes `workflow_seed` only when they differ
+source: tester, verified in #1765 (claude-opus-5-5 via anthropic)
+GPU: three short z-image jobs, about 30 s each. Workspace `regression-complete`. Before #1765, an image from a
+sub-workflow step with a literal child seed embedded the parent's seed, so re-running from the metadata gave a
+different still. Each inline run is validated first, and `acknowledged_cost` is taken from that validate. Every run
+uses `wait_seconds=55`. Z(seed) is C-F1538's sub-workflow step. Call `get_gallery_metadata(include_workflow=false)` on
+each still.
+1. Literal child seed: an inline parent `{"seed": "variable:seed", "variables": {"seed": 9}}` with step Z(5).
+2. Control: an inline parent with `"variables": {"seed": 5}` and step Z("variable:seed").
+3. `pipeline.seed`: an inline workflow with top-level `"seed": 9` and one pipeline step that copies
+   `models/z-image`'s `txt2img` step (`get_workflow`), with `"seed": 5` inside `pipeline` and the arguments `prompt` "a
+   lighthouse", that template's `negative_prompt`, `num_inference_steps` 4, `num_images_per_prompt` 1, `width` 512,
+   `height` 320 and `guidance_scale` 0.0.
+4. `compare_outputs` step 1's still and step 3's against step 2's.
+expected:
+1. Step 1: `metadata.seed` is 5 and `metadata.workflow_seed` is 9. A `seed` of 9 is a **finding** (#1765 is back).
+2. Step 2: `metadata.seed` is 5 and there is **no** `workflow_seed` key.
+3. Step 3: `metadata.seed` is 5 and `metadata.workflow_seed` is 9.
+4. Step 4: both stills are identical to step 2's (SSIM 1.0), which shows that the embedded 5 is what rendered them.
+cleanup: `delete_output(job_id=<id>)` for all three jobs.
+metrics: none.
+
 ## Performance
