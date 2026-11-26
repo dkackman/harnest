@@ -29755,8 +29755,8 @@ folders on 2026-11-25). Run C-F1316's spec on G, then on E, then on F (C-F1316's
 `mock {url_glob: "**/api/gallery?**folder=**", set: {"files": [], "total": 0}}` placed before the `goto`.
 expected:
 - G: the read is `folder=<G>&limit=6`; the strip shows exactly G's files, every one, no other folder's.
-- E: the read is `folder=<E>&limit=6`; the strip shows the page's empty state for a workflow with no outputs (a
-  message, no tile, no spinner left after 10 s), the same state as for F under the mock.
+- E: the read is `folder=<E>&limit=6`; the strip shows the page's empty state for a workflow with no outputs
+  (as before this stage: no tile and no message, no spinner left after 10 s), the same state as for F under the mock.
 - F under the mock: the empty state, though F has files: the page trusts the folder read and does not fall back to
   a whole listing (no `limit=100000` read appears).
 No page errors. An error banner instead of the empty state, a spinner that never settles, or a fallback whole
@@ -29768,11 +29768,12 @@ metrics: none.
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check`. Use F from C-F1316 (7+ files). Reach Compare the way the Gallery offers it:
 on the Gallery page, filter to F's folder (or find F's tiles), pick two of F's files and use the page's Compare
-action; `inspect` the action (its `href`, if it is a link) or read `goto`'s `url` on a later `goto` to learn how
-Compare's URL carries its names. Every later visit is a `goto` straight to that URL form with the names swapped in.
+action; Compare has no URL that carries names (#1701, 2026-11-26). Each visit starts on the Gallery and ticks each
+file (`click role checkbox nth k`, or `name "<label>"`). Then `record **/api/gallery**`, then
+`click role button name "Compare"`.
 Spec, for names {a, b} and then for four names {a, b, c, d}, all F's, at least one with a note (`list_gallery` shows
-which): `record **/api/gallery**`; `goto` Compare's URL; `wait_text` the first file's label; `screenshot`;
-`recorded **/api/gallery**`.
+which): the ticks; `record **/api/gallery**`; `click role button name "Compare"`; `wait_text` the first file's
+label; `screenshot`; `recorded **/api/gallery**`.
 expected:
 - Each visit makes exactly one `/api/gallery` read at load, and it carries `folder=<F>`. None carries
   `limit=100000` without `folder=`.
@@ -29785,44 +29786,45 @@ metrics: none.
 
 ### C-F1319 — Compare over two folders makes one read per folder, however the names are split
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
-Free, no job. Web UI as in C-F1318 (same URL form). Folders F (C-F1316) and G (C-F1317, or any other folder with a
+Free, no job. Web UI as in C-F1318 (reached by ticking, as in C-F1318). Folders F (C-F1316) and G (C-F1317, or any other folder with a
 file). Visits: {F1, G1}; {F1, F2, G1} (three names, two folders); {G1, F1, F2, G1′} if G has a second file, else
 {G1, F1, F2}.
 expected:
 - Each visit makes exactly two `/api/gallery` reads at load, one with `folder=<F>` and one with `folder=<G>`;
   never one per name, never a whole listing.
-- Each cell shows its file and note as `list_gallery` gives them, in the order the names were given.
+- Each cell shows its file and note as `list_gallery` gives them, in the order the files were ticked.
 No page errors. A read per name, a whole listing, or a misplaced cell is a **finding**.
 cleanup: none.
 metrics: none.
 
 ### C-F1320 — Compare shows the missing-file state for a gone file and for a folder that no longer exists
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
-Free, no job. Web UI as in C-F1318. Visits, each with one real file F1 from F:
-1. {F1, `<F>/<F1's run id>/final/cf1670-no-such-file.png`} (the folder exists, the file doesn't);
-2. {F1, `cf1670-gone-folder/20260101-000000-deadbeef/cf1670-gone.png`} (no such folder:
-   `list_gallery(folder="cf1670-gone-folder")` is empty);
-3. {the two missing names above} (nothing found at all).
+Free, no job. Web UI as in C-F1318. Visits (Compare reached as in C-F1318 with {…} ticked):
+1. Tick F1 and G1 (G as in C-F1319), with
+   `mock {url_glob: "**/api/gallery?**folder=<G with / as %2F>**", set: {"files": [], "total": 0}}` placed before
+   the Compare click. G1 is missing in a folder that lists nothing.
+2. The same, with the mock on `**/api/gallery?**folder=**`. Both names are missing.
 expected:
 - F1's cell shows its file. Each missing name's cell shows the cell's missing-file state (a message in the cell,
   no broken image), and the page shows no error banner in its place.
-- Visit 2 reads `folder=cf1670-gone-folder` and gets an empty list; that is not an error (the read answers 200).
-- Visit 3 shows two missing-file cells, not an error page.
+- `fetch /api/gallery?folder=cf1670-gone-folder&workspace=regression-complete` answers 200 with `files: []`.
+- Visit 2 shows two missing-file cells, not an error page.
 A page error, an error banner, a blank page or a spinner that never settles is a **finding**.
 cleanup: none.
 metrics: none.
 
 ### C-F1321 — Compare with fewer than two names makes no listing read
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
-Free, no job. Web UI as in C-F1318. Visits: Compare's URL with one name (F1); with none (the names part empty or
-left out, whichever the URL form allows). `record **/api/gallery**` before each `goto`; `wait_text` any visible text
+Free, no job. Web UI as in C-F1318. Visits:
+- (a) On the Gallery, tick one file, then `inspect` the Compare button: it is disabled.
+- (b) `goto /#/ws/regression-complete/compare` with no names.
+For (b), `record **/api/gallery**` before the `goto`; `wait_text` any visible text
 of Compare's page, then wait 6 s more (a `wait_text` for text that never comes, `timeout_ms: 6000`, may fail: put it
 last, before `recorded`, in a separate run if the runner stops at it) and `recorded`.
 expected:
-- No `/api/gallery` read for either visit, including after one feed interval.
-- The page shows what it shows today for too few names (a prompt to pick files, or the empty layout), with no
-  page errors.
-Any `/api/gallery` read is a **finding**.
+- No `/api/gallery` read for (b), including after one feed interval.
+- (a) the Compare button is disabled; (b) the page shows 'Nothing to compare yet…', with no page errors.
+Any `/api/gallery` read in (b) is a **finding**.
 cleanup: none.
 metrics: none.
 
@@ -29830,12 +29832,14 @@ metrics: none.
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check` with setup S1536-BG (C-F1233: runner in the background, the MCP write made
 while its last `wait_text` waits). File X: F's newest file (in C-F1316's strip). Note its current note N0.
-1. Spec: `record **/api/**`; `goto` F's workflow page; `wait_text` X's label; `wait_text "cf1670 live note A"`
-   (`timeout_ms: 30000`); `screenshot`; `recorded **/api/**`. The write, right after `date`:
+1. Spec: `record **/api/**`; `goto` F's workflow page; `wait_text` X's label; `screenshot`; a `wait_text` for text
+   that never comes (`timeout_ms: 15000`), placed last before `recorded`, in a separate run if the runner stops at
+   it; `recorded **/api/**`. The write, right after `date`:
    `set_note(target=<X>, note="cf1670 live note A", workspace="regression-complete")`.
-2. Same on Compare's URL with {X, F2}, waiting for `"cf1670 live note B"`, with the note set to that.
+2. Same on Compare reached as in C-F1318 with {X, F2} ticked, waiting for `"cf1670 live note B"`, with the note set
+   to that.
 expected:
-- Each `wait_text` passes with no reload: the note shows within about 10 s of `date` (one 5 s feed interval plus
+- Step 2's `wait_text` passes with no reload: the note shows within about 10 s of `date` (one 5 s feed interval plus
   slack).
 - `recorded` holds a `/changes` read that moved, then a new `/api/gallery` read after `date` that still carries
   `folder=<F>` (plus `limit=6` on the Workflow page), and no whole-listing read.
