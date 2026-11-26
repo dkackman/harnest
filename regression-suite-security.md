@@ -2320,7 +2320,6 @@ appears in any answer. Any of these is a boundary escape: never file it as an is
 cleanup: none (if step 3 queued a job against the expectation, `cancel_job` it, then `delete_output(job_id=…)`).
 
 ### SE-F084 — a `preference:` key is a name, never a path: traversal and absolute forms are refused with no server path
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete`. Stage 1 adds a new `workflow.path` form whose key indexes a server-held
 file (the shipped ladder, later the overlay). The key must be checked as a name before any lookup.

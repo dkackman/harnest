@@ -31597,7 +31597,6 @@ cleanup: `delete_output(job_id=<storm job>)`. Then `delete_asset` the three `qa-
 metrics: none.
 
 ### C-F1406 — a step composing `preference:text_to_image` names its resolution in the validate plan, per tier
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete` on every call. Before the stage, a `workflow.path` of
 `preference:text_to_image` (direct or through a `variable:`) was refused at `steps[0].workflow.path` as a sub-workflow
@@ -31632,7 +31631,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1407 — the rung follows a step `tier` argument first, then the enclosing workflow's tier up to the root
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete`. Design 6's order: the composing step's `tier` argument, else the
 enclosing workflow's folded `tier` walking up to the root, else `default_tier`.
@@ -31657,7 +31655,6 @@ cleanup: `delete_workflow(name="qa-pref-child-1626", workspace="regression-compl
 metrics: none.
 
 ### C-F1408 — a `preference:` run pins its resolution in the job, and a rerun runs the same target
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 GPU: three or four short single-image jobs (SD 1.5 and one z-image). Workspace `regression-complete`. `validate_workflow`
 each run first with the same arguments and pass its `acknowledged_cost`.
@@ -31679,7 +31676,6 @@ cleanup: `delete_output(job_id=<id>)` for each job.
 metrics: none.
 
 ### C-F1409 — an unknown key and a tier outside `draft | standard | best` are refused at validate, and queue nothing
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free. Workspace `regression-complete`. C-F1406's carriers.
 1. `validate_workflow(inline_workflow=<P0("preference:no_such_key")>)`.
@@ -31704,7 +31700,6 @@ cleanup: none (cancel and `delete_output` a job if 5 queued one against the expe
 metrics: none.
 
 ### C-F1410 — a `variable:` holding `preference:` resolves the same way; overriding it with a workflow name skips the preference
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free at validate; two GPU runs (one z-image image, one SD 1.5 image). Workspace `regression-complete`.
 `<PV>` = `<PT("variable:picture_workflow")>` with `"picture_workflow": "preference:text_to_image"` added to `variables`
@@ -31726,7 +31721,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F1411 — the resolved child is priced, its downloads listed and its arguments warned, as a named child is
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete`. The plan's main risk: a reader of `workflow.path` left reading the raw
 string swallows the failure, so the child goes **silently** unpriced, un-downloaded or unwarned.
@@ -31746,7 +31740,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1412 — `preference:` inside an argument value is plain text, not a reference
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete`. Design 8: `preference:` is not a `variable:`, so only `workflow.path`
 resolves it.
@@ -31759,7 +31752,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1413 — the guide and the schema describe `preference:` in `workflow.path`
-pending: #1721
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_guide("workflows")` (the index), then the References section and the section on composing a stored workflow.
 `get_schema` for the section holding a step's `workflow.path`. The server's MCP instructions (the prefix list).
