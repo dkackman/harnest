@@ -29863,7 +29863,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1324 — the Gallery's text filter keeps every-word matches in any order, ignores case and spaces, and clears
-pending: #1702
 source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`, in `regression-complete`. Before the `goto`,
 `mock {url_glob: "**/api/gallery?**", set: {...}}` from the real answer, setting on three of the real files (any
@@ -29885,7 +29884,6 @@ cleanup: none (the mock writes nothing).
 metrics: none.
 
 ### C-F1325 — the Jobs page's filter follows the same every-word rule
-pending: #1702
 source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1324. `/api/jobs` answers `{"jobs": [{"id", "workflow", "note", ...}], "total"}`
 (pinned 2026-11-25). Before the `goto /#/ws/regression-complete/jobs`, `mock {url_glob: "**/api/jobs?**"}` from
@@ -29898,7 +29896,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1326 — the Prompts page moves from one substring to the every-word rule
-pending: #1702
 source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1324, on the shared Prompts page (sidebar "Prompts"). `/api/prompts` answers
 `{"libraries": [...], "prompts": ["<name>", ...]}` (names only, pinned 2026-11-25). Before the `goto`, `mock`
@@ -29912,7 +29909,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1327 — the Assets page moves from one substring to the every-word rule
-pending: #1702
 source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1324, on the workspace Assets page (`/#/ws/regression-complete/assets`, filter box
 placeholder `filter...`). Before the `goto`, `mock` the page's asset listing read (`record **/api/**` once first to
@@ -29926,7 +29922,6 @@ cleanup: `delete_asset` on any asset this case made (acknowledged as the tool as
 metrics: none.
 
 ### C-F1328 — the Schema page's filter follows the every-word rule
-pending: #1702
 source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check`, on the Schema page (sidebar "Schema"). Pick from the page an entry whose
 visible name holds two parts in order (`<A><B>`, e.g. a type named with two words or a dotted/underscored name) and
@@ -29941,7 +29936,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1329 — the Workflows catalog search keeps its whole-word rule: `art` does not match `smart`
-pending: #1702
 source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check`, on `/#/ws/regression-complete/workflows` (search box placeholder
 `search workflows...`). Before the `goto`, `mock` the page's catalog read (find it with `record **/api/**`) from the
