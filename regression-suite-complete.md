@@ -29387,7 +29387,6 @@ cleanup: none (nothing runs).
 metrics: none.
 
 ### C-F1455 — #1749's temporal-flicker record names the clip, the strengths, the CPU time, before/after numbers and a gate that follows from them
-pending: #1749
 source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). The record is `bench/records/temporal-flicker.md` (+ `.json`) in the dw repo, which the tester can't
 read: read it as the stage's hand-off comment on #1749 quotes it (`gh issue view 1749 --repo dkackman/diffusers-workflow
@@ -29421,7 +29420,6 @@ cleanup: none (the record's clip and pair are its evidence).
 metrics: none.
 
 ### C-F1456 — #1749's before/after pair is on mini-ai where the record says, the same geometry as the source, and posted for Don
-pending: #1749
 source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). BEFORE and AFTER are the two references the record (C-F1455) gives for the pair: outputs or kept
 assets on mini-ai, in the workspace it names.
@@ -29440,7 +29438,6 @@ cleanup: none (Don needs the pair; it is the record's evidence).
 metrics: none.
 
 ### C-F1457 — over MCP, the probe's after clip flickers less than its before clip on a static region, and keeps the moving subject's detail
-pending: #1749
 source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
 An independent check of C-F1455's direction with the server's own measures, since the tester can't rerun the bench.
 Four `trim_video` utility jobs (CPU, no model). Workspace: the record's. BEFORE/AFTER as in C-F1456, N = their
