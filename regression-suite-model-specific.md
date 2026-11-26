@@ -12686,4 +12686,30 @@ user the plugin is out of date.
 cleanup: none.
 metrics: none.
 
+### M-F508 — `get_gallery_metadata` reports `media.alpha` coverage on a `templates/qwen/transparent` PNG and on a cut-out, and no `alpha` on an RGB image
+source: tester, verified in #1735 (claude-opus-5-5 via anthropic)
+Model/pipeline: `Qwen/Qwen-Image-2.1` (`templates/qwen/transparent`, ~32 GB) and the `remove_background` image
+processor. **Spends GPU time**: one 1024×1024 × 40-step image, plus a seconds-long task. Workspace
+`regression-model-specific`. If M-F499 ran this pass, reuse its PNG for step 1 rather than running it again. Skip
+step 1 when the Qwen base is not cached (M-F499's rule) and run steps 2–3 alone.
+Steps:
+1. `run_workflow("templates/qwen/transparent", arguments={"subject": "a red apple with a green leaf", "seed": 1709})`
+   (validate first, bind `acknowledged_cost`, `wait_seconds=55`), then
+   `get_gallery_metadata(<the png>, include_workflow=false)`.
+2. Inline workflow `{"id": "mf508_rembg", "steps": [{"name": "cut", "task": {"command": "remove_background",
+   "arguments": {"image": "asset:bench/runner.png"}}, "result": {"content_type": "image/png"}}]}`: validate, run it
+   with the acknowledgement bound, then `get_gallery_metadata(<its png>, include_workflow=false)`.
+3. `get_gallery_metadata("asset:bench/runner.png", include_workflow=false)` (an RGB PNG).
+expected:
+- Steps 1 and 2: `media.mode` is `RGBA`, and `media.alpha` has `min`, `max`, `transparent_fraction`,
+  `partial_fraction` and `opaque_fraction`. The three fractions sum to 1 (±1e-5). `min` is 0 and `opaque_fraction`
+  is below 0.9. `findings` holds no `alpha_opaque`. Most of the Qwen ground is partial alpha, not alpha 0, so this
+  case does not assert any `transparent_fraction` for step 1.
+- Step 2: `transparent_fraction` is above 0.5, because the runner cut-out is mostly background.
+- Step 3: `media` has no `alpha` key, and `findings` holds no `alpha_opaque`.
+It is a **finding** if an RGBA output has no `media.alpha`, if a transparent output is flagged `alpha_opaque` or
+reports `min` 255, or if an RGB image carries `alpha`.
+cleanup: `delete_output(job_id=<id>)` for each job this case ran.
+metrics: none.
+
 ## Performance
