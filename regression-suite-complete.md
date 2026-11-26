@@ -26646,7 +26646,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1429 — the composing templates list their new pass-through variables, defaulting to the child's own values
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 Free. Before the stage (develop c02c3d5d) `templates/describe-and-regenerate` declared only `image_url`, `vision_model`,
 `language_model`, `seed`; `templates/best-of-n-to-video` declared `prompt`, `candidates`, `rubric`, `scale`,
@@ -26674,7 +26673,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1430 — the flux3 upsampler builtins declare `model_name`, `revision` and `max_new_tokens`
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 Free. Before the stage the probe below warned three times, `... declares no variable 'max_new_tokens' - the value is
 dropped. Declared: device, prompt` (and the same for `model_name` and `revision`); the `_edit` builtin's warning listed
@@ -26704,7 +26702,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1431 — the changed templates validate clean on defaults and with the pass-through overrides; off-grid overrides are still refused
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 Free. Workspace `regression-complete`. Before the stage every template below validated with exactly one warning, the
 seed-null one (`The seed variable 'seed' has no value, ...`); best-of-n with the step-2 overrides was refused,
@@ -26732,7 +26729,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1432 — a default-argument validate of describe-and-regenerate plans what it planned before the stage
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 Free. Baseline, read before the stage (develop c02c3d5d, cuda 3090, workspace `regression-complete`):
 `validate_workflow(name="templates/describe-and-regenerate")` gave `valid: true`, `plan.steps` 4, `downloads_required`
@@ -26753,7 +26749,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1433 — describe-and-regenerate's `image_workflow` naming nothing is refused at validation and at submit
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 Free. Before the stage the same path through `templates/compose-workflows`' `image_generation_workflow` was refused
 `valid: false` at `steps[0].workflow.path`: `Sub-workflow '../models/does-not-exist.json' could not be resolved. ... Looked
@@ -26773,7 +26768,6 @@ cleanup: none (`cancel_job` and `delete_output(job_id=...)` if 3 queued one).
 metrics: none.
 
 ### C-F1434 — best-of-n-to-video hands its frame count and size down to the LTX child
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 GPU: two SD 1.5 stills, two judge calls, one LTX-2.5 image-to-video at 97 frames 512x512. Workspace `regression-complete`.
 1. `validate_workflow(name="templates/best-of-n-to-video", arguments=A, workspace="regression-complete")`, A =
@@ -26790,7 +26784,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F1435 — compose-workflows hands the parent's seed to its image child, and makes one still by default
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 GPU: three compose runs (z-image still + MiniMax H3 image-to-video each), plus one z-image-only inline composition.
 Workspace `regression-complete`. Before the stage `models/z-image` declared `seed: 42`, and compose-workflows passed it

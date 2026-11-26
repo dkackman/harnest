@@ -2379,7 +2379,6 @@ off-box fetch is attempted. That is a boundary escape: never file it as an issue
 cleanup: DELETE `qa_sec` if it was stored.
 
 ### SE-F086 — describe-and-regenerate's new `image_workflow` path variable can't name a file outside the workflow sources
-pending: #1725
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete`. Stage A turns a literal `workflow.path` into `variable:image_workflow`, so
 a run's `arguments` now choose which file the step reads. Before the stage, compose-workflows' `variable:` path answered
