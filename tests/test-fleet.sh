@@ -82,6 +82,7 @@ loop = false
 lanes = $4
 speed = 1.0
 heavy = $5
+regression_all = ["smoke", "complete"]
 max_model_gb = $6
 deny_models = [$7]
 downloads = $8
@@ -161,6 +162,27 @@ fleet() { (cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" FAKE_GH_BOARD="$T
 (cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" python3 -m harness.drivers.fleet --plan smoke) > "$T/plan.out" 2>&1
 eq  "plan: exits cleanly" 0 $?
 has "plan: four lanes" "on 4 lane(s)" "$(cat "$T/plan.out")"
+has "  every case" "== smoke: 8 cases" "$(cat "$T/plan.out")"
+
+# --- REGRESSION_CASES: the plan holds the named cases and their groups only
+plan() { (cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" "$@") > "$T/plan-cases.out" 2>&1; }
+plan REGRESSION_CASES="S-F003 S-F005" python3 -m harness.drivers.fleet --plan smoke
+eq  "cases: the plan exits cleanly" 0 $?
+has "  narrowed to them and the group S-F003 is in" "== smoke: 3 cases on 4 lane(s) (REGRESSION_CASES: of the level's 8)" "$(cat "$T/plan-cases.out")"
+plan REGRESSION_CASES="S-F003 S-F005" python3 -m harness.drivers.fleet --plan --json smoke
+eq  "  the JSON plan too, a group on one lane" "S-F002,S-F003 S-F005" \
+    "$(sed -n '/^\[/,$p' "$T/plan-cases.out" | jq -r '[.[0].lanes[] | select(length > 0) | join(",")] | sort | join(" ")')"
+plan REGRESSION_CASES="S-F003" python3 -m harness.drivers.fleet --plan all
+eq  "cases all: the plan exits cleanly" 0 $?
+has "  the level holding them is narrowed" "== smoke: 2 cases on 4 lane(s)" "$(cat "$T/plan-cases.out")"
+has "  a level without them is skipped" "== complete: none of REGRESSION_CASES in regression-suite-complete.md, skipping" "$(cat "$T/plan-cases.out")"
+plan REGRESSION_CASES="S-F003" python3 -m harness.drivers.fleet --plan --json all
+eq  "  and left out of the JSON plan" "smoke" "$(sed -n '/^\[/,$p' "$T/plan-cases.out" | jq -r 'map(.level) | join(" ")')"
+plan REGRESSION_CASES="S-F003 S-F404" python3 -m harness.drivers.fleet --plan smoke
+eq  "cases: an ID in none of the files is refused" 1 $?
+has "  naming it" "REGRESSION_CASES: S-F404 is in none of this run's suite files" "$(cat "$T/plan-cases.out")"
+plan REGRESSION_CASES="S-F003 S-F404" python3 -m harness.drivers.fleet smoke
+eq  "  a run too, before it starts" "1 " "$? $(ls "$T/h/logs/fleet" 2>/dev/null)"
 
 # --- the run
 fleet DW_TOKEN_ALPHA=tok-alpha DW_TOKEN_BETA=tok-beta DW_TOKEN_GAMMA=tok-gamma
@@ -301,6 +323,16 @@ has "  queued again, saying why" "S-F002 had no answer (budget or turns ran out)
 eq  "  and the run exits 0" 0 "$rc"
 eq  "  with every case passing" "pass pass pass" "$(case_of S-F001 outcome) $(case_of S-F002 outcome) $(case_of S-F003 outcome)"
 eq  "  state says done" "done" "$(jq -r .status "$st")"
+
+# --- REGRESSION_CASES: a run of the named case only, and all's other levels skipped
+: > "$FAKE_TIMELINE.short"
+(cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" FAKE_GH_BOARD="$T/board.json" SESSION_RETRY_PAUSE_SECS=0 PATH="$T/bin2:$PATH" \
+   FLEET_SERVERS=beta REGRESSION_CASES=S-F002 DW_TOKEN_BETA=tok-beta python3 -m harness.drivers.fleet all) > "$T/fleet.out" 2>&1
+eq  "cases: the run exits 0" 0 $?
+eq  "  only the named case runs, then its lane's sweep" "[S-F002] []" "$(sed 's/^start //' "$FAKE_TIMELINE.short" | tr '\n' ' ' | sed 's/ $//')"
+eq  "  the state holds it alone, passed, in the one level run" "S-F002 pass smoke" \
+    "$(jq -r '"\(.cases | keys | join(" ")) \(.cases["S-F002"].outcome) \(.levels | join(" "))"' "$st")"
+has "  a level without it is skipped" "complete: none of REGRESSION_CASES in regression-suite-complete.md, skipping" "$(cat "$T/fleet.out")"
 
 # --- a case with no requirements entry: named in one line, and still run,
 # as heavy, on the primary (alpha), never on beta (light only)

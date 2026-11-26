@@ -122,7 +122,8 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   Set `CASES_PER_SESSION=0` explicitly to force one session per level. `REGRESSION_CASES` narrows
   a run to the named IDs plus their dependency groups (`harness.requirements.select`, the same
   `setup:`/`cleanup:` links the fleet keeps on one lane), in the canonical file and workspace;
-  the level's prerequisite is skipped, and so is a level holding none of them. Each run deletes what its
+  the level's prerequisite is skipped, and so is a level holding none of them. The fleet (below)
+  reads it the same way. Each run deletes what its
   cases generate as soon as a case (and any dependent case) is done, keeping only durable
   fixtures listed in that suite file's "Fixtures" section (workflows/assets reused across runs)
   and artifacts an open issue needs for a repro; a final sweep removes anything else. All three

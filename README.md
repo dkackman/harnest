@@ -247,6 +247,8 @@ affect each other's timings:
 ./run-regression.sh all                # all four, once each
 ./run-regression.sh smoke my-suite.md  # override one level's file; workspace comes from the filename
 REGRESSION_CASES=M-F176 ./run-regression.sh model-specific  # one case, and the cases it depends on
+# a release set, across every server's lanes (add --plan first to see where each case would run)
+REGRESSION_CASES="$(grep -v '^#' regression-release-set.txt | tr '\n' ' ')" python3 -m harness.drivers.fleet all
 ```
 
 - **Case IDs** carry a per-level prefix (`S-`/`C-`/`M-`/`SE-`). A case states its intent
@@ -772,7 +774,7 @@ isn't found until you re-run the script.
 | `MAX_SESSIONS` | `0` | R17 loop driver: stop starting sessions after this many, then exit once they end; `0` = unlimited (it replaces `MAX_CYCLES`) |
 | `--servers` / `--only` / `--once` | every loop server / every queue / off | the R17 loop driver's flags: `--servers lem,mini-ai` picks servers; `--only <queue>[,<queue>]` limits the queues, `--once` runs each ready item once. With more than one server, `SOURCE_DIR`, `PLUGIN_TREE` and `LEAD_TREE` name lem's and the others take their clone suffix (`-mini-ai`), and `DW_URL` is ignored |
 | `CASES_PER_SESSION` | 3 or 8 | `run-regression.sh` only; see above |
-| `REGRESSION_CASES` | empty (every case) | `run-regression.sh` only: the case IDs to run, each with the cases its `setup:`/`cleanup:` lines tie it to; the level's prerequisite is not run, and an ID in none of the run's suite files is refused; see above |
+| `REGRESSION_CASES` | empty (every case) | `run-regression.sh` and the fleet (`python3 -m harness.drivers.fleet`): the case IDs to run, each with the cases its `setup:`/`cleanup:` lines tie it to; the level's prerequisite is not run, and an ID in none of the run's suite files is refused; see above |
 | `FALLBACK_MODEL` | unset | `--fallback-model`; must be servable by the role's provider |
 | `SESSION_RETRY_PAUSE_SECS` | `30` | a session that ends without a result is retried once; a rejected rate limit instead sleeps the driver until the reset, then runs the session once more |
 | `SNAPSHOT_TTL_SECS` | `20` | how long one driver process tree reuses its board snapshot (four `gh issue list` calls) across queues and passes; dropped after every session and every label edit the driver makes, and never used for the re-check right before a session; `0` reads the board fresh every time (`run-release.sh` always does) |

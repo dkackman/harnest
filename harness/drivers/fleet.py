@@ -5,6 +5,7 @@ once, on a lane that can run it (docs/superpowers/specs/
     python3 -m harness.drivers.fleet [level|all]          # run it
     python3 -m harness.drivers.fleet --plan [level|all]   # where each case would run; runs nothing
     FLEET_SERVERS="lem minid" python3 -m harness.drivers.fleet smoke
+    REGRESSION_CASES="S-F002 M-F176" python3 -m harness.drivers.fleet all  # those cases and their groups
     python3 -m harness.drivers.fleet --allow-failures smoke  # exit 0 when cases fail
 
 It exits 1 when a case fails (unless --allow-failures) and when the run
@@ -39,7 +40,9 @@ logs/fleet/runs/. Agents report each case as they start it
 (REGRESSION-CASE) and its outcome at the end (REGRESSION-RESULT); see
 agents/regression/run-cases.md, step 6.
 
-Knobs: FLEET_SERVERS (every server), CASES_PER_SESSION (8), FLEET_MIN_BATCH
+Knobs: FLEET_SERVERS (every server), REGRESSION_CASES (every case: the IDs
+to run, each with its dependency group, as in drivers/regression.py),
+CASES_PER_SESSION (8), FLEET_MIN_BATCH
 (3: the fewest cases a session or a steal is worth, given a session's setup cost),
 REGRESSION_MODEL / REGRESSION_PROVIDER / REGRESSION_EFFORT /
 REGRESSION_BUDGET_USD, AUTOCOMPACT_TOKENS, FALLBACK_MODEL, TICKET_REPO,
@@ -109,6 +112,8 @@ class Plan:
     unplaced: list = field(default_factory=list)  # (group, {server: why})
     script_cases: list = field(default_factory=list)
     missing: list = field(default_factory=list)  # cases with no requirements entry
+    of: int = 0  # under REGRESSION_CASES, how many cases the suite file holds
+    skipped: bool = False  # the file holds none of REGRESSION_CASES: nothing of this level runs
 
 
 def missing_line(cases):
@@ -165,11 +170,26 @@ def why_not(group, server, server_facts, ref):
     return "" if ok else reason
 
 
-def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=None, est=None):
+def skip_line(p):
+    """What a level holding none of REGRESSION_CASES says, as drivers/regression.py does."""
+    return f"{p.level}: none of REGRESSION_CASES in {p.suite_file.name}, skipping"
+
+
+def check_cases(profile, levels, cases):
+    """ProfileError unless every REGRESSION_CASES ID is in one of <levels>' suite files."""
+    found = {c for lv in levels for c in suite.case_ids(REPO / profile.level(lv).file)}
+    for cid in cases:
+        if cid not in found:
+            raise ProfileError(f"REGRESSION_CASES: {cid} is in none of this run's suite files")
+
+
+def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=None, est=None, cases=()):
     """Assigns <level>'s dependency groups to lanes, longest first, each to
     the eligible lane that would finish it soonest. A group's length is its
     cases' estimated time (<est>, from past runs; every case the same without
-    one). <lanes> carries load across levels, so `all` balances as one pool."""
+    one). <lanes> carries load across levels, so `all` balances as one pool.
+    <cases> (REGRESSION_CASES) narrows it to those cases and their groups
+    (requirements.select); a level holding none of them comes back `skipped`."""
     est = est or durations.Estimates()
     lv = profile.level(level)
     suite_file = REPO / lv.file
@@ -177,13 +197,19 @@ def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=
     lanes = lanes if lanes is not None else make_lanes(profile, server_facts)
     usable = [l for l in lanes if level_servers is None or l.server.name in level_servers]
     ref = requirements.reference_sizes(server_facts.values())
-    p = Plan(level=level, suite_file=suite_file, lanes=usable, script_cases=script)
+    blocks = requirements.case_blocks(suite_file)
+    # a group here (script cases left out) is all or none of a selected one
+    chosen = set(requirements.select(suite_file, cases)) if cases else set(blocks)
+    p = Plan(level=level, suite_file=suite_file, lanes=usable, script_cases=[c for c in script if c in chosen])
+    if cases:
+        p.of, p.skipped = len(blocks), not chosen
     p.missing = [
         c
-        for c, b in requirements.case_blocks(suite_file).items()
-        if c not in script and requirements.need_for(c, b, sidecar).why_unknown == requirements.NO_ENTRY
+        for c, b in blocks.items()
+        if c in chosen and c not in script and requirements.need_for(c, b, sidecar).why_unknown == requirements.NO_ENTRY
     ]
-    for g in sorted(requirements.groups(suite_file, sidecar, skip=script), key=lambda g: -est.of(g.cases)):
+    picked = [g for g in requirements.groups(suite_file, sidecar, skip=script) if g.cases[0] in chosen]
+    for g in sorted(picked, key=lambda g: -est.of(g.cases)):
         why, best = {}, None
         for lane in usable:
             reason = why_not(g, lane.server, lane.facts, ref)
@@ -202,8 +228,11 @@ def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=
 
 
 def render(p, workspace, timed=False):
+    if p.skipped:
+        return f"== {skip_line(p)}"
     lane_cases = lambda l: [c for lv, g in l.groups if lv == p.level for c in g.cases]
-    out = [f"== {p.level}: {sum(len(lane_cases(l)) for l in p.lanes)} cases on {len(p.lanes)} lane(s)"]
+    narrowed = f" (REGRESSION_CASES: of the level's {p.of})" if p.of else ""
+    out = [f"== {p.level}: {sum(len(lane_cases(l)) for l in p.lanes)} cases on {len(p.lanes)} lane(s){narrowed}"]
     if p.script_cases:
         out.append(f"   script cases (contract/run.py, on the primary): {' '.join(p.script_cases)}")
     for lane in p.lanes:
@@ -338,9 +367,10 @@ class ServerRun:
 class Fleet:
     clock = staticmethod(time.time)  # what case times are measured by
 
-    def __init__(self, profile, levels, names, sidecar, server_facts):
+    def __init__(self, profile, levels, names, sidecar, server_facts, cases=()):
         self.profile = profile
         self.levels = levels
+        self.cases = cases  # REGRESSION_CASES; empty: every case
         self.sidecar = sidecar
         self.server_facts = server_facts
         self.logs = REPO / "logs"
@@ -384,10 +414,15 @@ class Fleet:
     # -- setup
 
     def plan(self):
-        missing = []
-        for lv in self.levels:
-            servers = [n for n in self.servers if len(self.levels) == 1 or lv in self.profile.server(n).regression_all]
-            p = plan_level(self.profile, lv, self.server_facts, self.sidecar, servers, self.lanes, self.est)
+        missing, asked = [], self.levels
+        self.levels = []  # those that run: not one holding none of REGRESSION_CASES
+        for lv in asked:
+            servers = [n for n in self.servers if len(asked) == 1 or lv in self.profile.server(n).regression_all]
+            p = plan_level(self.profile, lv, self.server_facts, self.sidecar, servers, self.lanes, self.est, self.cases)
+            if p.skipped:
+                self.servers[self.lanes[0].server.name].log.say(f"{ts()} {skip_line(p)}")
+                continue
+            self.levels.append(lv)
             self.suite_files[lv] = p.suite_file
             self.script[lv] = p.script_cases
             blocks = requirements.case_blocks(p.suite_file)
@@ -1053,6 +1088,8 @@ def main(argv=None):
         for lv in levels:
             if profile.level(lv) is None:
                 raise ProfileError(f"unknown level '{lv}' (expected: {', '.join(l.name for l in profile.levels)}, all)")
+        cases = env("REGRESSION_CASES").split()  # empty: every case
+        check_cases(profile, levels, cases)
         sidecar = requirements.load_sidecar()
         workspaces = [suite.workspace_for_suite_file(REPO / profile.level(lv).file) for lv in levels]
         sf = gather_all(profile, names, requirements.workflow_names(sidecar), workspaces=workspaces)
@@ -1068,7 +1105,7 @@ def main(argv=None):
             print(f"case times: {est.known} case(s) measured in {FLEET_DIR / 'runs'}; others {est.default:.0f}s")
         for lv in levels:
             servers = [n for n in names if len(levels) == 1 or lv in profile.server(n).regression_all]
-            p = plan_level(profile, lv, sf, sidecar, servers, lanes, est)
+            p = plan_level(profile, lv, sf, sidecar, servers, lanes, est, cases)
             plans.append(p)
             if not a.json:
                 print(render(p, suite.workspace_for_suite_file(p.suite_file), timed=est.known > 0))
@@ -1084,13 +1121,14 @@ def main(argv=None):
                             "unplaced": [{"cases": g.cases, "why": w} for g, w in p.unplaced],
                         }
                         for p in plans
+                        if not p.skipped
                     ],
                     indent=1,
                 )
             )
         return 0
     try:
-        fleet = Fleet(profile, levels, names, sidecar, sf)
+        fleet = Fleet(profile, levels, names, sidecar, sf, cases)
         fleet.plan()
         fleet.setup()
     except (ProfileError, providers.ProviderError, prompts.PromptError) as e:

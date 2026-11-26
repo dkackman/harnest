@@ -312,6 +312,66 @@ class Plan(unittest.TestCase):
             self.assertEqual("regression-x", p.lanes[3].workspace("regression-x"))
             self.assertEqual("regression-x-lem-2", p.lanes[1].workspace("regression-x"))
 
+    def two_levels(self, d):
+        """A profile whose levels are x (SUITE) and y (one case, C-F001)."""
+        suite_file, other = Path(d, "regression-suite-x.md"), Path(d, "regression-suite-y.md")
+        suite_file.write_text(SUITE)
+        other.write_text("# suite\n### C-F001 — elsewhere\nsteps\n")
+        profile = load()
+        level = type(profile.levels[0])
+        profile.levels = [level(name="x", file=str(suite_file)), level(name="y", file=str(other))]
+        return profile
+
+    def test_regression_cases_narrow_the_plan_to_their_groups(self):
+        with tempfile.TemporaryDirectory() as d:
+            profile = self.two_levels(d)
+            sf = {"lem": fx("lem", workers=2), "mini-ai": fx("mini-ai")}
+            # S-F003 brings S-F002, whose output it reads; S-F005 has no group
+            p = fleet.plan_level(profile, "x", sf, {}, cases=["S-F003", "S-F005", "C-F001"])
+            where = {c: l.name for l in p.lanes for _, g in l.groups for c in g.cases}
+            self.assertEqual(["S-F002", "S-F003", "S-F005"], sorted(where))
+            self.assertEqual(where["S-F002"], where["S-F003"], "a group shares a lane")
+            self.assertEqual(sorted(where), sorted(p.missing), "only the chosen cases are named as missing")
+            self.assertFalse(p.skipped)
+            self.assertIn(
+                "== x: 3 cases on 3 lane(s) (REGRESSION_CASES: of the level's 5)", fleet.render(p, "regression-x")
+            )
+            # a level holding none of them places nothing and says so
+            lanes = fleet.make_lanes(profile, sf)
+            p = fleet.plan_level(profile, "x", sf, {}, lanes=lanes, cases=["C-F001"])
+            self.assertTrue(p.skipped)
+            self.assertEqual([], [g for l in lanes for g in l.groups])
+            self.assertEqual(
+                "== x: none of REGRESSION_CASES in regression-suite-x.md, skipping", fleet.render(p, "regression-x")
+            )
+            # without the knob, every case, and no note
+            p = fleet.plan_level(profile, "x", sf, {})
+            self.assertEqual(5, sum(len(g.cases) for l in p.lanes for _, g in l.groups))
+            self.assertNotIn("REGRESSION_CASES", fleet.render(p, "regression-x"))
+
+    def test_a_regression_case_in_none_of_the_runs_files_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            profile = self.two_levels(d)
+            fleet.check_cases(profile, ["x", "y"], ["S-F003", "C-F001"])
+            fleet.check_cases(profile, ["x"], [])
+            with self.assertRaises(fleet.ProfileError) as e:  # C-F001 is in y's file, which a run of x leaves out
+                fleet.check_cases(profile, ["x"], ["S-F003", "C-F001"])
+            self.assertEqual("REGRESSION_CASES: C-F001 is in none of this run's suite files", str(e.exception))
+
+    def test_a_fleet_drops_a_level_holding_none_of_the_cases(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = _bare_fleet({})
+            f.profile, f.sidecar, f.server_facts = self.two_levels(d), {}, {"lem": f.lanes[0].facts}
+            f.levels, f.cases = ["x", "y"], ["S-F003"]
+            f.suite_files, f.script, f.unplaced = {}, {}, []
+            f.lanes[0].server = srv("lem", primary=True, regression_all=("x", "y"))
+            f.profile.server = lambda name: f.lanes[0].server  # with `all`, a server runs its regression_all levels
+            f.plan()
+            self.assertEqual(["x"], f.levels)
+            self.assertEqual(["S-F002", "S-F003"], [it.case for it in f.queues["lem-1"]])
+            self.assertEqual(["x"], list(f.suite_files))
+            self.assertTrue(any("y: none of REGRESSION_CASES in regression-suite-y.md, skipping" in s for s in f.said))
+
     def test_gather_all_reports_every_server_that_cant_join(self):
         profile = load()
 

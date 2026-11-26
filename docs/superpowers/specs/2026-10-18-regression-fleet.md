@@ -86,6 +86,9 @@ cases into one group. The body-only dependencies that exist are written with a f
 groups now: smoke 12, complete 11, model-specific 7, security 7. `exclusive` groups run
 with their server's other lanes idle.
 
+`REGRESSION_CASES` narrows a run, and `--plan`, to the named cases and their dependency
+groups, as it does `run-regression.sh` (`docs/harness/components.md`).
+
 **Backstop.** An agent that finds a precondition missing still says `REGRESSION-SKIP`; the
 fleet re-queues that case to another eligible lane rather than counting it skipped.
 

@@ -25,7 +25,7 @@ Seventeen files:
   session not started, a drain exiting), the retro's applied proposals to check,
   the curator's audited removals, the spec race, `DRAIN=1` with the idle backoff (and waiting out a claimed feature's stage at another loop), and item mode (`lib/run-item.sh`: one session for one issue, no lock, no deploy, no suite commit, the suite tree as the tester's cwd, the task and closures split, `park`, the queue as part of the item: a feature parent's spec item runs no stage verify).
 - `test-fleet.sh`: a whole regression fleet run (`harness/drivers/fleet.py`) against three
-  `tests/fake-mcp.py` servers.
+  `tests/fake-mcp.py` servers, and `REGRESSION_CASES` narrowing its plan and a run.
 - `test-guard.sh`: `guard.py` as a table (role, session kind, command, allowed or refused).
 - `test-lint.sh`: `bash -n` under `/bin/bash` 3.2, `shellcheck -S error`, Python parses,
   `ruff check` and `ruff format --check` clean under `ruff.toml` (a missing ruff fails; fix with
