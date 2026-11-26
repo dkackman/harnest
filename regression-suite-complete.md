@@ -31021,7 +31021,7 @@ cleanup: `delete_workspace(name="cf1383-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1384 — a user close accepts the pending proposal, in whichever closed state the user picks
-pending: #1716
+pending: #1717
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. **The user write (U-PUT, also used by C-F1385–C-F1387):** `PUT /api/workspaces/<ws>/requests/<id>`
 with the body the UI sends: the request as `get_request` read it (title, goal, items, `revision`), a `why`, `by:
@@ -31046,7 +31046,7 @@ cleanup: `delete_workspace(name="cf1384-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1385 — a user decline keeps the request open with the note, a decline with nothing pending is `no_close_proposal`, and a re-proposal replaces the decline
-pending: #1716
+pending: #1717
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. U-PUT as defined in C-F1384. Setup: `create_workspace(name="cf1385-close")`, `workspace=` on every
 call; create `demo` as in C-F1121 step (2). (1) U-PUT on `demo` with `close_proposal: {"outcome":"declined"}`
@@ -31077,7 +31077,7 @@ cleanup: `delete_workspace(name="cf1385-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1386 — on a closed request an agent cannot propose, can still edit the plan and reopen, and a reopen keeps the settled proposal until the next one
-pending: #1716
+pending: #1717
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. U-PUT as defined in C-F1384. Setup: `create_workspace(name="cf1386-close")`, `workspace=` on every
 call; create `demo` as in C-F1121 step (2); `set_request` with `propose_close={"state":"done","reason":"all
@@ -31099,7 +31099,7 @@ cleanup: `delete_workspace(name="cf1386-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1387 — a user closes with no proposal as before, and a user plan edit leaves a pending proposal pending
-pending: #1716
+pending: #1717
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. U-PUT as defined in C-F1384. Setup: `create_workspace(name="cf1387-close")`, `workspace=` on every
 call; create `demo` and `other` as in C-F1121 step (2). (1) U-PUT on `other` with `state: "done"` (no proposal ever
