@@ -303,41 +303,47 @@ paid form re-run the same day as episode 8, job `2df5f1ff06f2`, 756 s. Model `op
 `anthropic`.
 
 ### M-F003 — every H3 template's turbo LoRA checkpoint agrees with its canvas, shifts, alpha and step count
-Every `templates/minimax/*` H3 template carries a `lightx2v/Minimax-h3-Turbo` LoRA and runs
-`num_inference_steps: 9`; what differs is *which* checkpoint, and a checkpoint comes with a canvas, a
-sigma-shift pair and an alpha that move together. The `dw:minimax-h3` skill's hard rules state this
-as "change one, change all" and name exactly three tested combinations. It is the kind of thing a
+Every `templates/minimax/*` H3 template that exposes `lora_weight_name` names a `lightx2v/Minimax-h3-Turbo`
+checkpoint; what differs is *which* checkpoint, and a checkpoint comes with a canvas, a
+sigma-shift pair, an alpha and a step count that move together. The `dw:minimax-h3` skill's hard rules state this
+as "change one, change all" and its `references/checkpoints-and-loras.md` names the tested combinations. It is the kind of thing a
 template edit breaks silently: #149 found four reference templates had carried the FL2VA checkpoint
 (distilled for the base transformer, not `transformer_ref`) for a month, and #147 found the 768p
 FL2VA LoRA on the wrong shift/alpha — both produced jobs that *ran* and delivered worse video for
 full price. Nothing else in the suite checks it, and it is free to check.
 Free (run this one every pass): `list_workflows(shape="shot")` and `list_workflows(shape="sequence")`
-to enumerate every `templates/minimax/*` entry that exposes `lora_weight_name` (18 as of
-2026-09-14), then `get_workflow(name=..., variables_only=true)` on each and compare
-`lora_weight_name`, `width`/`height`, `video_shift`/`audio_shift`, `lora_alpha` and
-`num_inference_steps` against the three rows below. Every template also has
-`lora_model_name: "lightx2v/Minimax-h3-Turbo"`, `lora_adapter_name: "turbo"`, `lora_scale: 1.0`.
+to enumerate every `templates/minimax/*` entry that exposes `lora_weight_name` (26 as of
+2026-11-26), then `get_workflow(name=..., variables_only=true)` on each and compare
+`lora_model_name`, `lora_weight_name`, `width`/`height`, `video_shift`/`audio_shift`, `lora_alpha` and
+`num_inference_steps` against the rows below. Where a template declares them,
+`lora_adapter_name` is `"turbo"` and `lora_scale` is `1.0`.
 `video_shift`, `audio_shift` and `lora_alpha` must all be **declared** keys, not just correctly
 valued — `lora_alpha: null` is a declaration (it means "use the file's own"), while a *missing*
 `lora_alpha` key is a regression a caller reaching for a checkpoint override would hit silently.
 expected:
-- **544p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors`,
-  `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Templates:
+- **4-step FL2VA v1.2 turbo, the T2VA/FL2VA default** — `lora_model_name: "lightx2v/Minimax-h3-Turbo"`,
+  `lora_weight_name: minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors`,
+  `video_shift: 6.0`, `audio_shift: 3.0`, `lora_alpha: null`, 5 steps, at every canvas. Templates:
   `video-with-audio`, `image-to-video`, `chained-segments`, `enhance-prompt`,
-  `enhance-prompt-with-image`, `shots-batch` (all 960x544); `first-and-last-frame`, `last-frame-only` (544x544 —
-  same 544 short edge, square because they pin a square still).
-- **768p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors`,
-  1344x768, `video_shift: 6.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Template:
-  `video-with-audio-768p` only. This is the one row whose shift differs; the skill says
-  so explicitly ("the two 768p LoRAs differ in shift; do not generalise").
-- **768p Ref2VA turbo** — `lora_weight_name: minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors`,
+  `enhance-prompt-with-image`, `shots-batch`, `regional-edit`, `repair-segment` (all 960x544);
+  `first-and-last-frame`, `last-frame-only` (544x544, square because they pin a square still);
+  `video-with-audio-768p` (1344x768); `face-repair`, `h3-seam-pass` (no `width`/`height` variable:
+  they take the source's size).
+- **768p Ref2VA 8-step turbo** — `lora_model_name: "lightx2v/Minimax-h3-Turbo"`,
+  `lora_weight_name: minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors`,
   960x544, `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Every template
   whose H3 step takes references (`transformer_ref`): `reference-to-video`, `composable-references`,
   `voice-timbre-reference`, `generated-subject-reference`, `chain-matched-to-audio`,
   `chain-video-continuity`, `chain-matched-and-aligned`, `storyboard`, `dialogue-short`,
-  `music-video`. Note the canvas: a 768p-trained *Ref2VA* checkpoint on a 960x544 canvas at the
-  544p shift is the tested combination, not a mismatch — the skill ties canvas to the FL2VA rows only.
-- `num_inference_steps: 9` on all of them; `denoise_total_steps` reporting 8 in a manifest is the
+  `music-video`, `replace-performer`. Note the canvas: a 768p-trained *Ref2VA* checkpoint on a 960x544 canvas at
+  shift 12 is the tested combination, not a mismatch.
+- **LoRA off by default** — `lora_model_name: null` (the skill's base, no-LoRA row: dialogue drops
+  the turbo LoRA, #992), `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 12 steps or
+  more. Templates: `add-sound` (960x544, 12 steps), `narrated-take` (1344x768, 20 steps). Their
+  `lora_weight_name` still names the 4-step FL2VA v1.2 file, for a caller who turns the LoRA on;
+  that caller has to move the shift and steps to the first row with it.
+- Steps are the LoRA's passes plus one: `num_inference_steps: 5` on the 4-step row and `9` on the
+  8-step row; `denoise_total_steps` reporting 4 or 8 in a manifest is the
   scheduler counting grid points and is expected (skill hard rules).
 - Note the asymmetry deliberately, on `reference-to-video` and the rest of the Ref2VA row: a
   768p-trained *Ref2VA* checkpoint stays at shift **12**, not 6 — a run that "helpfully" normalised
@@ -346,11 +352,11 @@ It is a **finding** if any template's `lora_weight_name`, canvas, shift pair, al
 stops matching the row it belongs to; if an `fl2v` weight appears on a reference-taking template
 (the skill says `validate_workflow` refuses this — a template that ships that way and validates is a
 double finding); if a new `templates/minimax/*` H3 template appears whose values fit none of the
-three rows (a fourth combination is either a skill update or a mistake — check the skill, then file
+rows above (a new combination is either a skill update or a mistake — check the skill, then file
 either way so the row gets recorded here); or if the `dw:minimax-h3` skill's hard-rules block stops
-naming these three combinations — the skill is how a caller learns which numbers to quote, and it
+naming these combinations — the skill is how a caller learns which numbers to quote, and it
 going quietly stale is as bad as the templates going wrong. A template moving a `lora_*` value
-between inline and variable is not a finding, nor is a new template landing on one of the three
+between inline and variable is not a finding, nor is a new template landing on one of the
 rows (add it to the list above).
 cleanup: none — reads only, writes nothing.
 source: regression agent, model `opus` via provider `anthropic`, found while running M-F001 on
@@ -363,6 +369,7 @@ M-F007 during the 2026-09-22 suite audit — both compared the same three templa
 and its explicit Ref2VA-asymmetry framing (verified in #147 on that date, workspace `qa-verify`,
 all three templates matching) are folded into the bullets above. M-F008 covers the runtime half —
 that these numbers actually reach the scheduler, not just the catalog.
+amended: 2026-11-26, suite review: rows rewritten to today's catalog (26 templates; T2VA/FL2VA default is the 4-step v1.2 file at shift 6/3 and 5 steps, Ref2VA row unchanged plus `replace-performer`, LoRA-off row for `add-sound`/`narrated-take`); evidence: skill `checkpoints-and-loras.md` ("default since 2026-10-10"), #1078 and #1392 (verified), #992, `get_workflow` on all 26.
 
 ### M-F006 — `music-video`'s soundtrack covers the cut at any `shots` length
 `templates/minimax/music-video` invites the caller to change `shots` — its own description says
