@@ -29279,15 +29279,15 @@ metrics: none.
 source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
 Free. The same workspace, definitions and setup as C-F1298, run first (X and N from its step 2).
 1. `{"num_inference_steps": 12, "shots": [<shot(175)>]}`. 12 steps is a bucket with no runs here.
-2. `{"shots": [<shot(124)>, <shot(124)>]}`. Two shots: another bucket, at frames the defaults hold.
-3. `{"shots": [<shot(175)>, <shot(124)>]}`. Two shots, summed 299 frames.
+2. `{"shots": [<shot(124)>, <shot(124)>]}`, the second `<shot(124)>` with `name` set to `deflect2`. Two shots: another bucket, at frames the defaults hold.
+3. `{"shots": [<shot(175)>, <shot(124)>]}`, the `<shot(124)>` with `name` set to `deflect2`. Two shots, summed 299 frames.
 expected:
 - Step 1: the curated-scaled quote, as before #1696. That is `basis: "derived"`, with `scaled` beginning
   `scaled from the curated` and naming steps 12 vs 9, and `minutes` ≈ 21.2 × (12/9) × (175/637) ≈ 7.8 (7.8 on
   2026-11-25). If this workspace has since run a 12-step one-shot bucket, step 1 instead rescales that bucket's own
   figure (C-F1298's rule). Either way, X from the 9-step bucket must not appear in `scaled`.
 - Step 2 sets the reference. If it answers `basis: "observed"` (a two-shot bucket exists), step 3 is that figure
-  rescaled by 299/248 per C-F1298. Otherwise (`catalog`, or `derived` from the curated figure), step 3 is the
+  rescaled by 299/N per C-F1298, where N is the two-shot bucket's median summed frames as its `scaled` names it. Otherwise (`catalog`, or `derived` from the curated figure), step 3 is the
   curated-scaled quote: `derived`, ≈ 21.2 × 299/637 ≈ 10.0 (10.0 on 2026-11-25).
 It is a **finding** if step 1 or 3's `scaled` names the one-shot 9-step bucket's observed X, or if its `minutes` is
 X × M / N for that bucket. That is history borrowed across a driver that differs.
