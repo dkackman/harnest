@@ -28524,7 +28524,6 @@ absorbs: C-F921 (merged 2026-11-26, suite review)
 - C-F921: tester, spec for #1386 from #1384's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F1533 — a `first_at_shape` cost row adds its `minutes` once per distinct unseen shape, after everything else, and names the shapes in `scaled`
-pending: #1763
 source: tester, spec for #1763 from #1615's plan v3 (claude-opus-5-5 via anthropic)
 
 Free: `save_workflow` and `validate_workflow` only. Workspace `regression-complete`. Two saved copies of
@@ -28577,7 +28576,6 @@ cleanup: `delete_workflow` both copies (`qa-c-f1533-plain`, `qa-c-f1533-key`) in
 metrics: none.
 
 ### C-F1534 — a malformed `first_at_shape` is refused at save and at validate, naming the key
-pending: #1763
 source: tester, spec for #1763 from #1615's plan v3 (claude-opus-5-5 via anthropic)
 
 Free: refused calls only. Workspace `regression-complete`. Build `<def>` as C-F1533's setup step 1 does, and for each
@@ -28607,7 +28605,6 @@ cleanup: `delete_workflow(name="qa-c-f1534", workspace="regression-complete")` i
 metrics: none.
 
 ### C-F1535 — the compact catalog listing strips `first_at_shape`; the full `get_workflow` keeps it
-pending: #1763
 source: tester, spec for #1763 from #1615's plan v3 (claude-opus-5-5 via anthropic)
 
 Free. Workspace `regression-complete`. Run C-F1533's setup (or this case first, then C-F1533, sharing it).
