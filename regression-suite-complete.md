@@ -32510,4 +32510,232 @@ It is a **finding** if (1) lists `krea/Krea-2-Turbo`, the regression of #1741.
 cleanup: none.
 metrics: none.
 
+### C-F1446 — `slice_audio` offers `past_end: "excerpt"`, `"pad"` stays the default, and the guide says how it differs from `"stop"`
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+These are free reads and validates. Use `workspace="regression-complete"` on every call. Before the stage, `get_task`
+listed `past_end` with `default: "pad"` and `choices: ["pad", "stop"]`.
+1. `get_task("slice_audio")`.
+2. The `slice_audio` section of `get_guide("tasks")`. Find it from the guide's index.
+3. `validate_workflow(inline_workflow=...)` with one step, `{"name": "clip", "task": {"command": "slice_audio",
+   "arguments": {"audio": "asset:qa-cast/ep15-song.mp3", "start_seconds": 5.0, "duration_seconds": 1.0, "past_end":
+   <v>}}, "result": {"content_type": "audio/wav", "file_base_name": "clip"}}`, once for each `<v>` of `"excerpt"`,
+   `"stop"`, `"pad"`, `"Excerpt"` and `"trim"`.
+
+expected:
+- **Call 1.** `past_end` has `choices` holding exactly `pad`, `stop` and `excerpt` (any order), and its default is
+  still `"pad"`. The other parameters are unchanged.
+- **Call 2.** The `past_end` row names `"excerpt"`. It says the slice ends at the end of the source with no padding,
+  that a start at or past the end is refused, and how it differs from `"stop"`. The plan's line is "stop" is a section
+  kept whole, and "excerpt" is a window out of something longer, so the excerpt owes no tail warning. Other wording
+  that says the same thing is fine.
+- **Call 3.** `"excerpt"`, `"stop"` and `"pad"` answer `valid: true`. `"Excerpt"` and `"trim"` answer `valid: false`,
+  with an error at the step's `past_end` argument that lists the allowed values, `excerpt` among them.
+
+A **finding** is any of these:
+- a missing `excerpt` choice
+- a changed default
+- a guide row that doesn't name the value, or doesn't tell it apart from `"stop"`
+- `"excerpt"` refused, or a misspelled value accepted
+cleanup: none.
+metrics: none.
+
+### C-F1447 — an `"excerpt"` slice leaves a long loud tail without warning, where `"stop"` warns `slice_dropped_loud_tail`
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+CPU only, seconds. Use `workspace="regression-complete"` on every call. Fixture: `asset:qa-cast/ep15-song.mp3` (30.0 s,
+loud throughout). A 1 s window at 5 s leaves 24 s of music at the same level behind it. That is the bed window's shape
+in a film, the case that made v2's `"stop"` fail.
+1. `validate_workflow`, then `run_workflow(wait_seconds=55)`, with `inline_workflow={"id": "qa-excerpt-tail", "seed": 1,
+   "steps": [`
+   - `{"name": "as_stop", "task": {"command": "slice_audio", "arguments": {"audio": "asset:qa-cast/ep15-song.mp3",
+     "start_seconds": 5.0, "duration_seconds": 1.0, "past_end": "stop"}}, "result": {"content_type": "audio/wav",
+     "file_base_name": "as-stop"}}`
+   - `{"name": "as_excerpt", ...}`: the same arguments with `"past_end": "excerpt"`, `file_base_name` `"as-excerpt"`
+   - `{"name": "head_excerpt", ...}`: `start_seconds` 0.0, `duration_seconds` 1.0, `"past_end": "excerpt"`,
+     `file_base_name` `"head-excerpt"`
+
+   `]}`, with `acknowledged_cost` bound from the validate.
+2. `get_job` (for `job.warnings`), `get_job_events`, and `get_gallery_metadata` on each of the three outputs.
+
+expected:
+- The job succeeds.
+- **The control.** `as_stop` carries `slice_dropped_loud_tail`. If it doesn't, the case is blocked (the control no
+  longer exercises the tail warning), and the report says so. That is not a finding against the stage.
+- **The excerpts.** No warning in `job.warnings` or the events names `as_excerpt` or `head_excerpt`. That includes
+  `slice_dropped_loud_tail`, any other slice tail warning, and `slice_past_end`.
+- `as-stop` and `as-excerpt` are each 1.00 s ± 0.01 at 44100 Hz, and their `mean_dbfs` and `peak_dbfs` agree within
+  0.1 dB: the same samples. `head-excerpt` is 1.00 s ± 0.01.
+
+A **finding** is any of these:
+- a tail warning, or any other slice warning, on an excerpt step
+- an excerpt whose length or level differs from the `"stop"` slice of the same window
+- a failed job
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F1448 — an `"excerpt"` window running past the end is cut at the end, with no padding; `"pad"` still pads
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+CPU only, seconds. Use `workspace="regression-complete"` on every call. Fixture: `asset:qa-cast/ep15-song.mp3`. First
+call `get_gallery_metadata` on it and call its `duration_seconds` D (30.02 when the fixture is as written).
+1. `validate_workflow`, then `run_workflow(wait_seconds=55)`, with an inline workflow `qa-excerpt-end` (seed 1) of
+   these slices of the fixture. Each `result` is `audio/wav` with the step's name as `file_base_name`.
+   - `over_excerpt`: `start_seconds` 28.0, `duration_seconds` 5.0, `past_end: "excerpt"`
+   - `over_pad`: the same window, `past_end: "pad"`. This is the control.
+   - `exact_excerpt`: `start_seconds` 28.0, `duration_seconds` D − 28.0 rounded down to 0.01, `past_end: "excerpt"`.
+     This window ends inside the source.
+   - `tail_check`: a `slice_audio` of `previous_result:over_excerpt` from `start_seconds` 1.5 for
+     `duration_seconds` 0.4, `past_end: "excerpt"`. It is the excerpt's last half second, roughly.
+2. `get_job`, `get_job_events`, and `get_gallery_metadata` on each output.
+
+expected:
+- The job succeeds.
+- `over_excerpt` is D − 28.0 s (± 0.02), not 5.0 s. Its `mean_dbfs` is within 1 dB of `exact_excerpt`'s.
+- `tail_check` is music, not silence: its `mean_dbfs` is within 6 dB of `over_excerpt`'s, and no
+  `audio_near_silent` names it.
+- **The control.** `over_pad` is 5.0 s (± 0.02) and carries `slice_past_end`, as before the stage. If it doesn't, the
+  case is blocked, and the report says so.
+- No warning names `over_excerpt` or `exact_excerpt` that says the slice was padded, or that a tail was dropped. A
+  log line or an informational event saying the window was shortened at the end is allowed (the plan says "logged").
+  Record its exact text and code in the report.
+
+A **finding** is any of these:
+- an `over_excerpt` of 5 s, or one with silence at its end: the window was padded
+- a padding or tail warning on an excerpt step
+- `"pad"` no longer padding: the stage changed the default value's behaviour
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F1449 — an `"excerpt"` slice starting at or past the end of its source is refused, not made silent
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+CPU only, seconds. Use `workspace="regression-complete"` on every call. Fixture: `asset:qa-cast/ep15-song.mp3`, with D
+from `get_gallery_metadata` as in C-F1448. Each arm is a one-step inline workflow: a `slice_audio` of the fixture with
+`duration_seconds` 1.0, `past_end: "excerpt"` and an `audio/wav` result.
+- **Arm 1:** `start_seconds` 40.0, well past the end.
+- **Arm 2:** `start_seconds` D exactly, as `get_gallery_metadata` reports it.
+- **Arm 3 (the boundary inside):** `start_seconds` D − 0.5.
+
+For each arm, call `validate_workflow`. If it validates, `run_workflow(wait_seconds=55)`, then `get_job`.
+
+expected:
+- **Arms 1 and 2.** Either `validate_workflow` refuses the step, or the job ends `failed`. Its message names the start
+  being at or past the end of the audio, and gives both numbers or the step's name. No output is written.
+- **Arm 3** succeeds, with an output of 0.5 s (± 0.02) of music: `mean_dbfs` within 6 dB of the fixture's.
+
+A **finding** is any of these:
+- a `succeeded` job in arm 1 or 2, whether its output is silent, empty or 1 s long
+- a failure whose message doesn't say the start is past the end
+- arm 3 refused or failed: the refusal is off by the boundary
+- if `get_gallery_metadata`'s D is rounded so that arm 2 lands a sample or two inside the source, a short success is
+  not a finding. Record the output's length in the report.
+cleanup: `delete_output(job_id=...)` for any job that ran.
+metrics: none.
+
+### C-F1450 — validate's static slice length treats `"excerpt"` as cut at the end, like `"stop"`
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+Validate only, free. Use `workspace="regression-complete"` on every call. This uses C-F999's STEP and `clip` step, and
+its fixture check on `asset:qa-cast/ep68-score.mp3` (about 24 s). In C-F999 (f), a `"stop"` slice from 20 s for 10 s
+keeps about 4 s and draws no audio-duration error, because validate knows the slice ends at the source's end.
+- **a.** `clip` has `start_seconds: 20, duration_seconds: 16, past_end: "excerpt"`. It keeps about 4 s, inside the 2-15 s
+  bound.
+- **b.** The same as (a), with `past_end: "pad"`. This is the control: 16 s, out of bounds.
+- **c.** `clip` has `start_seconds: 0, duration_seconds: 1.41, past_end: "excerpt"`. It is under the bound.
+
+expected:
+- (a): no audio-duration error.
+- (b): `valid: false`, with C-F999's error at `steps[N].pipeline.arguments.references[1]`, giving 16.00 seconds.
+- (c): `valid: false`, with the same error giving 1.41 seconds.
+
+A **finding** is (a) refused with a 16-second duration (validate reads `"excerpt"` as padding), or (b) or (c) passing.
+cleanup: none (nothing runs).
+metrics: none.
+
+### C-F1451 — the bed steps are wired as the plan says: `"excerpt"` slice of the edit, float defaults, `bed_gain` on the third mix entry
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+These are free reads and a validate. Use `workspace="regression-complete"` on every call.
+1. `get_workflow("templates/assemble-and-score")`.
+2. `validate_workflow(name="templates/assemble-and-score", arguments=<A0 from C-F1401>)`.
+
+expected:
+- **Variables.** `bed_start_seconds` is `0.0` and `bed_gain` is `0.0`. Each is a JSON float, not the integer `0` (Don's
+  ruling, 2026-11-26). `bed_seconds` is `1.0`, or `1` if it is stored as an integer.
+- **`bed_slice`** is a `slice_audio` with these arguments:
+  - `audio`: `previous_result:edit`
+  - `start_seconds`: `variable:bed_start_seconds`
+  - `duration_seconds`: `variable:bed_seconds`
+  - `past_end`: `"excerpt"`
+
+  It is not `"stop"`, and not left at the default `"pad"`.
+- **`bed_resampled`** resamples `previous_result:bed_slice` to `variable:sample_rate`.
+- **`bed`** is a `loop_audio` of `previous_result:bed_resampled`, to `variable:total_frames` at `variable:fps`. Its
+  crossfade is the default: no override, or 250 ms.
+- **`mixed`** has three entries. The third is `previous_result:bed`, at gain `variable:bed_gain`. The first two entries
+  and their gains are unchanged from before the stage, as C-F1401's B0 shows.
+- **Call 2** answers `valid: true` with no warning naming a bed step. The estimate is 0.2 min.
+
+A **finding** is any of these:
+- a bed step that slices something other than the edited cut
+- `past_end` other than `"excerpt"`
+- an integer `0` default for `bed_start_seconds` or `bed_gain`
+- a mix entry with a fixed gain, not `variable:bed_gain`
+- a validate warning from the bed steps
+cleanup: none.
+metrics: none.
+
+### C-F1452 — neither the default run nor the bed-on run carries a warning from the bed steps
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+v3 of the plan added this intent. v2's `"stop"` slice warned `slice_dropped_loud_tail` on nearly every run of the
+template, including the default runs with the bed off. This case reads the warnings of runs that C-F1401 and C-F1402
+already make. Reuse those jobs when they ran this session; otherwise make them as those cases say. Use
+`workspace="regression-complete"` on every call.
+- **R0:** C-F1401's run of the template with A0 and no bed variables.
+- **R-B0:** C-F1401's run of B0, the template without its bed steps, with A0.
+- **R1:** C-F1402's run with `bed_gain` 1.0.
+- **R2:** R1's arguments with `bed_start_seconds` 0.0 and `bed_seconds` 1.0: the default window, with the bed on.
+
+For each, call `get_job` (for `job.warnings`) and `get_job_events`.
+
+expected:
+- In R0, R1 and R2, no warning or warning event names `bed_slice`, `bed_resampled` or `bed`. In particular, none
+  carries `slice_dropped_loud_tail`, `slice_past_end`, a resample warning or a loop warning.
+- R0's warning codes are exactly R-B0's (ignoring step indices that shifted). The default template adds no warning.
+- R1's and R2's warning codes are R-B0's, plus at most a mix-level warning that the louder sum causes (a peak or
+  headroom warning on `mixed` or the normalize step). Record any such warning in the report. It is not a finding.
+
+A **finding** is any warning from a bed step in R0, R1 or R2, or a warning code in R0 that R-B0 doesn't have.
+cleanup: `delete_output(job_id=...)` for R2, and for R0, R-B0 and R1 if C-F1401 and C-F1402 don't clean them up
+this session.
+metrics: none.
+
+### C-F1453 — the skills that described the hand-built bed chain point at the `bed_*` variables
+pending: #1719
+source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
+These are free reads of the `dw` plugin, loaded from `develop`:
+- `dw:series-episodes` (its bed beat)
+- its `references/dialogue-mix.md`
+- `dw:long-form`'s `references/audio.md`
+- `dw:minimax-h3`'s `references/cuts.md`
+
+expected:
+- Each place that taught laying a bed under a cut names `assemble-and-score`'s `bed_start_seconds`, `bed_seconds` and
+  `bed_gain`. It says to choose the window with `find_loop_bed` over the edited cut, copying `start_seconds`,
+  `duration_seconds` and `gain` across. It warns that a window holding speech brings the hole back (the plan's #1118
+  risk).
+- A remaining hand-built `slice_audio` → `loop_audio` → `mix_audio` recipe is fine only as a fallback for a bed from
+  outside the cut. It must not be the main route for a bed taken from the cut.
+- Any `slice_audio` example in these skills that cuts a bed window uses `past_end: "excerpt"`, or leaves the template
+  to do it. It doesn't use `"stop"`.
+
+A **finding** is any of these:
+- a listed skill that still teaches only the hand-built chain for a bed from the cut
+- a variable name that differs from the template's
+- a bed `slice_audio` example with `past_end: "stop"`
+cleanup: none.
+metrics: none.
+
 ## Performance
