@@ -30398,7 +30398,7 @@ Docs review:
 Over MCP and the UI (the tester runs these):
 - `get_server_info()` answers, and the commit it reports contains the stage's merge.
 - `ui-check` with `[{"step":"goto","path":"/"},{"step":"wait_text","regex":".+","timeout_ms":15000},
-  {"step":"goto","path":"/gallery"},{"step":"wait_text","regex":".+","timeout_ms":15000}]` reports every step `ok`
+  {"step":"goto","path":"/#/ws/default/gallery"},{"step":"wait_text","regex":".+","timeout_ms":15000}]` reports every step `ok`
   and no `page_errors`.
 expected: as listed. A changed tool, a page error, or a file outside the list is a **finding**.
 cleanup: none.
