@@ -32313,7 +32313,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F1439 — a run's manifest records a `torch` block with the live numerics and versions, on success and on failure
-pending: #1728
 source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
 Task-only, no model load. Workspace `regression-complete`. Before the stage `manifest.json` (read with
 `get_output_text(name="<run_dir>/manifest.json", workspace=...)`, `run_dir` from `get_job`) held top-level `run_id`,
@@ -32354,7 +32353,6 @@ cleanup: `delete_output(job_id=<id>)` for every job.
 metrics: none.
 
 ### C-F1440 — a job from before the manifest change still reads, and a cached rerun's manifest has the block
-pending: #1728
 source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
 Free except one task-only rerun. Workspace `regression-complete`. A pre-stage job with its run directory still on disk at
 spec time: `b03342324e53` (`templates/minimax/reframe`, run `20261122-185219-b367caf9`, finished 2026-11-22). If it is
@@ -32375,7 +32373,6 @@ cleanup: `delete_output(job_id=<rerun id>)`. Never delete the pre-stage job's ou
 metrics: none.
 
 ### C-F1441 — `enhance_prompt` on the h3 preset with no model runs the model `list_enhancers` advertises, and a named model still wins
-pending: #1728
 source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
 GPU: three short LLM enhancement jobs (Qwen 4B and 1.5B class). `enhance_prompt` takes no `workspace`; its jobs land in
 the session's pinned workspace, so `use_workspace("regression-complete")` first. At spec time `list_enhancers` gave h3
@@ -32403,7 +32400,6 @@ cleanup: `delete_output(job_id=<id>)` for the three jobs.
 metrics: none.
 
 ### C-F1442 — the guides state `text_generation`'s `max_new_tokens` default and the manifest's `torch` block
-pending: #1728
 source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
 Free. Before the stage the TASKS doc stated the `diffusion_upscale` defaults but not `text_generation`'s
 `max_new_tokens` (500, hidden in code), and `get_guide("workspaces", section="Runs")` described `manifest.json` as
