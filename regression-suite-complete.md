@@ -30163,7 +30163,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1340 — the cinematography skill links a continuity note, which cites #1704's record and words each confirmed rule for its family
-pending: #1705
 source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free: reading the plugin only. Invoke `dw:cinematography` (Skill tool) and read its SKILL.md and the
 `references/continuity.md` it links. Have #1704's verdicts to hand (C-F1338, or the record as quoted on #1704).
@@ -30186,7 +30185,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1341 — the note lists every refuted rule under "Probed and not a rule", and every cut with its reason, R7 and R13 as measured against
-pending: #1705
 source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free. The same note as C-F1340.
 expected:
@@ -30206,7 +30204,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1342 — the storyboard coverage set points at the note; the sitcom-multicam pointer is there only if R1 held
-pending: #1705
 source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free. Invoke `dw:storyboard` and read `references/coverage-set.md`; invoke `dw:series-episodes` and read
 `references/sitcom-multicam.md`.
@@ -30221,7 +30218,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1343 — the Klein and H3 `intents.md` rows match #1704's verdicts
-pending: #1705
 source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free. Invoke `dw:flux3-klein` and `dw:minimax-h3` and read each one's `references/intents.md`.
 expected:
@@ -30236,7 +30232,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1344 — #1705 keeps the pins: the medium-close-up line, the closed axes, no shot key, no agent-rules line
-pending: #1705
 source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free. Invoke `dw:cinematography` and `dw:minimax-h3` (its `references/staging.md`), and call
 `get_guide("agent-rules")` and `list_guides()`.
@@ -30253,7 +30248,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1345 — if #1704 confirmed nothing, the note still lands with the refuted and cut lists and no rule
-pending: #1705
 source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free. Run only if #1704's record confirmed no rule; otherwise say so and skip. The same note as C-F1340.
 expected:
