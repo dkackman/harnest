@@ -31253,7 +31253,6 @@ cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not
 metrics: none.
 
 ### C-F1394 — `shot_bed_drop` fires on a voiced shot whose gaps fall 27 dB under a loud bed on both sides (the storm cut)
-pending: #1718
 source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 This case builds **the bed-drop cut**, which C-F1395 through C-F1399 and C-F1402 through C-F1405 reuse with other
 `arguments`. It is CPU only and deterministic: fixed assets, fixed gains, no model. Workspace `regression-complete`.
@@ -31332,7 +31331,6 @@ cleanup: keep this job's id for C-F1402 through C-F1405 when they run in the sam
 metrics: none.
 
 ### C-F1395 — `shot_bed_drop` stays silent on the same three shots at a quiet-room level
-pending: #1718
 source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 This uses C-F1394's calibration and workflow W. Floors L/M/R are -55 / -55 / -55 and V is -24, so every shot's floor
 sits in a low room tone and shot 2 still carries voice. Validate it, run it (`wait_seconds=55`), then call
@@ -31351,7 +31349,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F1396 — `shot_bed_drop`'s 20 dB threshold, and the louder neighbour on a one-sided cut
-pending: #1718
 source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 This uses C-F1394's calibration and workflow W, with V at -24 in every arm. There are three runs. Validate each, run
 it (`wait_seconds=55`), then call `assess_output(probe="analyze_shots")` on its cut.
@@ -31385,7 +31382,6 @@ cleanup: `delete_output(job_id=<id>)` for each run.
 metrics: none.
 
 ### C-F1397 — `shot_bed_drop` is skipped on a shot that is quiet throughout (the `shot_dead_air` quiet guard)
-pending: #1718
 source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 This uses C-F1394's calibration and workflow W. The floors are the storm arm's (-25 / -52 / -25), but V is -40, so
 shot 2's `rms_dbfs` falls at or below -30 while its gaps still sit near -52. Validate it, run it, then call
@@ -31404,7 +31400,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F1398 — `floor_below_neighbours_db` is null on a single-shot file and one-neighboured on a two-shot cut
-pending: #1718
 source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 This reuses C-F1394's storm-arm job. If that job is gone, rerun it as written there. All of these calls take
 `workspace="regression-complete"`.
@@ -31429,7 +31424,6 @@ cleanup: none of its own; C-F1394's cleanup covers the job.
 metrics: none.
 
 ### C-F1399 — `rules_applied` lists `shot_bed_drop` in every form `analyze_shots` runs in
-pending: #1718
 source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 This reuses C-F1394's storm-arm job and assets that already exist. Every call is free and takes
 `workspace="regression-complete"`.
@@ -31456,7 +31450,6 @@ cleanup: none of its own.
 metrics: none.
 
 ### C-F1400 — the docs and the `dw:minimax-h3` skill describe `shot_bed_drop`
-pending: #1718
 source: tester, spec for #1718 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 These are free reads.
 1. `get_guide("tasks", section="analyze_shots")`, or the section that documents its answer.
