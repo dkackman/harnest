@@ -28760,14 +28760,14 @@ metrics: none.
 source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`. Run once `get_server_info` reports a commit containing the
 stage's merge. Spec A: `fetch {path: "/api/server"}` (note `storage`); `record {url_glob: "**/api/**"}`; `goto /`;
-open the Server page and its Status section with the UI's own nav (`click {role: "link", name: "Server"}`, then the
-Status tab or heading if it is not the default; find the names from a first `screenshot` if these miss);
-`wait_text {regex: "(?i)job history"}`; `inspect {regex: "(?i)job history"}`; `inspect {regex: "(?i)\\blogs?\\b"}`;
+open the Status item under the sidebar's Server section with the UI's own nav (`click {text: "Status"}`; "Server" is a
+section heading, not a link; find the names from a first `screenshot` if these miss);
+`wait_text {regex: "[Jj]ob [Hh]istory"}`; `inspect {regex: "[Jj]ob [Hh]istory"}`; `inspect {regex: "\\b[Ll]ogs?\\b"}`;
 `screenshot server_storage`; `recorded {url_glob: "**/api/**"}`. Spec B, a fresh run: `mock {url_glob:
 "**/api/server"}` from the real answer setting `storage.job_history.rows`, `storage.job_history.oldest`,
 `storage.job_history.newest`, `storage.logs.size_bytes` and `storage.logs.backups` to `null`; the same navigation
 and `wait_text`; `screenshot server_storage_nulls`. Spec C, a fresh run: `mock` setting `storage.logs` to `null`;
-same navigation; `wait_text {regex: "(?i)job history"}`; `screenshot server_storage_nolog`. Read every screenshot.
+same navigation; `wait_text {regex: "[Jj]ob [Hh]istory"}`; `screenshot server_storage_nolog`. Read every screenshot.
 expected:
 1. Spec A: a job-history line shows the row count (Spec A's `rows`, possibly with thousands separators or
    abbreviated, e.g. `2.1k`, as long as it matches), a size consistent with `size_bytes` (human units), and the
