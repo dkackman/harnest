@@ -32981,4 +32981,23 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1466 — a job that passes an earlier job's `ru_maxrss` mark reports its peak above its own start RSS, not above the old mark
+source: tester, verified in #1754 (claude-opus-5-5 via anthropic, on mini-ai mps)
+Four jobs in a row in one worker lifetime, about 2 minutes in total: A `templates/text-to-image` (`seed` 1754), B
+`templates/flux3/text-to-image` (`seed` 1754, 512x512), C the same as A, D the same as B. For each job, call
+`get_job_events(kinds=["memory"])`. "Start" is the first event that carries `host_memory_job_peak_rss_mb`, the job's
+first phase boundary. Take its `host_memory_rss_mb` (start RSS) and `host_memory_peak_rss_mb` (prior mark). "End" is
+the last memory event's `host_memory_peak_rss_mb`.
+expected:
+- For a job whose end mark is above its prior mark (B and D at least), the last event's `host_memory_job_peak_rss_mb`
+  equals the end mark minus the start RSS, to within 1 MB. A figure equal to the end mark minus the prior mark, when
+  that differs from the start-RSS figure by more than 1 MB, is the #1754 regression.
+- For D, which starts below B's mark after C released Klein, the start-RSS figure is within a factor of 1.5 of B's.
+  The old rule gave about 25x less on mini-ai.
+- For a job whose mark never rises (C), every reading's `host_memory_job_peak_rss_mb` is null (#1288).
+- If D's start RSS is not below its prior mark, or its mark never rises, the order didn't produce the case. Say so
+  and don't count it as a pass or a fail.
+cleanup: `delete_output(job_id=...)` for all four.
+metrics: none.
+
 ## Performance
