@@ -144,6 +144,12 @@ implementer's territory), not in a live-server run:
   the agent cannot emit one inside a tool call without blowing its output
   budget. The schema has no `maxLength` on argument values at any level, so
   the question is answered statically instead; see SE-F022.
+- `update_diffusers`: no harmless probe exists. Its only argument is
+  `acknowledged_cost`; with it true the call *is* the upgrade, and without
+  it the probe is safe only if the gate under test holds, on a target it
+  could not then restore. The caller chooses no code (one package, one
+  fixed source) and a workflow cannot reach the tool, so it is outside the
+  trust gate this suite checks (Don, 2026-11-26).
 
 ## Fixtures
 
