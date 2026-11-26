@@ -30552,7 +30552,7 @@ metrics: none.
 source: tester, spec for #1711 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU; holds on any server, because it compares a newly benched entry with a control that already had
 its figure. Workspace `regression-complete`.
-1. Control: `validate_workflow(name="models/z-image", arguments={"num_inference_steps":18,"width":2048,"height":2048})`.
+1. Control: `validate_workflow(name="models/z-image", arguments={"num_inference_steps":18,"width":2048,"height":2048,"num_images_per_prompt":1})`.
 2. Subject: the same arguments on `models/z-image-sdnq` (a newly benched entry with the same variables).
 3. Both again with no arguments.
 expected:
