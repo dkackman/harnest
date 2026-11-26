@@ -12320,7 +12320,6 @@ cleanup: if step 2 created the request, `delete_request("m-f492-outfit-probe", w
 metrics: none.
 
 ### M-F493 — `anchor: "keystone"` on the hybrid key is refused at validate and at run on a server without the flag, naming `DW_EXPERIMENTAL_HYBRID_WINDOWS`
-pending: #1572
 source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` from noise. **Free**: validate, plus one `run_workflow` that must be
 refused before queuing. Same server (flag off, the deployed default), workspace and fixture as M-F478.
@@ -12345,7 +12344,6 @@ cleanup: cancel any job the run queued (none expected).
 metrics: none.
 
 ### M-F494 — a bad `anchor` is refused at validate by its own rule, naming `none` and `keystone`, before the flag check
-pending: #1572
 source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
 M-F478; arm (j) also needs the `qa-cast/priya-portrait.jpg` fixture. Plan v3 S4: "anything else is refused at
@@ -12371,7 +12369,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F495 — with `anchor` in the build and absent from the key, the S1/S2 cases still hold and the field has no MCP surface
-pending: #1572
 source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` and windowed refine. **Free**: validate and reads, plus M-F480's one
 GPU step (or a cited same-commit green run of M-F356, as M-F480 allows). Same server (flag off) and workspace as
