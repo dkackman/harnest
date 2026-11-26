@@ -30863,7 +30863,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1376 — on the Jobs page a cancelled chip and a running chip are different colours in both themes, and the cancelled text passes AA
-pending: #1715
 source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`. Run once `get_server_info` reports a commit containing the
 stage's merge. Workspace `regression-complete` with at least two jobs in its list. Spec: `mock {url_glob:
@@ -30886,7 +30885,6 @@ cleanup: none (nothing queued).
 metrics: none.
 
 ### C-F1377 — a stalled job's stall note is not the colour of its progress bar
-pending: #1715
 source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`, after the commit check in C-F1376. Pick any job J in
 `regression-complete`. `mock {url_glob: "**/api/jobs/<J>"}` setting `status` to `"running"` and `finished_at` to
@@ -30906,7 +30904,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1378 — validation warnings, the dirty dot and required-field markers show the new `--warn`, never the `--live` colour
-pending: #1715
 source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. **Web UI, black-box**, through `ui-check`, after the commit check in C-F1376. Let W be
 the cancelled chip's `color` and L the running chip's `background_color`, per theme, from C-F1376. In each theme:
@@ -30925,7 +30922,6 @@ cleanup: none (nothing saved or queued).
 metrics: none.
 
 ### C-F1379 — `npm test` fails when `--warn` is set back to `--live`'s value or below AA, and the wording no longer says amber
-pending: #1715
 source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
 Free, no GPU. Record and docs-review route as in C-F1364, on #1715's hand-off. Scratch tree at the merge commit, from
 `ui/`. Each step alone, `npm test`, then revert:
