@@ -12730,4 +12730,66 @@ memory at the refine load.
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
+### M-F510 — the #1680 mps probe reads its pre-quantized folders from the `bench` asset library with trust off, and its edit references resolve on mini-ai
+pending: #1729
+source: tester, spec for #1729 from #1680's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: `bench/h3-image-mps-t2i` and `bench/h3-image-mps-edit3` (M-F500's shape). Server: **mini-ai** (mps),
+workspace `bench` (pass `workspace="bench"` on every call). Plan v4 moved the folders: they are read from the `bench`
+workspace's own asset library, `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` and
+`.../transformer`. Where M-F500's text names `/Volumes/NVME/cache/h3-prequantized-int8/`, that path no longer exists;
+this case is the path check (M-F500's other checks stand). On any other server, record "mini-ai-only probe, skipped".
+**Free**: reads and validate only.
+Steps:
+1. `get_server_info()`: read `trust_workflows`.
+2. `get_workflow("bench/h3-image-mps-t2i", workspace="bench")` and the same for `bench/h3-image-mps-edit3`.
+3. `validate_workflow(name=<each>, workspace="bench")` at defaults.
+4. For each `asset:` reference in the edit workflow's `image` list: `list_assets(workspace="bench")` (or
+   `get_gallery_metadata(<the asset: ref>, include_workflow=false)` when the listing is long).
+expected:
+- Step 1: `trust_workflows: false`. The probe needs no trust window (plan v4, Q4); a server found running trusted
+  means this case proves nothing about the gate: record it and stop.
+- Step 2, both workflows: the encode step's `text_encoder` path is
+  `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` and the denoise step's transformer
+  path is `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/transformer` (or the same folders named
+  relative to the `bench` asset library, if the workflow form allows it: record which). No path under `/Volumes/NVME/`
+  (neither `cache/h3-prequantized-int8/`, which is gone, nor the spare `dw-bench/assets/h3-prequantized-int8/`, nor
+  the int4 `cache/h3-prequantized/`).
+- Step 3, both: `valid: true`, no error, and **no warning or error about trust, a path outside the workspace's
+  roots, or a missing local folder**. `plan.downloads_required` holds at most the H3-Image repo's small parts (as
+  in M-F500).
+- Step 4: exactly 3 references, each resolving in `bench` on mini-ai (listed, or metadata returned, not "Unknown
+  asset"). None is an `asset:cast/...` or `asset:qa-cast/...` name that exists only on lem. Record the three names;
+  M-F504's record names the same three.
+It is a **finding** if trust is off and either workflow names a `/Volumes/NVME/` path, is refused or warned for
+trust or a path outside the roots, or the edit workflow carries a reference that doesn't resolve on mini-ai or a
+count other than 3.
+cleanup: none.
+metrics: none.
+
+### M-F511 — with trust off, the #1680 probe's workflow pointed at a pre-quantized folder outside the workspace's roots is still refused at validate on mini-ai
+pending: #1729
+source: tester, spec for #1729 from #1680's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: `bench/h3-image-mps-t2i` (M-F510), mini-ai (mps), workspace `bench`. Plan v4 keeps trust off and
+makes the probe pass the gate by copying the folders into the `bench` asset library; the spare original at
+`/Volumes/NVME/dw-bench/assets/h3-prequantized-int8/` is outside every root of the `bench` workspace. This pins that
+the copy, not a loosened gate, is why the probe validates. **Free**: validate only; nothing is read or written at
+that path beyond the gate's check. Skip when `get_server_info().trust_workflows` is `true` (record it), and on any
+server but mini-ai.
+Steps:
+1. `get_workflow("bench/h3-image-mps-t2i", workspace="bench")`; take its JSON as an inline workflow, change only the
+   encode step's `text_encoder` path to `/Volumes/NVME/dw-bench/assets/h3-prequantized-int8/text_encoder`, and set
+   its `id` to `mf511_outside_root`. Do not save it.
+2. `validate_workflow(workflow=<that inline JSON>, workspace="bench")`.
+3. The same with only the transformer path changed to `/Volumes/NVME/dw-bench/assets/h3-prequantized-int8/transformer`.
+expected:
+- Steps 2 and 3: each refused (`valid: false`, or an error naming the step), for the model path being outside the
+  workspace's roots / requiring trust (the same refusal #1729's v3 build met). Not a "not found" or a download plan:
+  the folder exists, so a refusal for a missing path means the gate never looked. Nothing is queued.
+- The unmodified `bench/h3-image-mps-t2i` still validates clean (M-F510 step 3), so the only difference is the root.
+It is a **finding** if either outside-root variant validates clean, or plans to load the folder, with trust off.
+Report a pass as a model-specific note; an outside-root path that loads with trust off is a security hole: file it
+privately (`./scripts/file-advisory.sh`), never as an issue.
+cleanup: none.
+metrics: none.
+
 ## Performance
