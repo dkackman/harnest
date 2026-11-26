@@ -12509,7 +12509,7 @@ pending: #1729
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageBlocks`), text encoder from
 `MiniMaxAI/MiniMax-H3`. Server: **mini-ai** (mps), workspace `bench` (pass `workspace="bench"` on every call). The
-pre-quantized folders exist only there: `/Volumes/NVME/cache/h3-prequantized-int8/text_encoder` and `.../transformer`.
+pre-quantized folders exist only there: `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` and `.../transformer`.
 On any other server, record "mini-ai-only probe, skipped". **Free**: reads and validate only.
 Steps:
 1. `list_workflows` / `get_workflow("bench/h3-image-mps-t2i")` and `get_workflow("bench/h3-image-mps-edit3")`.
@@ -12517,10 +12517,10 @@ Steps:
    at their defaults.
 expected:
 - Step 1, both workflows: (at least) two pipeline steps. The **first** cuts the H3-Image pipeline to its encode blocks,
-  loads `text_encoder` by path from `/Volumes/NVME/cache/h3-prequantized-int8/text_encoder` (not a hub id, not the int4
+  loads `text_encoder` by path from `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` (not a hub id, not the int4
   `/Volumes/NVME/cache/h3-prequantized/` folder), removes `lm_head`, truncates the language model to 51 layers as the
   catalog template does, and sets `release_pipeline: true`. The **second** runs denoise and decode, loads the
-  transformer by path from `/Volumes/NVME/cache/h3-prequantized-int8/transformer`, takes the VAE and the small parts
+  transformer by path from `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/transformer`, takes the VAE and the small parts
   from `MiniMaxAI/MiniMax-H3-Image` (not the old folder's `vae/`, which is H3 video's), loads **no** text encoder, and
   takes `prompt_embeds` and their modality tags from step 1 by `previous_result:`.
 - `h3-image-mps-t2i`: 2048×2048, the catalog template's prompt, `seed` 1317. `h3-image-mps-edit3`: an `image` list
