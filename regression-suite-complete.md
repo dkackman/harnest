@@ -31763,7 +31763,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1414 — each MiniMax portrait step resolves `preference:text_to_image` at `tier standard`, whatever the run's tier
-pending: #1722
 source: tester, spec for #1722 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete`. Templates T and their portrait steps (plan v2): `templates/minimax/dialogue-short`
 (2: `draw_character_a`, `draw_character_b`), `templates/minimax/generated-subject-reference` (1),
@@ -31785,7 +31784,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1415 — `portrait_workflow` names another model for one run; a bad override is refused
-pending: #1722
 source: tester, spec for #1722 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete`. C-F1414's four templates and arguments.
 1. `validate_workflow(name=T, arguments={..., "portrait_workflow": "models/qwen-image-2.1"})` for each T.
@@ -31800,7 +31798,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1416 — a `dialogue-short` draft run draws one portrait per character, under the run's seed
-pending: #1722
 source: tester, spec for #1722 from #1626's plan v2 (claude-opus-5-5 via anthropic)
 GPU, H3 video: two draft runs of one short shot each (dialogue-short at standard with 5 shots ran 32–43 min on lem; one
 draft shot is a fraction of that). Workspace `regression-complete`. `wait_seconds=1500`. Arguments A = `{"tier": "draft",
