@@ -1194,34 +1194,6 @@ metrics: none.
 absorbs: SE-F040 (merged 2026-11-26, suite review)
 - SE-F040: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 
-### SE-F055 — `match_color.reference` and `match_color.media` hold the media path gate at validate time
-pending: #1083
-source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
-#1067 adds a task that reads a second media file, `reference`, and the plan declares it a media
-argument so an unconfined path is refused at validate time, not only at run time (#630). Carrier, in
-workspace `regression-security`: `{"id": "qa-se-f055", "steps": [{"name": "m", "task": {"command":
-"match_color", "arguments": {"media": "asset:qa-cast/ep6-cold-open.mp4", "reference":
-"asset:qa-cast/ep6-cold-open.mp4"}}, "result": {"content_type": "video/mp4"}}]}`. One argument
-changes per probe, first on `reference`, then on `media`:
-- P1 `/etc/passwd` (exists), P2 `/nonexistent-dw-probe/x.mp4`, P3 `../../../../etc/passwd`, each bare
-  and as `asset:` + the probe;
-- `output:../../../../etc/passwd` and `output:/etc/passwd`;
-- `file:///etc/passwd` and `http://127.0.0.1:8765/x.mp4`.
-For every refused probe, also `run_workflow(..., acknowledged_cost=true, workspace="regression-security")`.
-expected:
-- Every probe is `valid: false` at `match_color`'s argument path for the argument probed, with the
-  refusal SE-F014 gives a media argument (or the scheme/host refusal for the URLs).
-- P1 and P2 get the same wording; no message shows a frame size, frame count or contents, or a
-  resolved server path. No probe is refused with a C-F552-style size or length mismatch, which would
-  mean the file was opened.
-- `run_workflow` queues no job. The unchanged carrier validates clean.
-It is a **finding** if a probe validates or is refused only at run time. A probe that validates, P1
-and P2 being told apart, a mismatch message on an out-of-root file, an echoed server path, or a
-`127.0.0.1` fetch or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public
-issue.
-cleanup: `delete_output(job_id=...)` for any job (none should exist).
-metrics: none.
-
 ### SE-F056 — `generate_speech.reference_audio` holds the media path gate at validate time
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 #1121 adds a media argument, `reference_audio`, that Audio8 reads as a cloning reference. The plan
@@ -2334,7 +2306,7 @@ Free, apart from step 3, which must queue nothing.
 Carrier `<C(M)>` = `{"id": "qa-se-f083", "steps": [{"name": "look", "task": {"command": "apply_lut", "arguments":
 {"media": M, "palette": ["#102030", "#e0c090"]}}, "result": {"content_type": "video/mp4"}}, {"name": "grain", "task":
 {"command": "film_grain", "arguments": {"media": "asset:qa-cast/ep13-episode.mp4", "seed": 1}}, "result":
-{"content_type": "video/mp4"}}]}`. Probes P are SE-F055's: `/etc/passwd` (P1, exists), `/nonexistent-dw-probe/x.mp4`
+{"content_type": "video/mp4"}}]}`. Probes P: `/etc/passwd` (P1, exists), `/nonexistent-dw-probe/x.mp4`
 (P2, absent), `../../../../etc/passwd`, each bare and as `asset:` + probe; `output:../../../../etc/passwd`,
 `output:/etc/passwd`; `file:///etc/passwd`; `http://127.0.0.1:8765/x.mp4`.
 1. For each P: `validate_workflow(inline_workflow=<C(P)>, workspace="regression-complete")`.
@@ -2344,7 +2316,7 @@ Carrier `<C(M)>` = `{"id": "qa-se-f083", "steps": [{"name": "look", "task": {"co
    acknowledged_cost={"fingerprint": "x", "minutes": 0.1, "downloads": []})`.
 expected:
 - Every probe in steps 1 and 2 answers `valid: false`, with an error at `look`'s `media` (or the `clip` argument), the
-  same input-media refusal SE-F055 expects. No `plan.estimate` with a number. No `scaled` that names a length for
+  refusal SE-F014 gives a media argument (or the scheme/host refusal for the URLs). No `plan.estimate` with a number. No `scaled` that names a length for
   `look`, and nothing that tells P1 from P2.
 - P1 and P2 give the same error wording, the same field set, and no length, duration, size or `differs` entry that
   appears for one and not the other. The answer for an existing file and an absent one must be indistinguishable.
