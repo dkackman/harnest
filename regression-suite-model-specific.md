@@ -12392,7 +12392,6 @@ cleanup: as each cited case.
 metrics: none.
 
 ### M-F496 — `templates/qwen/transparent` is an image template on the base Qwen-Image-2.1 that says it makes a transparent PNG
-pending: #1709
 source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `Qwen/Qwen-Image-2.1` (the base, `QwenImage21Pipeline`), not `Qwen/Qwen-Image-2.1-Turbo`.
 **Free**: reads only. Workspace `regression-model-specific`.
@@ -12422,7 +12421,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F497 — `templates/qwen/transparent` validates clean at its defaults and refuses an off-grid width or height, for free
-pending: #1709
 source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `Qwen/Qwen-Image-2.1` (base). **Free**: validate only; nothing is run. Workspace
 `regression-model-specific` (pass `workspace=` on every call).
@@ -12447,7 +12445,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F498 — `templates/qwen/transparent` builds its prompt with the vendor RGBA wrapper around `subject`, with no new syntax
-pending: #1709
 source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `Qwen/Qwen-Image-2.1` (base). **Free**: reads and validate only. Workspace
 `regression-model-specific`.
@@ -12473,7 +12470,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F499 — one seeded run of `templates/qwen/transparent` gives a 1024×1024 RGBA PNG of the subject on a transparent ground, with the wrapper in the recorded prompt
-pending: #1709
 source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `Qwen/Qwen-Image-2.1` (base, `QwenImage21Pipeline`, ~32 GB). **Spends GPU time**: one image at
 1024×1024 × 40 steps. Run it only on a server where the base is already cached: if M-F497's `validate_workflow`
