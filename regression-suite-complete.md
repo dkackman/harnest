@@ -32493,4 +32493,21 @@ It is a **finding** if `result.output` is `null`, the regression of #1740.
 cleanup: `delete_output(job_id=J)`; read the `revision` and `delete_request(request="cf1444", revision=<it>)`.
 metrics: none.
 
+### C-F1445 — a cached repo whose `model_index.json` holds non-component list entries isn't listed in `downloads_required`
+source: tester, verified in #1741 (claude-opus-5-5 via anthropic)
+Free (validate only, no GPU). Use `workspace="regression-complete"` on every call. Precondition: `list_models`
+shows `krea/Krea-2-Turbo` cached with a revision on `main`. If it doesn't, skip the case and say so. Its index
+carries `text_encoder_select_layers`, a list of ints, which is not a component.
+1. `validate_workflow(name="models/krea2")` at defaults.
+2. Negative control: `validate_workflow(inline_workflow=...)` with one `StableDiffusionXLPipeline` step on
+   `stabilityai/stable-diffusion-xl-base-1.0` (first confirm from the precondition's `list_models` that it is **not** cached;
+   if it is, pick any repo that isn't).
+expected:
+- (1) `valid: true`, and `plan.downloads_required` names no `krea/Krea-2-Turbo` entry (it is `[]` when nothing
+  else is missing).
+- (2) `plan.downloads_required` names the uncached repo, so the check is still on.
+It is a **finding** if (1) lists `krea/Krea-2-Turbo`, the regression of #1741.
+cleanup: none.
+metrics: none.
+
 ## Performance
