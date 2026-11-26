@@ -29903,7 +29903,7 @@ Free, no job. Web UI as in C-F1324, on the shared Prompts page (sidebar "Prompts
 `"cf1670/car-painted-red"`, `prompts.2` to `"cf1670/blue-car"`. Run sequence W.
 expected: as C-F1324 for the three prompts. Step 1 is the one that changes: under the old single-substring rule
 `red car` matched none of them; now it keeps both red ones. Results only widen: `cf1670/red` still keeps
-both red ones, and a full name (`cf1670/blue-car`) still keeps exactly its prompt.
+`cf1670/red-sports-car` (one entry, as under the old rule), and a full name (`cf1670/blue-car`) still keeps exactly its prompt.
 No page errors. Old (single-substring) results, or a narrowing, is a **finding**.
 cleanup: none.
 metrics: none.
