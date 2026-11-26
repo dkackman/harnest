@@ -7759,7 +7759,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F012": {
+  "C-F1500": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -7806,7 +7806,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F016": {
+  "C-F1501": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -7873,7 +7873,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F025": {
+  "C-F1502": {
    "workflows": [
     "templates/minimax/dialogue-short"
    ],
@@ -7991,7 +7991,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F059": {
+  "C-F1503": {
    "workflows": [
     "templates/text-to-image"
    ],
@@ -8041,7 +8041,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F073": {
+  "C-F1504": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8051,7 +8051,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F074": {
+  "C-F1505": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8072,7 +8072,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F082": {
+  "C-F1506": {
    "workflows": [
     "templates/dissolve-between-shots"
    ],
@@ -8088,7 +8088,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F083": {
+  "C-F1507": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8118,7 +8118,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F088": {
+  "C-F1508": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8128,7 +8128,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F099": {
+  "C-F1509": {
    "workflows": [
     "templates/text-to-image"
    ],
@@ -8155,7 +8155,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F106": {
+  "C-F1510": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8187,7 +8187,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F112": {
+  "C-F1511": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8196,7 +8196,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F113": {
+  "C-F1512": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8206,7 +8206,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F114": {
+  "C-F1513": {
    "workflows": [],
    "models": [],
    "assets": [
@@ -8240,7 +8240,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F118": {
+  "C-F1514": {
    "workflows": [],
    "models": [],
    "assets": [
@@ -8252,7 +8252,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F119": {
+  "C-F1515": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8262,7 +8262,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F120": {
+  "C-F1516": {
    "workflows": [],
    "models": [],
    "assets": [
@@ -8274,7 +8274,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F121": {
+  "C-F1517": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8283,7 +8283,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F122": {
+  "C-F1518": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8293,7 +8293,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F123": {
+  "C-F1519": {
    "workflows": [],
    "models": [],
    "assets": [
@@ -8338,7 +8338,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F127": {
+  "C-F1520": {
    "workflows": [],
    "models": [],
    "assets": [
@@ -8386,7 +8386,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F131": {
+  "C-F1521": {
    "workflows": [],
    "models": [
     "openai/whisper-base"
@@ -8413,7 +8413,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F133": {
+  "C-F1522": {
    "workflows": [
     "templates/assemble-and-score"
    ],
@@ -8429,7 +8429,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F134": {
+  "C-F1523": {
    "workflows": [],
    "models": [],
    "assets": [
@@ -8442,7 +8442,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F135": {
+  "C-F1524": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8452,7 +8452,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F136": {
+  "C-F1525": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8461,7 +8461,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F137": {
+  "C-F1526": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8471,7 +8471,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F138": {
+  "C-F1527": {
    "workflows": [],
    "models": [
     "stable-diffusion-v1-5/stable-diffusion-v1-5"
@@ -8483,7 +8483,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F139": {
+  "C-F1528": {
    "workflows": [],
    "models": [],
    "assets": [],
@@ -8505,7 +8505,7 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
-  "S-F141": {
+  "C-F1529": {
    "workflows": [
     "templates/relevel-clip"
    ],

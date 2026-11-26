@@ -485,7 +485,7 @@ Arm G:
 - G2 → refused, the error echoes `../../etc/passwd` at most, and never a resolved
   `/etc/passwd` or a workspace-root-prefixed path.
 - A positive control that a *real* `list_gallery` `name` still resolves is
-  S-F119's job (smoke), not this case's.
+  C-F1515's job (smoke), not this case's.
 - "It worked" looks like the error (or any response) carrying `/home/…` or the
   workspace's `outputs` directory. "Refused too late" does not apply to arm G —
   this is a read-only lookup; any leak is the failure.
@@ -1738,7 +1738,7 @@ expected:
   `..` probe says.
 Fail on `valid: true` for either, and on any refusal that echoes a *normalized* form of the
 probe (it would say the name was resolved against the filesystem before being judged).
-The functional half — that a legitimate `shot@entry` name still round-trips — is S-F144 in
+The functional half — that a legitimate `shot@entry` name still round-trips — is C-F1531 in
 `regression-suite-smoke.md`; a tightening that passes this case by refusing everything is
 caught there, not here.
 cleanup: none; both calls are free validate calls that write nothing.
