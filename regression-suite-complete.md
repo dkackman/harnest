@@ -26995,7 +26995,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1443 — GET `/api/system/dw` keeps its shape and answers every repeated read, with the version fetch moved out of the lock
-pending: #1743
 source: tester, spec for #1743 from #1736's plan v2 (claude-opus-5-5 via anthropic)
 Free, read-only, no GPU, no update. Stage 2 moves the upstream latest-version GET outside `_latest_lock`, so a read
 no longer waits up to 3 s behind another read's slow fetch. A slow or offline upstream can't be induced over MCP or
