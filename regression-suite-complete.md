@@ -25721,7 +25721,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1389 — a pending proposal shows as a banner with Close and Keep open; none shows with no proposal or a settled one
-pending: #1717
 source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 **Web UI, black-box** (`ui-check`). Free. Setup: `create_workspace(name="cf1389-banner")`; create `demo` in it as in
 C-F1121 step (2) (`workspace=` on every call); open the workspace in the UI as its sidebar offers. Specs, each
@@ -25742,7 +25741,6 @@ cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1390 — Close sends a user close in the proposed state, and the closed request shows no banner
-pending: #1717
 source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 **Web UI, black-box** (`ui-check`). Free. Setup as in C-F1389. The runner blocks the request PUT, so the case reads
 the body the page sends (`record`, and the `blocked` list) rather than a stored close. Specs: (a) `record **/api/**`;
@@ -25764,7 +25762,6 @@ cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not
 metrics: none.
 
 ### C-F1391 — Keep open declines with or without a note, and a declined proposal shows as "You kept this open"
-pending: #1717
 source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 **Web UI, black-box** (`ui-check`). Free. Setup as in C-F1389. Specs: (a) `record **/api/**`; C-F1389 (a)'s mock;
 `goto`; `wait_text "The agent proposes"`; `click {role:"button", name:"Keep open"}`; `fill` the note field it opens
@@ -25786,7 +25783,6 @@ cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not
 metrics: none.
 
 ### C-F1392 — the Requests list and Overview tag a request with a pending proposal "close proposed", and no other
-pending: #1717
 source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 **Web UI, black-box** (`ui-check`). Free. Setup: C-F1389's workspace with `demo` and a second request `other`
 created the same way. Before the specs, `ui-check` `fetch` the list (`/api/workspaces/cf1389-banner/requests`) to see
