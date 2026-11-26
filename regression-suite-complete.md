@@ -31455,7 +31455,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1401 — `assemble-and-score` shows the three bed variables, and its defaults leave the film's loudness and length unchanged
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 Setup:
 1. Run C-F1394's storm arm. Then, for each name `qa-beddrop/left.mp4`, `qa-beddrop/mid.mp4` and
@@ -31501,7 +31500,6 @@ when they run in the same session; otherwise `delete_asset` them with `acknowled
 metrics: none.
 
 ### C-F1402 — a bed sliced from shot 1 and looped under the cut heals the storm cut's bed drop
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 Setup: the `qa-beddrop/` assets and A0 from C-F1401 (make them as C-F1401 says if they are gone). Run the template
 with A0 plus these arguments:
@@ -31527,7 +31525,6 @@ cleanup: `delete_output(job_id=...)` for both runs.
 metrics: none.
 
 ### C-F1403 — a zero-length bed window, or one starting past the end of the cut, fails the job instead of making a silent film
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 Setup: A0 from C-F1401, with `bed_gain` 1.0 in both arms.
 - **Arm 1:** `bed_seconds: 0`.
@@ -31550,7 +31547,6 @@ cleanup: `delete_output(job_id=...)` for any job that ran.
 metrics: none.
 
 ### C-F1404 — a bed window running past the end of the cut is shortened, never padded with silence
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 Setup: A0 from C-F1401 over the `qa-beddrop/` assets, run with these arguments so the film is the bed alone:
 - `score_gain`: 0.0
@@ -31579,7 +31575,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### C-F1405 — `shot_bed_drop`'s `says` names the `assemble-and-score` bed variables once Stage B lands
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F1394's storm-arm cut. Rerun it as written there if the job is gone. Call
 `assess_output(name=<storm cut>, workspace="regression-complete")`.
@@ -32497,7 +32492,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1446 — `slice_audio` offers `past_end: "excerpt"`, `"pad"` stays the default, and the guide says how it differs from `"stop"`
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 These are free reads and validates. Use `workspace="regression-complete"` on every call. Before the stage, `get_task`
 listed `past_end` with `default: "pad"` and `choices: ["pad", "stop"]`.
@@ -32527,7 +32521,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1447 — an `"excerpt"` slice leaves a long loud tail without warning, where `"stop"` warns `slice_dropped_loud_tail`
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 CPU only, seconds. Use `workspace="regression-complete"` on every call. Fixture: `asset:qa-cast/ep15-song.mp3` (30.0 s,
 loud throughout). A 1 s window at 5 s leaves 24 s of music at the same level behind it. That is the bed window's shape
@@ -32561,7 +32554,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### C-F1448 — an `"excerpt"` window running past the end is cut at the end, with no padding; `"pad"` still pads
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 CPU only, seconds. Use `workspace="regression-complete"` on every call. Fixture: `asset:qa-cast/ep15-song.mp3`. First
 call `get_gallery_metadata` on it and call its `duration_seconds` D (30.02 when the fixture is as written).
@@ -32594,7 +32586,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### C-F1449 — an `"excerpt"` slice starting at or past the end of its source is refused, not made silent
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 CPU only, seconds. Use `workspace="regression-complete"` on every call. Fixture: `asset:qa-cast/ep15-song.mp3`, with D
 from `get_gallery_metadata` as in C-F1448. Each arm is a one-step inline workflow: a `slice_audio` of the fixture with
@@ -32620,7 +32611,6 @@ cleanup: `delete_output(job_id=...)` for any job that ran.
 metrics: none.
 
 ### C-F1450 — validate's static slice length treats `"excerpt"` as cut at the end, like `"stop"`
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 Validate only, free. Use `workspace="regression-complete"` on every call. This uses C-F999's STEP and `clip` step, and
 its fixture check on `asset:qa-cast/ep68-score.mp3` (about 24 s). In C-F999 (f), a `"stop"` slice from 20 s for 10 s
@@ -32640,7 +32630,6 @@ cleanup: none (nothing runs).
 metrics: none.
 
 ### C-F1451 — the bed steps are wired as the plan says: `"excerpt"` slice of the edit, float defaults, `bed_gain` on the third mix entry
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 These are free reads and a validate. Use `workspace="regression-complete"` on every call.
 1. `get_workflow("templates/assemble-and-score")`.
@@ -32673,7 +32662,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1452 — neither the default run nor the bed-on run carries a warning from the bed steps
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 v3 of the plan added this intent. v2's `"stop"` slice warned `slice_dropped_loud_tail` on nearly every run of the
 template, including the default runs with the bed off. This case reads the warnings of runs that C-F1401 and C-F1402
@@ -32699,7 +32687,6 @@ this session.
 metrics: none.
 
 ### C-F1453 — the skills that described the hand-built bed chain point at the `bed_*` variables
-pending: #1719
 source: tester, spec for #1719 from #1620's plan v4 (claude-opus-5-5 via anthropic)
 These are free reads of the `dw` plugin, loaded from `develop`:
 - `dw:series-episodes` (its bed beat)
