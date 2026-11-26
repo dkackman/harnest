@@ -28523,4 +28523,168 @@ source: moved from S-F146 (suite review 2026-11-26); tester, verified in #1253 o
 absorbs: C-F921 (merged 2026-11-26, suite review)
 - C-F921: tester, spec for #1386 from #1384's plan v2 (claude-opus-5-5 via anthropic)
 
+### C-F1533 — a `first_at_shape` cost row adds its `minutes` once per distinct unseen shape, after everything else, and names the shapes in `scaled`
+pending: #1763
+source: tester, spec for #1763 from #1615's plan v3 (claude-opus-5-5 via anthropic)
+
+Free: `save_workflow` and `validate_workflow` only. Workspace `regression-complete`. Two saved copies of
+`templates/minimax/dialogue-short`, built the same way; they must **never be run** (a run writes history that marks
+its shapes seen and spoils the case).
+
+Setup:
+1. `get_workflow(name="templates/minimax/dialogue-short")` (full form). Take its definition, dropping the listing-only
+   keys (`observed`, `origin`, `constraints`, `lists`, `truncated`).
+2. Save it as `qa-c-f1533-plain`, unchanged apart from its name/id:
+   `save_workflow(name="qa-c-f1533-plain", workspace="regression-complete", ...)`.
+3. Save it as `qa-c-f1533-key`, identical except that every row of its `cost` gains
+   `"first_at_shape": {"minutes": 6, "keys": ["width", "height", "weights_dtype", "attention_backend"]}`. If the
+   template's own cost row already carries a `first_at_shape` (it does from #1764 on), set `plain`'s rows **without**
+   it and `key`'s with the value above.
+
+Definitions:
+- `<base>` = `{"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice":
+  "asset:qa-cast/priya-voice.wav", "width": 1312, "height": 736}`. 1312x736 is a canvas no catalog run uses, so even
+  if the copies inherit the template's history no shape below is seen.
+- `<shot(F, N)>` = C-F1298's `<shot(F)>` with `name` set to N.
+- Each step validates the same arguments twice: `validate_workflow(name="qa-c-f1533-key", workspace="regression-complete",
+  arguments=...)` and the same call on `qa-c-f1533-plain`. Call their `plan.estimate`s K and P.
+
+Steps (arguments = `<base>` + the shown keys):
+1. `{"shots": [<shot(158, "a")>]}`: one shape.
+2. `{"shots": [<shot(158, "a")>, <shot(175, "b")>]}`: two distinct frame counts.
+3. `{"shots": [<shot(158, "a")>, <shot(158, "b")>]}`: one count, twice.
+4. `<base>` alone: the template's default five shots (124 ×4, 141), so two distinct counts.
+5. `{"shots": [<shot(124, "a")>, <shot(141, "b")>, <shot(158, "c")>, <shot(175, "d")>]}`: four distinct counts.
+6. Step 1's arguments with `"weights_dtype": "{int8}"`: one shape, a different dtype.
+expected:
+- In every step, K.`minutes` − P.`minutes` is 6 × the step's distinct unseen shapes, within 0.1: step 1 → 6, step 2 →
+  12, step 3 → 6, step 4 → 12, step 5 → 24, step 6 → 6. A repeated frame count is one shape.
+- K.`basis` equals P.`basis` and K.`low_confidence` equals P.`low_confidence` (both absent counts as equal) in every
+  step. The term never changes either.
+- K.`warm_minutes` equals P.`warm_minutes`, and K.`cached_minutes` equals P.`cached_minutes`, wherever P carries them.
+- K.`scaled` holds a clause naming the first-pass term: its minutes (6, 12 or 24), the count of new shapes, and each
+  shape's frame count with the other key values (for step 1, like `plus 6 min first pass at 1 shape this card hasn't
+  run (158 frames, 1312x736, int4, sparse)`). Steps 2 and 4 name both counts. Step 5 names three shapes and then
+  "and 1 more". Step 6 names `int8`. Where P has no `scaled`, K has one holding only that clause; where P has one, K's
+  keeps all of P's text and adds the clause.
+- P.`scaled` never carries a first-pass clause.
+It is a **finding** if the difference is 0 or a multiple other than the one listed (the term counted per entry rather
+than per distinct shape, or once per run whatever the count), if it scales with frames, or if `basis`,
+`low_confidence`, `warm_minutes` or `cached_minutes` moves. If every step answers a difference of 0 and `get_workflow`
+on `qa-c-f1533-key` shows no `first_at_shape`, the save dropped the key: that is C-F1535's finding, and this case is
+not checked.
+cleanup: `delete_workflow` both copies (`qa-c-f1533-plain`, `qa-c-f1533-key`) in `regression-complete`.
+metrics: none.
+
+### C-F1534 — a malformed `first_at_shape` is refused at save and at validate, naming the key
+pending: #1763
+source: tester, spec for #1763 from #1615's plan v3 (claude-opus-5-5 via anthropic)
+
+Free: refused calls only. Workspace `regression-complete`. Build `<def>` as C-F1533's setup step 1 does, and for each
+arm below set every `cost` row's `first_at_shape` to the arm's value (removing any it already has). Each arm is two
+calls: `save_workflow(name="qa-c-f1534", workspace="regression-complete", ...)` with that definition, and
+`validate_workflow(inline_workflow=<that definition>, workspace="regression-complete", arguments=C-F1533's <base>)`.
+1. `{"minutes": -1, "keys": ["width"]}`: negative minutes.
+2. `{"minutes": true, "keys": ["width"]}`: a bool.
+3. `{"minutes": "6", "keys": ["width"]}`: a string.
+4. `{"minutes": 6, "keys": []}`: empty keys.
+5. `{"minutes": 6, "keys": ["no_such_variable"]}`: a name the workflow doesn't declare.
+6. `{"minutes": 6, "keys": ["num_frames"]}`: an entry field, not a declared variable (entry frames join the shape
+   implicitly, so naming one is not the syntax).
+7. `{"minutes": 6}`: no keys.
+8. `{"keys": ["width"]}`: no minutes.
+9. `{"minutes": 6, "keys": ["width"], "per_entry": true}`: an extra property.
+10. Control: `{"minutes": 0, "keys": ["width"]}`: zero is non-negative and finite.
+expected:
+- Arms 1 to 9: `save_workflow` refuses and stores nothing (`get_workflow(name="qa-c-f1534")` answers unknown), and
+  `validate_workflow` answers `valid: false` (or refuses) before any queue. Each refusal names `first_at_shape`, and arm
+  5's names `no_such_variable`, arm 6's `num_frames`.
+- Arm 10: both calls accept. The validate's `plan.estimate.minutes` equals the same arguments' quote on the definition
+  with no `first_at_shape` (within 0.1): a zero term adds nothing.
+It is a **finding** if any of arms 1 to 9 saves or validates clean, in particular arm 5 or 6 (the undeclared name
+would be silently dropped and price nothing), or if a refusal doesn't name the key.
+cleanup: `delete_workflow(name="qa-c-f1534", workspace="regression-complete")` if arm 10 (or a failing arm) saved it.
+metrics: none.
+
+### C-F1535 — the compact catalog listing strips `first_at_shape`; the full `get_workflow` keeps it
+pending: #1763
+source: tester, spec for #1763 from #1615's plan v3 (claude-opus-5-5 via anthropic)
+
+Free. Workspace `regression-complete`. Run C-F1533's setup (or this case first, then C-F1533, sharing it).
+1. `get_workflow(name="qa-c-f1533-key")`.
+2. `list_workflows(workspace="regression-complete")` in its compact default form.
+expected:
+- Step 1: every `cost` row carries `first_at_shape` exactly as saved, `{"minutes": 6, "keys": ["width", "height",
+  "weights_dtype", "attention_backend"]}`.
+- Step 2: the string `first_at_shape` appears nowhere in the compact listing, neither in `qa-c-f1533-key`'s entry (if
+  saved workflows are listed) nor in any catalog template's.
+It is a **finding** if step 1 lost the key or changed it, or if step 2 shows it.
+cleanup: C-F1533's.
+metrics: none.
+
+### C-F1536 — `templates/minimax/dialogue-short` declares `first_at_shape` at 6.0 min over width, height, dtype and attention
+pending: #1764
+source: tester, spec for #1764 from #1615's plan v3 (claude-opus-5-5 via anthropic)
+
+Free.
+1. `get_workflow(name="templates/minimax/dialogue-short")`.
+2. `list_workflows(shape="shot")` in its compact default form.
+expected:
+- Step 1: its cost row carries `"first_at_shape": {"minutes": 6.0, "keys": ["width", "height", "weights_dtype",
+  "attention_backend"]}`. Every name in `keys` is a variable step 1 also declares.
+- Step 2: dialogue-short is listed and `first_at_shape` appears nowhere in the listing.
+It is a **finding** if the key is missing, the figure isn't 6.0, `keys` differs, or the compact listing carries it.
+cleanup: none.
+metrics: none.
+
+### C-F1537 — on lem, a B3s `dialogue-short` quote carries the first-pass term only for shapes this card hasn't run
+pending: #1764
+source: tester, spec for #1764 from #1615's plan v3 (claude-opus-5-5 via anthropic)
+
+Free: `validate_workflow` only, on `lem` (cuda, one RTX 3090). Workspace `regression-complete`. The seen shapes are
+the #1697 probe jobs `b64312ad68ff` (226 frames) and `cdfa3d6fdea2` (243 frames), both at B3s's kernels. First
+`get_job` each: if either is gone from history, its arms are *not checked*.
+
+Definitions:
+- `<b3s>` = C-F1298's `<base>` + `{"width": 1344, "height": 768, "weights_dtype": "{int8}", "lora_model_name": null,
+  "num_inference_steps": 12, "attention_backend": "sparse"}`.
+- `<shot(F, N)>` = C-F1298's `<shot(F)>` with `name` set to N.
+- Every call is `validate_workflow(name="templates/minimax/dialogue-short", workspace="regression-complete",
+  arguments=...)`. "The term" is the first-pass clause in `plan.estimate.scaled` (C-F1533's wording).
+- U1 and U2: two frame counts this card can't have run at B3s's canvas. Use 277 and 294: 260 frames ran out of memory
+  at 1344x768 on lem's 3090 (#1615's field report), so a succeeded row above it can't exist. If validate refuses 277 or
+  294 on the VRAM ceiling, use instead the first two of 158, 141, 124 whose step-3 quote carries the term, and say so;
+  with fewer than two, the arms that need them are *not checked*.
+
+Steps:
+1. `<b3s>` + `{"shots": [<shot(226, "a")>]}`.
+2. `<b3s>` + `{"shots": [<shot(243, "a")>]}`.
+3. `<b3s>` + `{"shots": [<shot(U1, "a")>]}`.
+4. `<b3s>` + `{"shots": [<shot(U1, "a")>, <shot(U2, "b")>]}`.
+5. `<b3s>` + `{"shots": [<shot(U1, "a")>, <shot(U1, "b")>]}`.
+6. `<b3s>` + `{"shots": [<shot(226, "a")>, <shot(243, "b")>]}`.
+7. Step 1's arguments with `"weights_dtype": "{int4}"`.
+8. C-F1298's `<base>` alone: the template's defaults, which lem has run.
+expected:
+- Steps 1, 2 and 6: no term in `scaled` (and no `scaled` at all where the quote is `observed`).
+- Step 3: the term, naming 1 shape at U1 frames with `1344x768`, `int8`, `sparse`. Its `minutes` minus 6.0 is within
+  5% of step 1's `minutes` × U1 / 226, when steps 1 and 3 are rescaled from the same observed figure (both `scaled`
+  texts name the same minutes and frame count) or both from the curated figure. That is the stage-1 rescale plus the
+  term, nothing else.
+- Step 4: the term at 12 min, naming both U1 and U2. Its `minutes` minus 12 is within 5% of step 6's `minutes` ×
+  (U1 + U2) / 469, under the same same-source condition.
+- Step 5: the term at 6 min, naming 1 shape.
+- Step 7: either no term, or the term naming 1 shape with `int4`. Report which: both are correct, depending on
+  whether lem has run 1344x768 `{int4}` sparse at 226.
+- Step 8: `basis: "observed"` and no term.
+- `basis` and `low_confidence` in steps 3 to 5 are what the same arguments would get without the term: step 3's equals
+  step 1's when both are rescaled from one figure; the term never sets `low_confidence`.
+It is a **finding** if step 1, 2, 6 or 8 carries the term (history the server holds was not read as seen), if step 3,
+4 or 5 lacks it or counts it per entry rather than per distinct shape, or if its size isn't 6.0 per shape. Before
+filing a seen-arm finding, say in the issue that a Triton cache clear on lem after 2026-11-26 would make the term
+correct there (rows before the newest clear stop counting as seen); the tester can't see the clear marker over MCP,
+so the implementer confirms it.
+cleanup: none. Nothing is queued.
+metrics: none.
+
 ## Performance
