@@ -29512,7 +29512,6 @@ and that is a finding). Then `delete_request(request="cf1308", revision=1, works
 metrics: none.
 
 ### C-F1309 — a check linked to its own `check-NN` item leaves the shot's result, attempts and `needs` alone
-pending: #1699
 source: tester, spec for #1699 from #1617's plan v1 (claude-opus-5-5 via anthropic)
 CPU only, no GPU model. Input: the shared fixture `asset:qa-cast/ep6-shot1-priya.mp4` (any short clip with a
 soundtrack substitutes). Use `workspace="regression-complete"` on every call. Bind each run's
@@ -29546,7 +29545,6 @@ cleanup: `delete_output(job_id=K)`, `delete_output(job_id=T)`; read `get_request
 metrics: none.
 
 ### C-F1310 — a link to a missing `export` item is refused before queueing, and succeeds once `set_request` adds it
-pending: #1699
 source: tester, spec for #1699 from #1617's plan v1 (claude-opus-5-5 via anthropic)
 CPU only. Same fixture and workspace rule as C-F1309.
 1. `set_request(request="cf1310", revision=0, title="CF1310", goal="export added mid-request", why="C-F1310 fixture",
@@ -29571,7 +29569,6 @@ cleanup: `delete_output(job_id=E)`; read the `revision` and `delete_request(requ
 metrics: none.
 
 ### C-F1311 — the request guidance tells an agent to give checks and exports items of their own
-pending: #1699
 source: tester, spec for #1699 from #1617's plan v1 (claude-opus-5-5 via anthropic)
 Free. Load `dw:script-to-video`, `dw:series-episodes` and `dw:long-form` with the `Skill` tool, and read
 `references/request.md` at the path `dw:script-to-video`'s base directory gives, as any skill consumer would.
