@@ -29387,25 +29387,27 @@ pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 CPU only: one utility run of an 11.75 s clip, under a minute on lem. Workspace `regression-complete`. Definitions are
 C-F1302's. Use a fresh id every pass, `qa-c-f1304-<YYYYMMDDHHMM>` from `date`, so a run from an earlier pass never
-leaves history on it. Call it ID.
-1. `validate_workflow(inline_workflow=<lutgrain("asset:qa-cast/ep13-episode.mp4", ID)>,
-   workspace="regression-complete")`. Keep `fingerprint` and `minutes` (D).
-2. `run_workflow(inline_workflow=<the same>, workspace="regression-complete", acknowledged_cost={"fingerprint": <step
+leaves history on it. Call it ID. An inline workflow runs with `workflow_name: null` and records no history, so this
+case runs a saved workspace workflow (#1619 plan v1, acceptance item 3).
+1. `save_workflow(name=ID, workflow=<lutgrain("asset:qa-cast/ep13-episode.mp4", ID)>, workspace="regression-complete")`,
+   then `validate_workflow(name=ID, workspace="regression-complete")`. Keep `fingerprint` and `minutes` (D).
+2. `run_workflow(workflow_path=ID, workspace="regression-complete", acknowledged_cost={"fingerprint": <step
    1's>, "minutes": D, "downloads": []}, note="C-F1304 declared-rate ack", wait_seconds=55)`. Follow `still_running:
    true` with `wait_for_job`.
-3. Once the job has succeeded, repeat step 1 exactly.
+3. Once the job has succeeded, repeat step 1's `validate_workflow(name=ID, workspace="regression-complete")`.
 expected:
 - Step 1 is priced as in C-F1302: D is a number, with `basis: "derived"` and `low_confidence: true`.
 - Step 2 queues: no 409, and no refusal about the cost acknowledgement. The ack binds a number now, not `null`, and the
   plan says the gate doesn't compare `minutes`. The job ends `succeeded`, with two video outputs.
-- Step 3: `basis: "observed"` and `runs` ≥ 1. `scaled` no longer reads `task rates`, and `unpriced_reason` is absent.
-  Its `minutes` is this box's measured figure.
+- Step 3: `basis: "observed"` and `runs` ≥ 1, and `unpriced_reason` is absent. With one run the estimate may be
+  `tempered` toward the declared figure (C-F055's existing tempering), and `scaled` may still read `task rates`.
 - The rates are ceilings, set at about 2× the slowest rate lem measured. So on lem, step 3's `minutes` ≤ D + 0.1. Step
   3 above D but within 2 × D is recorded in the result as *rate low*, not a finding. Above 2 × D is a finding: the plan's
   reopen trigger, "declared rates more than 2× off on a host".
 It is a **finding** if step 2 is refused for its ack, the job fails, step 3 still answers `derived` from task rates or
 `unknown`, or step 3's minutes exceed 2 × D.
-cleanup: `delete_output(job_id=<step 2's job>)`. Keep the job record, which is harmless. A later pass uses a new ID.
+cleanup: `delete_output(job_id=<step 2's job>)` and `delete_workflow(name=ID, workspace="regression-complete")`. Keep
+the job record, which is harmless. A later pass uses a new ID.
 metrics: none.
 
 ### C-F1305 — a step reading an earlier step's output through `previous_result:` is still priced, at the longest resolved length, and is named in `differs`
