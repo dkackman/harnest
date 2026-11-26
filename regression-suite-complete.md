@@ -32762,4 +32762,254 @@ A **finding** is any of these:
 cleanup: none (nothing runs).
 metrics: none.
 
+### C-F1455 — #1749's temporal-flicker record names the clip, the strengths, the CPU time, before/after numbers and a gate that follows from them
+pending: #1749
+source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). The record is `bench/records/temporal-flicker.md` (+ `.json`) in the dw repo, which the tester can't
+read: read it as the stage's hand-off comment on #1749 quotes it (`gh issue view 1749 --repo dkackman/diffusers-workflow
+--comments`). If the comment neither quotes the record nor carries its numbers, send the stage back
+`status:needs-info` asking for them; don't pass it. The tester can't run `bench/temporal_flicker.py` (no box access):
+the plan's "a rerun reproduces the numbers" is checked as the record's own rerun line (below) and independently by
+C-F1457 over MCP.
+expected:
+- The record names **one clip**: an H3 output or asset on mini-ai, by its `asset:` or `output:` reference and the job
+  id that made it. `get_job(job_id=<that id>, workspace=<the record's workspace>)` is `completed`, its workflow
+  (`get_job_workflow`) is a MiniMax H3 one, and it finished **before** #1749 was claimed: the stage ran no GPU job. A
+  clip that isn't H3, or a generating job made for the stage, is a **finding** against the plan.
+- It gives the strengths used: luma 0.5, chroma 0.5, occlusion tolerance 1.5 px (the plan's defaults). Other values are
+  a **finding** unless the record says why and also gives the default-strength numbers.
+- It gives the CPU time of the run (seconds or minutes, with the frame count and size it was over).
+- It gives **both measures, before and after**: flicker (mean absolute frame-to-frame difference on the static-region
+  mask, where full-resolution flow magnitude is under 0.25 px) and motion blur (gradient energy on the moving subject),
+  and says how the static mask and the moving region were chosen, so a reader can find them on the frames.
+- It gives a rerun: the same command run a second time, with numbers that equal the first run's (or differ only past
+  the third significant figure). No rerun, or a rerun that moves a number more than that, is a **finding**: the
+  plan's intent says a rerun reproduces the numbers.
+- It **states the gate** as yes or no, and the statement follows from its numbers: yes needs flicker after < flicker
+  before **and** moving-edge gradient energy after within 5% of before (≥ 0.95×). A "yes" with energy under 0.95× or
+  flicker not lower, or a "no" with both met and no other reason given, is a **finding**.
+- The hand-off says the `docs/ATTRIBUTIONS.md` "Ideas reimplemented here" line crediting ComfyUI-H3-ReTime
+  `H3TemporalStabilizer` (MIT) landed with the stage (a docs reviewer checks the file itself), and that a unit test of
+  the measures on a synthetic clip landed (static grain: flicker falls; translating textured square: gradient energy
+  kept, no ghost trail).
+- No MCP tool, task or template changed: `list_tasks` has no `temporal_denoise` (that is stage B, #1750).
+cleanup: none (the record's clip and pair are its evidence).
+metrics: none.
+
+### C-F1456 — #1749's before/after pair is on mini-ai where the record says, the same geometry as the source, and posted for Don
+pending: #1749
+source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). BEFORE and AFTER are the two references the record (C-F1455) gives for the pair: outputs or kept
+assets on mini-ai, in the workspace it names.
+1. `get_gallery_metadata` on BEFORE, AFTER and the source clip, with the record's `workspace=`.
+2. `get_output_frames` on BEFORE and AFTER at the same three moments (start, middle, end), to see that the pair is the
+   same shot.
+expected:
+- Both references resolve. One that doesn't ("Unknown asset", not found) is a **finding**: Don has nothing to look at.
+- BEFORE is the source clip itself, or a copy of it with the same `frame_count`, `fps`, width and height.
+- AFTER has the same `frame_count`, `fps`, width and height as BEFORE, and an audio stream if BEFORE has one.
+- The frames show the same shot at the same moments, with no shift, crop, colour cast or black frames.
+- A comment on #1749 addressed to Don names both references and where to open them (workspace, and the web UI
+  Gallery or Compare), and asks for his verdict (Q2, `taste`). The stage is not verified until Don's verdict is on
+  #1749: the tester hands the look to Don, never answers it.
+cleanup: none (Don needs the pair; it is the record's evidence).
+metrics: none.
+
+### C-F1457 — over MCP, the probe's after clip flickers less than its before clip on a static region, and keeps the moving subject's detail
+pending: #1749
+source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+An independent check of C-F1455's direction with the server's own measures, since the tester can't rerun the bench.
+Four `trim_video` utility jobs (CPU, no model). Workspace: the record's. BEFORE/AFTER as in C-F1456, N = their
+`frame_count`. STATIC is a crop box `[x, y, w, h]` inside the record's static region (or, if the record gives none, a
+box on a part of the frame `get_output_frames` shows still across the clip, with no moving subject in it); MOVING is a
+box on the moving subject over the frames read.
+1. For X in BEFORE, AFTER: two jobs, `<trim(X, 0)>` and `<trim(X, 1)>`, where `<trim(X, S)>` = `{"id": "qa-c-f1457",
+   "steps": [{"name": "t", "task": {"command": "trim_video", "arguments": {"video": X, "start_frame": S, "num_frames":
+   N - 1}}, "result": {"content_type": "video/mp4"}}]}`. `validate_workflow` first, then `run_workflow(...,
+   wait_seconds=55, workspace=...)`. Call the outputs X0 and X1: frame i of X1 is frame i+1 of X.
+2. For X in BEFORE, AFTER: `compare_outputs(names=[X0, X1], crop=STATIC, at=["frame:<a>", ...])` at four frame
+   indices spread over 0..N-2. Its mean abs diff at each index is the frame-to-frame difference there. Call the mean of
+   the four F(X).
+3. `compare_outputs(names=[BEFORE, AFTER], crop=MOVING, texture_bands=true, at=<the same four frames>)`.
+expected:
+- F(AFTER) < F(BEFORE). Not lower, when the record says flicker fell, is a **finding** against the record.
+- In step 3, AFTER's highest texture band energy is at least 0.95× BEFORE's (the plan's "within a few %"). Lower,
+  when the record's gate says yes, is a **finding**: the after clip blurred the moving subject.
+- No ghost: the MOVING crop's frames in step 3's grid show no doubled edge or trail on AFTER that BEFORE doesn't have.
+cleanup: `delete_output(job_id=<id>, workspace=...)` for each of the four trim jobs; never delete BEFORE, AFTER or the
+source clip.
+metrics: none.
+
+### C-F1458 — `list_tasks` and `get_task` show `temporal_denoise` with its four arguments, their defaults and ranges
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Free. Only once #1749's gate passed (its record says yes and Don's verdict on #1749 says yes). If #1750 was closed
+`not planned`, C-F1458 to C-F1465 do not apply.
+1. `list_tasks()`; 2. `get_task(command="temporal_denoise")`; 3. `get_task(command="stabilize_video")`.
+expected:
+- `list_tasks` lists `temporal_denoise` with a one-line summary about frame-to-frame shimmer or flicker.
+- `get_task` names exactly these parameters, besides the common `device` override: `clip` (required), `luma_strength`
+  (default 0.5), `chroma_strength` (default 0.5), `occlusion_tolerance` (default 1.5). A `video`, `media`, `mode` or
+  `spatial_strength` parameter is a **finding**: the plan cut them, and a `video` argument drops the soundtrack.
+- `luma_strength` and `chroma_strength` each carry a `domain` and a `range` of 0 to 1, both ends included (today's
+  wording for that is `domain: "unit"`, `range: "between 0.0 and 1.0"`, as `film_grain`'s `amount` shows).
+- `occlusion_tolerance` carries a `domain` and a `range` that excludes 0 and negatives and has an upper bound (the plan
+  says about 0.25-8 px). Record the exact range: C-F1459 tests its edges.
+- `clip`'s description says it takes an AudioVideo or a video file or reference and carries the soundtrack.
+- `stabilize_video` is unchanged: `clip` and `smooth`, as before.
+cleanup: none.
+metrics: none.
+
+### C-F1459 — `temporal_denoise` refuses at validate a strength outside 0-1, a zero, negative or out-of-range tolerance, an unknown argument and an image; it accepts every edge value
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only. Workspace `regression-complete`. CLIP = `asset:qa-fit/src-640x480-50f.mp4` (see
+Fixtures; C-F238's setup makes it when missing). `<td(CLIP, ARGS)>` = `{"id": "qa-c-f1459", "steps": [{"name": "td",
+"task": {"command": "temporal_denoise", "arguments": {"clip": CLIP, ...ARGS}}, "result": {"content_type":
+"video/mp4"}}]}`. LO and HI are the ends of `occlusion_tolerance`'s range from C-F1458.
+
+Refused, each `valid: false` with an error naming the argument (and its range, for a number):
+- **a.** `{"luma_strength": 1.01}`; **b.** `{"luma_strength": -0.01}`; **c.** `{"chroma_strength": 1.5}`;
+  **d.** `{"chroma_strength": -1}`.
+- **e.** `{"occlusion_tolerance": 0}`; **f.** `{"occlusion_tolerance": -1.5}`; **g.** `{"occlusion_tolerance": <HI + 1>}`;
+  **h.** `{"occlusion_tolerance": <LO / 2>}` when LO is above 0.
+- **i.** `{"spatial_strength": 0.5}` (a cut argument), and **j.** `{"mode": "hqdn3d"}`: an unknown argument, named.
+- **k.** `{"luma_strength": "0.5"}` (a string): refused, or accepted only if the reply says it was read as a number.
+- **l.** CLIP = `asset:qa-cast/priya-portrait.jpg` (any still substitutes): refused as not a video clip, naming `clip`.
+
+Accepted, each `valid: true` with no error: **m.** `{}` (defaults); **n.** `{"luma_strength": 0, "chroma_strength": 0}`;
+**o.** `{"luma_strength": 1, "chroma_strength": 1}`; **p.** `{"occlusion_tolerance": LO}`; **q.** `{"occlusion_tolerance":
+HI}`; **r.** `{"luma_strength": 1, "chroma_strength": 0}`.
+expected:
+- Each refused arm is refused **at validate** with its argument named; none queues a job (`list_jobs` shows no
+  `qa-c-f1459` job). A refusal that only comes at run time, an error naming no argument, or a server path in any
+  message (`/Users/`, `/private/`, `/home/`), is a **finding**.
+- Each accepted arm validates clean. An edge value refused (0 or 1 for a strength, LO or HI for the tolerance) is a
+  **finding**.
+cleanup: none (nothing runs).
+metrics: none.
+
+### C-F1460 — `validate_workflow` prices a never-run `temporal_denoise` workflow from its declared rate, scaling with the clip's length
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only. Workspace `regression-complete`. `<td(CLIP, {}, ID)>` as in C-F1459 with id ID. The
+ids `qa-c-f1460-a` and `qa-c-f1460-b` must **never be run** here: one run turns the answer `observed`. If one answers
+`observed`, the fixture is spoiled: report *not checked*, no finding.
+1. `validate_workflow(inline_workflow=<td("asset:qa-fit/src-640x480-50f.mp4", {}, "qa-c-f1460-a")>, ...)` (50 frames).
+2. The same with `asset:qa-fit/src-512x288-121f.mp4` (121 frames) and id `qa-c-f1460-b`.
+expected:
+- Both `valid: true`. `plan.estimate.minutes` is a number, never null; `basis` is `derived` (a declared task rate, as
+  C-F1302 defines it), with `scaled` naming `temporal_denoise`, its rate and the input length.
+- No `unpriced_reason`, `partial: false`.
+- Step 2's minutes are ≥ step 1's (a longer clip never prices lower).
+- The quote binds: `acknowledged_cost` built from it is accepted by `run_workflow` (checked in C-F1461, which runs).
+A null `minutes` or `basis: "unknown"` is a **finding**: the plan owes a measured `cost` rate.
+cleanup: none (nothing runs).
+metrics: none.
+
+### C-F1461 — a task-only `temporal_denoise` run on a clip with audio keeps frame count, size, fps and the original audio, on the default device and on `cpu`
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Two CPU jobs, no model. Workspace `regression-complete`. CLIP = `asset:qa-fit/src-640x480-50f.mp4` (640×480, 50 frames,
+24 fps, with audio).
+1. `validate_workflow` then `run_workflow(inline_workflow=<td(CLIP, {}, "qa-c-f1461")>, acknowledged_cost=<from
+   validate>, wait_seconds=55, workspace="regression-complete")`; `wait_for_job` if still running. Output OUT1.
+2. The same with ARGS `{"device": "cpu"}`. Output OUT2.
+3. `get_gallery_metadata` on CLIP, OUT1, OUT2; `get_output_audio` on CLIP and OUT1; `get_job` on both jobs.
+expected:
+- Both jobs `completed` on this server's accelerator (mps on mini-ai, cuda on lem), with no error and no
+  `device_adjusted` or fallback warning about the task.
+- OUT1 and OUT2 each have `frame_count` 50, 640×480, `fps` 24 and an audio stream; `duration_seconds` equals CLIP's.
+- `get_output_audio` on OUT1 gives the same duration, sample rate and channels as on CLIP, and the same sound (the
+  audio is carried, not re-synthesised or silenced).
+- `job.warnings` holds nothing about the task's arguments.
+- The job's own duration is in the same order as the validate quote (no check of the number: timings differ per box).
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for both jobs.
+metrics: none.
+
+### C-F1462 — `temporal_denoise` at strengths 0/0 returns the input's frames
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Two CPU utility jobs. Workspace `regression-complete`. CLIP as in C-F1461. A re-encode is lossy, so the comparison is
+against an encode-only control, not against CLIP itself.
+1. CONTROL: run `{"id": "qa-c-f1462-ctl", "steps": [{"name": "t", "task": {"command": "trim_video", "arguments":
+   {"video": CLIP, "start_frame": 0, "num_frames": 50}}, "result": {"content_type": "video/mp4"}}]}`.
+2. ZERO: run `<td(CLIP, {"luma_strength": 0, "chroma_strength": 0}, "qa-c-f1462")>`.
+3. `compare_outputs(names=[CLIP, CONTROL, ZERO], at=["frame:0", "frame:16", "frame:33", "frame:49"])`.
+4. `compare_outputs(names=[CONTROL, ZERO], at=<the same>)`.
+expected:
+- ZERO has 50 frames, 640×480, 24 fps, with audio.
+- In step 4, ZERO matches CONTROL at every index: PSNR ≥ 45 dB (or infinite) and mean abs diff under 0.5 on a 0-255
+  scale. In step 3, ZERO's diff against CLIP is no larger than CONTROL's at any index.
+- Frame 0 and frame 49 match too: the forward and backward passes leave the end frames untouched at 0/0.
+A ZERO that differs from CONTROL by more than that is a **finding**: strength 0 must be an identity.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for both jobs.
+metrics: none.
+
+### C-F1463 — `temporal_denoise` cuts frame-to-frame grain on a static clip, and keeps a moving clip's high-band detail at the defaults
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+CPU utility jobs only. Workspace `regression-complete`. A positive control: without it, C-F1462's identity would pass
+a task that does nothing.
+
+**Static grain.** Build GRAIN, one job: `{"id": "qa-c-f1463-grain", "steps": [{"name": "still", "task": {"command":
+"trim_video", "arguments": {"video": "asset:qa-fit/src-640x480-50f.mp4", "start_frame": 0, "num_frames": 1, "pad_to":
+48}}, "result": {"content_type": "video/mp4"}}, {"name": "grain", "task": {"command": "film_grain", "arguments":
+{"media": "previous_result:still", "amount": 0.3, "seed": 1}}, "result": {"content_type": "video/mp4"}}]}`: 48 copies of
+one frame, with different grain on each. (If `film_grain` refuses `previous_result:`, run the steps as two jobs and pass
+the first's `output:` reference.) Then DEN1 = `<td(GRAIN, {"luma_strength": 1, "chroma_strength": 1}, "qa-c-f1463")>`
+and DEN = `<td(GRAIN, {}, "qa-c-f1463")>`.
+1. For X in GRAIN, DEN1, DEN: run `trim_video` on X twice, `start_frame` 0 and 1, `num_frames` 47 (as C-F1457's
+   `<trim>`), giving X0, X1; then `compare_outputs(names=[X0, X1], at=["frame:5", "frame:17", "frame:29", "frame:41"])`.
+   F(X) = the mean of its four mean abs diffs.
+
+**Moving detail.** MOVE = `<td("asset:qa-fit/src-640x480-50f.mp4", {}, "qa-c-f1463")>`.
+2. `compare_outputs(names=["asset:qa-fit/src-640x480-50f.mp4", MOVE], texture_bands=true, at=["frame:5", "frame:20",
+   "frame:35", "frame:45"])`.
+expected:
+- F(DEN) < F(GRAIN) at the defaults, and F(DEN1) ≤ F(DEN): a higher strength never flickers more. Either one failing
+  is a **finding**. Record F(DEN1) / F(GRAIN) as well. The plan gives no threshold for how far it must fall, so a
+  ratio above 0.5 is a note on the stage, not a finding.
+- DEN1 and DEN keep 48 frames, 640×480, 24 fps.
+- In step 2, MOVE's highest texture band energy is at least 0.9× the input's at every index read ("no large drop in
+  the high band"). Under 0.9× is a **finding**; record the ratios either way.
+- The step 2 grid shows no ghost trail or doubled edge on MOVE.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for every job this case ran.
+metrics: none.
+
+### C-F1464 — `temporal_denoise`'s edges: a one-frame clip is returned unchanged, a silent clip stays silent, and a cut's shots are carried
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+CPU utility jobs. Workspace `regression-complete`.
+1. **One frame.** ONE = a `trim_video` of `asset:qa-fit/src-640x480-50f.mp4`, `start_frame` 0, `num_frames` 1; then
+   `<td(ONE, {}, "qa-c-f1464")>` → OUT_ONE. `compare_outputs(names=[ONE, OUT_ONE], at=["frame:0"])`.
+2. **No audio.** `<td("asset:qa-fit/src-640x480-50f-silent.mp4", {}, "qa-c-f1464")>` → OUT_SILENT; `get_gallery_metadata`.
+3. **Shots.** `<td("asset:qa-cast/ep49-episode.mp4", {}, "qa-c-f1464")>` → OUT_SHOTS (372 frames, three 124-frame shots in
+   `media.shots`; any clip with carried shots substitutes); `get_gallery_metadata` on it and on the input.
+expected:
+- Step 1 completes with one frame (no error for having no neighbour), and OUT_ONE matches ONE: PSNR ≥ 45 dB.
+- Step 2 completes: 50 frames, 640×480, 24 fps, **no** audio stream, and no warning or error about missing audio.
+- Step 3: OUT_SHOTS has 372 frames, the input's size, fps and sample rate, and `media.shots` equal to the input's
+  (same names, frame counts and order). Shots missing or changed is a **finding**.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for every job this case ran.
+metrics: none.
+
+### C-F1465 — the tasks guide places `temporal_denoise` in the finishing order, and the H3 skill points at it while keeping "can't judge flicker"
+pending: #1750
+source: tester, spec for #1750 from #1747's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads). 1. `list_guides()`, then `get_guide` on the guide that holds the task reference (TASKS) at its
+`temporal_denoise` section. 2. The `dw:minimax-h3` skill's `references/quality-and-speed.md`, as the loaded plugin
+holds it. 3. `list_workflows()` summary.
+expected:
+- The tasks guide has a `temporal_denoise` section beside `stabilize_video`, naming its four arguments and its place in
+  the finishing order: after upscale/refine, before grade/sharpen, grain last. It says it is not camera-shake
+  stabilization (that is `stabilize_video`).
+- `quality-and-speed.md` has one pointer: use `temporal_denoise` when a human reports shimmer. The line saying Claude
+  can't judge flicker in playback is still there. That line gone, or the pointer telling an agent to run the task on
+  its own judgment of flicker, is a **finding**.
+- No catalog template's default chain runs `temporal_denoise` (the plan cut template wiring): no `list_workflows`
+  entry names it as a step unless the hand-off says otherwise and Don ruled for it.
+cleanup: none.
+metrics: none.
+
 ## Performance
