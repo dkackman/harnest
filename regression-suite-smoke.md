@@ -187,8 +187,9 @@ absorbs: S-F101 (merged 2026-11-26, suite review)
 
 ### S-F004 — generate a single image, explicit size/seed
 Same as S-F003 but pin an explicit size and a fixed seed. The stock
-`templates/text-to-image` declares only `prompt` and `num_images_per_prompt`,
-so this needs an inline workflow: top-level `seed` (per the "workflows" guide)
+`templates/text-to-image` declares `seed`, `width` and `height` (512 by default)
+since dw#1710 but no step count,
+so this stays an inline workflow: top-level `seed` (per the "workflows" guide)
 and `width`/`height` as step arguments — 384x384, seed 424242, 20 steps has
 been the shape. Run it **twice, differing only in `result.file_base_name`**
 (`s_f004_a` / `s_f004_b`): that field is part of the step's cache key but not
@@ -203,6 +204,7 @@ reproducibility is established behaviour as of 0.4.0-beta.3 — two different
 images from the same seed is the finding.
 cleanup: same as S-F003 — hold for S-F006/S-F006, then delete both images
 (the seed-repeat one too).
+amended: 2026-11-26, suite review: the template now declares `seed`, `width` and `height` (dw#1710 verified; `get_workflow` shows them); the inline workflow and every expectation are unchanged.
 
 ### S-F005 — invalid image-generation params are rejected cleanly, and pipeline value constraints are a clean run-time failure
 Call the image-generation tool with an invalid parameter. Three probes,
@@ -277,11 +279,12 @@ For the chain above: `get_gallery_metadata` on the final wav reports
 `duration_seconds: 1.5` and `sample_rate: 24000`, its envelope shows the
 fades and a non-silent level, and the unsaved intermediate steps report empty
 file lists. The `metrics:` line below times this same job.
-Loudness is not this case's subject, and an unseeded Bark take is random: a run
-that draws a near-silent take is not a failure as long as the job says so. The
+Loudness is not this case's subject. The take is pinned (`seed: 7` above), so it
+should be the audible one; if it still comes back near-silent, that is not a failure as
+long as the job says so. The
 final wav either decodes audibly, **or** the job carries the near-silent warning
 (`near-silent for a deliverable meant to be heard`). Either passes. A near-silent
-wav with **no** warning is the finding (the #261 regression). Pin `seed` on
+wav with **no** warning is the finding (the #261 regression). Keep `seed` pinned on
 `generate_speech` so the `metrics:` line always times the same take. (Amended per
 harnest#26, dw#530: Don, 2026-09-27, 0.5.0 release.)
 cleanup: delete every intermediate and final output the template
@@ -296,6 +299,7 @@ baseline.
 
 absorbs: S-P004 (merged 2026-11-26, suite review)
 - S-P004: (no source: line)
+amended: 2026-11-26, suite review: the loudness paragraph spoke of an unseeded take while the steps pin seed 7 (#819); wording aligned, the audible-or-warned rule of harnest#26 unchanged
 
 ### S-F008 — delete_output actually removes the file
 Generate one small default image, delete it with the server's delete tool,
@@ -1039,12 +1043,13 @@ expected:
   routed through `arguments` must not be able to walk past the pre-flight and reach
   the writer; a check that only reads literals in the stored document passes the first
   three bullets and leaves the original bug open on the path callers actually use.
-- **Workspace-independent.** All four calls use `output:` references that need not
-  exist (inline task arguments are not existence-checked), so this case carries no
-  fixture and runs identically in any workspace. If a future run finds the positive
-  bullet failing on a missing-reference error instead, that is a change in
-  `validate_workflow`'s reference checking, not in this case's subject — file it
-  rather than editing here.
+- **Workspace-independent, with one fixture.** Since #494 validate existence-checks
+  references written into a step, so the positive bullet depends on the two
+  `asset:qa-cast/…` media named there (shared asset library, reachable from every
+  workspace; see Fixtures). The three refusal bullets assert an error at
+  `steps[0].result.content_type` whatever the inputs point at, so the case still runs
+  identically in any workspace. A missing-reference error on the positive bullet
+  means the fixture is gone, not that this case's subject regressed.
 cleanup: none — all four are free validate calls. Nothing loads, queues, or is written.
 runner: script
 metrics: none.
@@ -1057,6 +1062,7 @@ fall-through" question the original issue listed as unprobed. At smoke level for
 same reason S-F010 and S-F035 are: the free pre-flight is what every other case's cost
 control rests on, and a hole in it is silent — a `valid: true` with a plan looks
 exactly like a healthy one right up until the run burns the budget.
+amended: 2026-11-26, suite review: the workspace-independent bullet said inline references are not existence-checked and the case carries no fixture, contradicting the amended third bullet (harnest#28, dw#494/#533)
 
 ### S-F038 — a media-less run directory is enumerable and deletable by name
 S-F022 pins that a run which wrote no media can still be *deleted* by its
@@ -1395,7 +1401,7 @@ in the same stream and `get_job`'s manifest gave the gallery-relative
 `<workflow>/<run id>/<subfolder>/<file>` — so a consumer reading the final manifest off
 the event stream had a name no output-side tool accepted. Cheap: one CPU-only inline run.
 1. `run_workflow(inline_workflow=..., acknowledged_cost=true)` with three steps —
-   `gather_images` of the HF `robot.png` URL, then `canny` with
+   `gather_images` of the shared fixture `asset:qa-cast/priya-portrait.jpg` (as its `urls` entry), then `canny` with
    `result: {content_type: "image/jpeg", subfolder: "final"}`, then `crop_square` with
    `subfolder: "intermediate"`, both over `previous_result:input_image` — and
    `wait_for_job` to `succeeded`.
@@ -1419,6 +1425,7 @@ source: tester, verified in #284 on 2026-09-21 over MCP as model `opus` via prov
 `step_end.files` all read `qa284_canny/20260921-071603-082a2b15/{final,intermediate}/…`,
 and `get_gallery_metadata` on the intermediate name returned `source: output`, job
 `ed6d2fbaeb7e`.
+amended: 2026-11-26, suite review: the input is a server asset instead of a Hugging Face URL, so the case no longer needs the network; `get_task("gather_images")` documents `asset:` entries in `urls`, and the three-step workflow validates clean in `regression-smoke` (validated, not run)
 
 ### S-F085 — a `task.command` the engine does not register is refused by the free pre-flight
 #285: `validate_workflow` said `valid: true` on a step whose `task.command` named nothing
@@ -1462,7 +1469,9 @@ jobs were never affected, so a case that only checks the job it just ran would p
 through the bug. Free: no run — any job already on the server does.
 1. `list_jobs(limit=20, status="succeeded")` and pick one with `historical: true`
    (any workspace; the server keeps history from before this session, so there is
-   always one). Prefer one with a multi-step workflow so the count is not trivial.
+   always one). If none of the newest 20 is historical, because this session's own
+   jobs fill the page, raise `limit` (`total` says how many matched) until one shows.
+   Prefer one with a multi-step workflow so the count is not trivial.
 2. `get_job(job_id)` — note `event_count` and `historical`.
 3. `get_job_events(job_id, after=<event_count - 3>, limit=50)` — the last few events.
 4. Also run any small job (a one-step `slice_audio` or `gain_audio` over a fixture is
@@ -1488,6 +1497,7 @@ source: tester, verified in #289 on 2026-09-21 over MCP as model `opus` via prov
 reported `event_count` exactly `last_seq + 1` of its final `get_job_events` page. Before
 the fix the first of these read `event_count: 0`. The over-200-event persisted-cap
 variant the implementer proposed is not covered here: no such job existed to confirm it.
+amended: 2026-11-26, suite review: step 1 no longer depends on a historical job sitting in the newest 20; `list_jobs` documents `limit` as the newest N and `total` as the match count
 
 ### S-F099 — `get_memory` answers mid-run from the job's last phase boundary, not a previous job's post-run reading
 Before #273 the worker measured memory once per job, after it finished, so `get_memory`
@@ -2186,7 +2196,7 @@ already asked for timestamps and the task threw them away. An explicit request o
 must take effect too, not be silently ignored because the long-form branch didn't fire. Run one
 inline workflow in workspace `regression-smoke`, `acknowledged_cost` bound to its validate plan,
 with three `transcribe_audio` steps on `asset:qa-cast/priya-voice.wav` (about 6 s of speech), all
-with `device: "cuda"`:
+with `device` set to the `device` that `get_server_info` reports (`"cuda"` on lem, `"mps"` on mini-ai):
 1. `timestamps: "word"`, `result.content_type: "application/json"`.
 2. `timestamps: "segment"`, `result.content_type: "application/json"`.
 3. No `timestamps`, `result.content_type: "text/plain"`.
@@ -2203,6 +2213,7 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 source: tester, verified in #483 on 2026-09-26 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 57c3fc6`.
+amended: 2026-11-26, suite review: hardcoded device "cuda" cannot run on the mps server; transcribe_audio's device takes cuda, mps or cpu (get_task), so the step uses the device get_server_info reports
 
 ### S-F132 — a frame-size mismatch between known join inputs is refused by the free pre-flight
 #504: `dissolve_videos`/`concat_videos` used to validate clean on `asset:` videos of different

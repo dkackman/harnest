@@ -426,14 +426,15 @@ any of these: the gate is over-broad and has broken the catalog.
 (b), dotted form, as the SE-F002–F007 control: validation passes (or fails for an unrelated reason
 clearly not the trust gate). This proves SE-F002–F007 are refusals from a working allowlist, not a
 gate that's stuck refusing everything.
-Caveat (for the (b) dotted control): `validate_workflow` returns `valid: true` for the *hostile*
-dotted names too (the gate fires at load, not at validation), so this control only proves the
-in-ecosystem name isn't rejected — the allowlist itself is demonstrated by F002–F007 refusing at
-run time, not by this passing.
+Note (for the (b) dotted control): since #345 `validate_workflow` refuses the *hostile* dotted
+names itself (SE-F002 expects `valid: false` at validate and again at submit), so this control and
+those refusals are read from the same call: this one proves the in-ecosystem name isn't rejected,
+and SE-F002–F005 prove the out-of-ecosystem ones are.
 cleanup: none (validation only).
 
 absorbs: SE-F008 (merged 2026-11-26, suite review)
 - SE-F008: harness, initial security suite 2026-09-13.
+amended: 2026-11-26, suite review: the caveat inherited from SE-F008 said hostile dotted names validate valid: true and are refused only at load; stale since #345, and SE-F002 was amended to validate-time refusal under harnest#271 (Don approved), whose ruling noted this contradiction; no expectation loosened
 
 ## Filesystem containment
 
@@ -1420,19 +1421,18 @@ Inline workflow with an `image` (and separately `from_file`) input of
 expected: all refused at validation as a disallowed scheme (or, for the
 `data:` URL, as not a path/URL at all). Fail if any runs or if the error
 indicates the target was opened/fetched.
-Read the mechanism before trusting a pass. As of 2026-09-13 (0.4.0-beta.3)
-these validate `valid: true` and fail at run time as *contained relative
-paths* — "Path does not exist:
-…/regression-security/workflows/file:/etc/hostname" — because an
-unrecognised scheme is simply treated as a filename and joined under the
-workflows directory. Nothing escaped, but that is safe by accident, not by
-policy: there is no scheme allowlist on media arguments (contrast
-`remote_text_encoder.url`, SE-F009, which has one since #112), so this case
-can start failing the moment the media resolver learns a new scheme. Report
-that shape as a pass with the mechanism named, so a later run can tell a
-policy appearing from the accident continuing.
+The refusal is policy, not accident. Since #618 the media location owner
+refuses a URL with any scheme other than http(s) on every media argument
+("it is a 'file' URL, and only http(s) URLs are fetched"), and
+`validate_workflow` reports it as `valid: false` at the argument's own path;
+the `data:` URL is refused there as a bare name that resolves nowhere
+(#952). `valid: true` on any of the three is a **finding**, even if the run
+then fails: the old shape, where an unrecognised scheme was joined under the
+workflows directory as a filename and died as "Path does not exist", was
+safe only by accident and no longer passes.
 cleanup: `cancel_job` and delete outputs if anything ran.
 source: harness, initial security suite 2026-09-13.
+amended: 2026-11-26, suite review: expected said refused at validation but the 2026-09-13 note told a run to pass valid: true; #618 (verified) made the non-http(s) refusal policy on every media argument, and live validate refuses file://, ftp:// and data: at steps[0].pipeline.arguments.image; tightened, no refusal loosened
 
 ### SE-F018 — loopback URLs are refused (SSRF)
 Inline workflow with an `image` input of `http://127.0.0.1:8765/api/server`
@@ -1796,7 +1796,7 @@ expected:
   trust flags — **does** emit `phase: "loading"` with the model named in `detail`,
   immediately after its `step_start`. Without this line the case passes happily if
   `loading` stops being emitted anywhere, which is the obvious way a
-  "move the marker" change regresses and would leave SE-F005/F006/SE-P001 unable
+  "move the marker" change regresses and would leave SE-F005/F006 unable
   to detect a late refusal ever again.
 - A refusal at submit has no job and so no traceback: the tool error is the refusal
   message alone, with no stack frames. For a refusal that does get a job, its
@@ -1807,7 +1807,8 @@ expected:
   only the in-load gate is left — still safe, but the evidence is gone again.
 It is a **finding** if a refusal acquires a job or any phase event, if a legitimate
 load stops emitting `loading`, or if the refusal message or its timing band changes
-(SE-P001 owns the number; this case owns the events).
+(the band, for a refusal that runs as a job: its own `finished_at - started_at` from `get_job` under 2 s, the
+baseline set on the 2026-09-13 first run; a refusal at submit has no job time. This case owns the events).
 cleanup: the refusals create no job and write nothing. If one does create a job, it
 writes no media and, since #1333, normally no run directory
 (`run_dir: null`). If a refusal's job does report a `run_dir`, remove it with
@@ -1824,6 +1825,7 @@ hand-off and this is the form the suite's own "Removing a case" rule allows.
 Amended 2026-11-20 (dkackman/harnest#271, approved by Don): since #1410 both probes
 are refused at submit with no job, so the refusal side expects no job; the event and
 traceback expectations stay for a refusal that reaches the worker.
+amended: 2026-11-26, suite review: inlined the run-to-refusal band (under 2 s of job time) from SE-P001, which is retired, and dropped the other pointer to it; nothing else changed.
 
 ### SE-F029 — the *shared* asset library enforces the same name containment
 SE-F012 and SE-F025(d) pin `asset_name` against the workspace's own library
@@ -1941,11 +1943,14 @@ release, which SE-P001 then measured. Run three jobs in order in one workspace:
    probe (`custom_pipeline: "lpw_stable_diffusion"`).
 3. **Repeat:** job 1, unchanged.
 expected:
-- Each refusal fails with the trust-gate message naming its key. Its full `get_job_events`
-  has no `log` line containing "releasing cached models", and no `phase` event.
+- Each refusal is made at submit (#1410): `run_workflow` answers the trust-gate message naming
+  its key and returns **no job id**, and `list_jobs` shows no job for it, so there are no events
+  to read. If a refusal does come back as a failed job, that is the pre-#1410 shape and a
+  **finding** in itself; read that job's full `get_job_events` as well, which must hold no `log`
+  line containing "releasing cached models" and no `phase` event.
 - The repeat succeeds with its pipeline step's `timing.load_cached: true`, and its events have
   no "releasing cached models" line.
-It is a **finding** if a refusal emits the release line or acquires a phase, or if the repeat
+It is a **finding** if a refusal queues a job, emits the release line or acquires a phase, or if the repeat
 reports `load_cached: false`. Either means a refused job changed the worker's state. Control:
 if the warm job itself reports `load_cached: false` and the repeat does too, check first that the
 warm job succeeded. A failed warm job (such as the Flax-only `tiny-stable-diffusion-pipe`)
@@ -1958,6 +1963,7 @@ source: tester, model `claude-opus-5-5` via provider `anthropic`, verified in #1
 2026-11-13 against develop @ 52c3fd7d on mini-ai (mps), workspace `regression-security`.
 Jobs: warm `55477458b7db`, SE-F005 refusal `cfd3c24ffff4` (0.079 s, 4 events), SE-F006 refusal
 `e1bdbd51e83e`, repeat `d85d7772bea1` (`load_cached: true`).
+amended: 2026-11-26, suite review: #1410 (Don's ruling 2026-11-16, verified) refuses trust_remote_code / custom_pipeline at validate and at submit with no job queued, as SE-F081 expects for its keys; the refusal is now expected with no job id, and a job is a finding (tightened)
 
 ### SE-F081 — a `pre_load_modules` or `constant:` refusal is made at submit, queues no job and leaves warm models in place
 SE-F064 covers only `from_pretrained_arguments`. In #1511, a `pre_load_modules` entry outside the
