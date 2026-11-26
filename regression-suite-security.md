@@ -2286,7 +2286,6 @@ file it privately with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none.
 
 ### SE-F083 — validate-time probing of task inputs for declared-rate pricing opens no path oracle and leaks no length or path
-pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 #1698 makes `validate_workflow` probe each `media` input of a task step (`probe_metadata`) to price a task-only workflow.
 That is new server-side reading of a caller-named path at validate time, before any run. Workspace `regression-complete`.

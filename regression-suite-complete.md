@@ -29310,7 +29310,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1302 — a task-only `apply_lut` → `film_grain` workflow that has never run is priced from declared task rates
-pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 Free: `validate_workflow` only. Workspace `regression-complete`. Before #1698, every task-only workflow with no history of
 its own answered `minutes: null, basis: "unknown"` with an `unpriced_reason` beginning `task-only workflow (apply_lut,
@@ -29354,7 +29353,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1303 — the declared-rate price scales with the input's length, follows the run's arguments, and floors a still at its fixed cost
-pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 Free: `validate_workflow` only. Workspace `regression-complete`. The definitions are C-F1302's. None of these ids is
 ever run.
@@ -29411,7 +29409,6 @@ cleanup: `delete_output(job_id=<step 2's job>)`. Keep the job record, which is h
 metrics: none.
 
 ### C-F1305 — a step reading an earlier step's output through `previous_result:` is still priced, at the longest resolved length, and is named in `differs`
-pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 Free: `validate_workflow` only. Workspace `regression-complete`. Definitions are C-F1302's. These ids are never run.
 1. `{"id": "qa-c-f1305-a", "steps": [<lutgrain's "look" step on "asset:qa-cast/ep13-episode.mp4">, {"name": "grain",
@@ -29437,7 +29434,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1306 — a task-only workflow with a model-backed or undeclared task stays unpriced, and the reason names only that command
-pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 Free: `validate_workflow` only. Workspace `regression-complete`. These ids are never run.
 1. `{"id": "qa-c-f1306-a", "steps": [<C-F1302's "look" step on "asset:qa-cast/ep13-episode.mp4">, {"name": "words",
@@ -29462,7 +29458,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1307 — catalog pipeline templates, including one with a task step, quote the same estimate as before #1698
-pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 Free: `validate_workflow` and `list_workflows(shape="image")`. Workspace `regression-complete`. The declared rates fill only the
 own-price slot of a workflow that is all tasks. A pipeline workflow, even one with task steps after it, is priced by its
