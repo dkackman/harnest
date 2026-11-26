@@ -12712,4 +12712,25 @@ reports `min` 255, or if an RGB image carries `alpha`.
 cleanup: `delete_output(job_id=<id>)` for each job this case ran.
 metrics: none.
 
+### M-F509 — in an H3 encode → refine → decode chain with no `release_models`, the encode VAE is off the card before the refine loads, and the job succeeds
+source: tester, verified in #1737 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` (sdnq int4, group offload, turbo LoRA), with the `encode_h3_latents` and
+`decode_h3_latents` tasks, on a CUDA card of at least 24 GB. **Spends GPU time**: this is M-F356's ≈26 s windowed
+refine run, about 25 minutes. Workspace `regression-model-specific`. If M-F356 or M-F480 step 3 ran this pass on the
+same deployed commit, read that job's events instead of running it again.
+Steps:
+1. Run M-F356's chain (saved definition `MF480a`: `encode_h3_latents`, then the H3 `t2va` refine with
+   `refine_windows {}` and `refine_strength 0.3`, then `decode_h3_latents`, then `pair_audio`), with **no**
+   `release_models` on any step. Validate first, bind `acknowledged_cost`, and use `wait_seconds=1500`.
+2. `get_job_events(<job>, kinds=["memory"])`.
+expected:
+- The job `succeeded`.
+- The first memory event of the `refine` step's load (just after `encode` ends) shows `gpu_memory_allocated_mb`
+  below 1000. Before #1737 it was about 9941.
+- The memory event after `decode` shows no growth of about 10 GB over the event after `refine`.
+It is a **finding** if the refine load starts with about 10 GB still allocated, or if the job fails with CUDA out of
+memory at the refine load.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
 ## Performance
