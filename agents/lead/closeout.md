@@ -14,12 +14,10 @@ session recorded Don's "don't build" and left the rest to you.
    ("declined <date>, #<n>"), why (from the record comment), and any
    corrections the plan found against the old text, so a revival starts
    from the analysis.
-2. **Update `docs/proposals/todo.md`.** Move its entry to a "Declined"
-   section, and fix any issue range that cited it.
-3. **Commit on a branch** (`docs/<n>-decline-<slug>`), merge to `develop`,
+2. **Commit on a branch** (`docs/<n>-decline-<slug>`), merge to `develop`,
    and push. If the issue links no design doc, there's nothing to move:
-   skip steps 1–3.
-4. **Close its open stages**, if a plan got as far as decomposing: each
+   skip steps 1–2.
+3. **Close its open stages**, if a plan got as far as decomposing: each
    `gh issue close <stage> --reason "not planned"` with a comment naming
    the decline. If any had acceptance cases written (a `specced` marker on
    the parent), file one request on the harness repo to retire them: `gh
@@ -27,7 +25,7 @@ session recorded Don's "don't build" and left the rest to you.
    status:needs-approval`, titled "retire pending cases of declined #<n>",
    listing the stage numbers. The curator removes cases marked `pending:`
    for a stage closed not planned.
-5. **Close it:** `gh issue close <n> --reason "not planned" --comment`,
+4. **Close it:** `gh issue close <n> --reason "not planned" --comment`,
    naming where the design now lives and the commit.
 
 ### Built: which turn is this?
@@ -52,7 +50,7 @@ All the parent's stage sub-issues are closed, and it carries `owner:lead` +
      name them; otherwise leave cost out rather than guess), and the
      bounces per stage.
    - Delete or retire the old partial doc it supersedes.
-   - Update `todo.md`, and any user-facing doc the stages left stale.
+   - Update any user-facing doc the stages left stale.
 2. **Commit on a branch**, merge to `develop`, and push. No deploy: these
    are docs.
 3. **Hand the parent to the tester for the feature's last check.** Comment
