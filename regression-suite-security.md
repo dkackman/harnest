@@ -192,7 +192,7 @@ name the flag.
 cleanup: none (read-only).
 source: harness, initial security suite 2026-09-13.
 
-### SE-F002 — dotted `*_type` outside the ecosystem is refused
+### SE-F002 — dotted `*_type`, `config_type` or `dtype` outside the ecosystem is refused
 `validate_workflow` (then `run_workflow` if validation lets it through)
 with an inline workflow whose scheduler or component type is a dotted name
 outside the ecosystem — on an otherwise minimal, valid workflow (copy the
@@ -204,6 +204,22 @@ places these live, confirmed against the live schema 2026-09-13:
 `pipeline.configuration` — putting it there gets "Additional properties are
 not allowed", which is a schema error, not the trust gate, and proves
 nothing.
+Two more keys take the same kind of name. Probe each separately, one probe
+per workflow, the same way:
+
+| arm | key and where it lives | probe value |
+|---|---|---|
+| A | `steps[].pipeline.configuration.component_type` | e.g. `"os.system"` |
+| B | `steps[].pipeline.scheduler.configuration.scheduler_type` | e.g. `"subprocess.Popen"` |
+| C | `config_type` of a quantization/cache config block, at `steps[].pipeline.<component name>.quantization_config.configuration.config_type` | `"os.path.join"` |
+| D | a component `dtype`; `torch_dtype` in `from_pretrained_arguments` is the simplest carrier | `"builtins.eval"` |
+
+Placement for arm C: components are named keys directly on the pipeline
+object, not entries under a `components` property (`quantization_config`
+also requires an `arguments` property, even if empty). Putting the block
+under a `components` list gets "unknown property 'components'", which is a
+schema error, not the trust gate, and proves nothing (the same trap noted
+above for `scheduler_type` placement).
 Since #345 `validate_workflow` refuses these itself: expect `valid: false`,
 with the trust-gate message at the type's own path
 (`steps[0].pipeline.configuration.component_type`,
@@ -219,12 +235,17 @@ through. If a job is queued, the run-time gate is what is left and the
 original test applies to it: fail if the job fails only at load with an
 import/attribute error on the probe name (it was imported), or if the job
 runs.
+Arms C and D: both refused with the trust-gate message. Same fail
+conditions as arms A and B.
 cleanup: none if refused; if a job was enqueued, `cancel_job` and delete
 anything it produced.
 source: harness, initial security suite 2026-09-13.
 Amended 2026-11-20 (dkackman/harnest#271, approved by Don): the refusal is
 expected at validate (#345) and at submit, no longer only at load; the
 run-time fail conditions stay for a probe that gets a job.
+
+absorbs: SE-F007 (merged 2026-11-26, suite review)
+- SE-F007: harness, initial security suite 2026-09-13.
 
 ### SE-F003 — `pre_load_modules` outside the ecosystem is refused
 Inline workflow with `pre_load_modules: ["subprocess"]` (harmless if
@@ -250,54 +271,26 @@ is a convenient carrier on SD1.5.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
 
-### SE-F005 — `trust_remote_code` is refused untrusted
+### SE-F005 — `trust_remote_code` and `custom_pipeline` are refused untrusted
 Inline workflow whose pipeline or a component's `from_pretrained_arguments`
-sets `trust_remote_code: true` (any small model; it should never get as far
-as loading).
-expected: refused with the trust-gate message naming `trust_remote_code`.
-Fail if the job starts loading the model (a download or a load step in
-`get_job_events`) before failing, or runs.
+sets one of the keys below (any small model; it should never get as far
+as loading). One workflow per arm:
+
+| arm | key set in `from_pretrained_arguments` | refusal must name |
+|---|---|---|
+| A | `trust_remote_code: true` | `trust_remote_code` |
+| B | `custom_pipeline: "lpw_stable_diffusion"` (a real community pipeline name — a refusal must not depend on the name being bogus) | `custom_pipeline` |
+
+expected:
+- Arm A: refused with the trust-gate message naming `trust_remote_code`.
+- Arm B: refused with the trust-gate message naming `custom_pipeline`.
+- Either arm: fail if the job starts loading the model (a download or a load
+  step in `get_job_events`) before failing, or runs.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
 
-### SE-F006 — `custom_pipeline` is refused untrusted
-As SE-F005 with `custom_pipeline: "lpw_stable_diffusion"` (a real community
-pipeline name — a refusal must not depend on the name being bogus).
-expected: refused with the trust-gate message naming `custom_pipeline`;
-same fail conditions as SE-F005.
-cleanup: none if refused; otherwise as SE-F002.
-source: harness, initial security suite 2026-09-13.
-
-### SE-F007 — dotted `config_type`/`dtype` outside the ecosystem is refused
-Inline workflow using a quantization/cache config block whose
-`config_type` is `"os.path.join"`, and separately a component `dtype` of
-`"builtins.eval"`.
-expected: both refused with the trust-gate message. Same fail conditions as
-SE-F002.
-Components are named keys directly on the pipeline object, not entries under
-a `components` property — `config_type` lives at
-`steps[].pipeline.<component name>.quantization_config.configuration.
-config_type` (`quantization_config` also requires an `arguments` property,
-even if empty). Putting it under a `components` list gets "unknown property
-'components'", which is a schema error, not the trust gate, and proves
-nothing (the same trap SE-F002 notes for `scheduler_type` placement). For
-the dtype probe, `torch_dtype: "builtins.eval"` in
-`from_pretrained_arguments` is the simplest carrier.
-cleanup: none if refused; otherwise as SE-F002.
-source: harness, initial security suite 2026-09-13.
-
-### SE-F008 — in-ecosystem dotted names still work (negative control)
-Inline workflow with `scheduler_type: "diffusers.EulerDiscreteScheduler"`
-(fully dotted, in ecosystem) — `validate_workflow` only, no run.
-expected: validation passes (or fails for an unrelated reason clearly not
-the trust gate). This proves SE-F002–F007 are refusals from a working
-allowlist, not a gate that's stuck refusing everything.
-Caveat: `validate_workflow` returns `valid: true` for the *hostile* dotted
-names too (the gate fires at load, not at validation), so this control only
-proves the in-ecosystem name isn't rejected — the allowlist itself is
-demonstrated by F002–F007 refusing at run time, not by this passing.
-cleanup: none (validation only).
-source: harness, initial security suite 2026-09-13.
+absorbs: SE-F006 (merged 2026-11-26, suite review)
+- SE-F006: harness, initial security suite 2026-09-13.
 
 ### SE-F009 — `remote_text_encoder.url` cannot point off-policy
 The `remote_text_encoder` block makes the server POST to a URL the
@@ -412,7 +405,8 @@ pass" half of #409: the names the catalog actually uses. **Validate only.** Carr
 SE-F031.
 - (a) `torch_dtype: "torch.bfloat16"` in `from_pretrained_arguments`.
 - (b) `scheduler_type: "diffusers.EulerDiscreteScheduler"` (dotted), and separately
-  `"EulerDiscreteScheduler"` (bare).
+  `"EulerDiscreteScheduler"` (bare). The dotted form (fully dotted, in ecosystem, in an inline
+  workflow, `validate_workflow` only, no run) is also the negative control for SE-F002–F007.
 - (c) `num_inference_steps:
   "constant:diffusers.pipelines.ltx2.utils.GEMMA4_PROMPT_ENHANCEMENT_CONFIG.max_new_tokens"`,
   which walks into a dataclass instance inside the package.
@@ -429,7 +423,17 @@ dtype", a private name, leaving a package or the trust gate. Errors for other re
 findings: a template that needs input media or a required argument, or a value out of range in
 (c). The case only asks whether the new rule fires. It is a **finding** if the new rule fires on
 any of these: the gate is over-broad and has broken the catalog.
+(b), dotted form, as the SE-F002–F007 control: validation passes (or fails for an unrelated reason
+clearly not the trust gate). This proves SE-F002–F007 are refusals from a working allowlist, not a
+gate that's stuck refusing everything.
+Caveat (for the (b) dotted control): `validate_workflow` returns `valid: true` for the *hostile*
+dotted names too (the gate fires at load, not at validation), so this control only proves the
+in-ecosystem name isn't rejected — the allowlist itself is demonstrated by F002–F007 refusing at
+run time, not by this passing.
 cleanup: none (validation only).
+
+absorbs: SE-F008 (merged 2026-11-26, suite review)
+- SE-F008: harness, initial security suite 2026-09-13.
 
 ## Filesystem containment
 
@@ -440,26 +444,50 @@ validation error ("invalid name", "not allowed", "outside ...") — never as
 `FileNotFoundError`/"no such file" naming the probe path (the path was
 tried), and never with content.
 
-### SE-F010 — output names can't traverse
-Against this workspace, call each of `get_output_image`, `get_output_text`,
+### SE-F010 — output names can't traverse, and an unknown gallery name is refused without echoing a server path
+Arm T (traversal). Against this workspace, call each of `get_output_image`, `get_output_text`,
 `get_gallery_metadata`, `delete_output`, `keep_output` with names
 `../../../../etc/hostname`, `/etc/hostname`, `..%2f..%2fetc%2fhostname`,
 `~/.bashrc`, and `outputs/../../etc/hostname`.
-expected: every call is a clean validation error; no bytes/text returned;
+Arm G (unknown gallery name; read-only). The gallery lookup shared by
+`get_gallery_metadata` (and the thumbnail / download / delete routes behind it)
+used to put the server's resolved absolute filesystem path in its 404 body,
+straight from the path validator's exception text (#247). The refusal must name
+what the caller sent, not where the server looked. Harmless probe: the names
+below exist nowhere. Call:
+- G1: `get_gallery_metadata(name="does-not-exist/0000/nope.png")`;
+- G2: `get_gallery_metadata(name="../../etc/passwd")`.
+expected:
+Arm T: every call is a clean validation error; no bytes/text returned;
 no delete reported as succeeding. Fail on any content, on a "file not
 found" that echoes a normalized version of the probe, or on `keep_output`
 creating an asset with a traversed name (check `list_assets` after).
 Two refusal styles are both acceptable: `get_output_image`/`get_output_text`
 answer a bare "Not Found" (no path echoed); `get_gallery_metadata` answers
 `Unknown file: <name as sent>` (optionally "- path contains a disallowed
-pattern"), never a resolved server path (#247; SE-F030 fails one that does);
+pattern"), never a resolved server path (#247; arm G fails one that does);
 `delete_output` and `keep_output` give explicit containment errors ("Path
 contains dangerous pattern matching \.\.", …). The bare form discloses less but also proves less; for
 certainty there, run the same probe against a name that *does* exist and
 confirm it still returns nothing.
+Arm G:
+- G1 → an error whose text contains `does-not-exist/0000/nope.png` and **no**
+  absolute path (no segment starting with `/home/`, `/var/`, `/srv/`, `/mnt/`, or
+  the workspace root `get_server_info` reports); the 0.4.x wording is `Unknown
+  file: does-not-exist/0000/nope.png`.
+- G2 → refused, the error echoes `../../etc/passwd` at most, and never a resolved
+  `/etc/passwd` or a workspace-root-prefixed path.
+- A positive control that a *real* `list_gallery` `name` still resolves is
+  S-F119's job (smoke), not this case's.
+- "It worked" looks like the error (or any response) carrying `/home/…` or the
+  workspace's `outputs` directory. "Refused too late" does not apply to arm G —
+  this is a read-only lookup; any leak is the failure.
 cleanup: none; if `keep_output` did create something, delete it and name it
-in the issue.
+in the issue. Arm G: none (read-only).
 source: harness, initial security suite 2026-09-13.
+
+absorbs: SE-F030 (merged 2026-11-26, suite review)
+- SE-F030: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via provider `anthropic` — both names returned `Unknown file: <name as sent>` with no server path.
 
 ### SE-F011 — workflow and prompt names can't traverse or go absolute
 `get_workflow`, `validate_workflow` (by name), `delete_workflow`,
@@ -603,149 +631,6 @@ made harmless. Note the exposure in the issue instead.
 cleanup: delete the generated output.
 source: harness, initial security suite 2026-09-13.
 
-### SE-F038 — `attribute_voices` holds the path gate on `audio` and on every nested voice reference
-source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
-Stage A of #485 adds `attribute_voices`, whose `voices` argument maps a name to either a
-list of spans or a clip reference. That clip reference is new nested input. The plan
-requires "the path gates of every existing audio task": a raw path is refused wherever
-it sits, the same way SE-F014 refuses one on an existing task.
-
-Carrier: a one-step workflow, `attr`, running `attribute_voices` and saving
-`application/json` to `final`. Its baseline arguments:
-- `"audio": "asset:qa-cast/priya-voice.wav"`;
-- `"voices": {"a": [{"start_seconds": 0.0, "duration_seconds": 3.5}], "b":
-  "asset:qa-cast/hal-voice.wav"}`;
-- `"lines": [{"start": 0.5, "end": 3.0}]`.
-
-Probe paths:
-- `P1` = `/usr/share/sounds/alsa/Front_Center.wav`, which exists on most Debian boxes;
-- `P2` = `/nonexistent-dw-probe/x.wav`, which is missing;
-- `P3` = `../../../../../usr/share/sounds/alsa/Front_Center.wav`.
-
-Call `validate_workflow` with each probe in each position:
-- (a) `audio` = the probe;
-- (b) voice `b` = the probe, as a bare string;
-- (c) voice `b` = `"asset:" + <probe>` (for `P3`, the `asset:../…` spelling);
-- (d) the probe in any other clip-reference form `get_task("attribute_voices")` documents
-  for a voice. For example, a list entry naming a clip, if the schema has one.
-
-Control: the baseline validates clean.
-expected:
-- Every probe is `valid: false`, with the error at the argument's path (e.g.
-  `steps[0].task.arguments.voices.b`).
-- `P1` and `P2` are refused **identically**, so the reply doesn't reveal whether a file
-  exists.
-- No error echoes a resolved server path beyond what the probe itself gave.
-- `run_workflow` on any probe is refused with no job queued. A job that queues and then
-  fails is refused too late, and counts as a **finding**.
-- It is a **finding** if any probe validates or runs, or if `P1` and `P2` get different
-  errors. A pass requires that the control validates.
-A hole here goes to `scripts/file-advisory.sh`, not a public issue.
-cleanup: none (validation only, no job should exist; delete any that does).
-metrics: none.
-
-### SE-F039 — `upscale_h3_latents`' `model_name`/`weight_name` hold the repo-id and weight-file boundary
-source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
-#471 adds a task, `upscale_h3_latents`, that loads a vendored upscaler module inside the task.
-Its default weights are `LBH-123-AI/Minimax_h3_latent_Upscaler`, bf16 safetensors, pinned to
-a revision. The task also takes an optional `model_name` and `weight_name`. The plan says the
-trust boundary is not widened. So these two new arguments must hold what SE-F019 holds for
-`model_name` elsewhere, and must not become a way to unpickle an arbitrary file.
-
-Carrier: the documented base → upscale → decode workflow (M-F039, model-specific suite), as an
-inline workflow. Only the `upscale_h3_latents` step's arguments change.
-
-Probes, all through `validate_workflow`:
-- (a) `model_name` = each of these: `../../etc`, `/etc/passwd`, `http://127.0.0.1:8765/`,
-  `org/name/../../x`, `https://evil.example.com/model`;
-- (b) `weight_name` = each of these: `../../../../etc/passwd`, `/etc/passwd`,
-  `sub/../../x.safetensors`;
-- (c) `weight_name` = a non-safetensors file: `upscaler.pth`, `model.bin`, `x.pt`, `x.ckpt`.
-
-For any probe that validates clean, run it with `run_workflow(..., acknowledged_cost=true,
-wait_seconds=55)` and read `get_job`'s error. The upscale step must refuse before any download
-or unpickling.
-expected:
-- (a) is refused at validate, at `steps[…].task.arguments.model_name`, as not a Hugging Face
-  repo id (`owner/name`). No download entry appears in `list_downloads`.
-- (b) is refused as a path, never resolved against the server's filesystem.
-- (c) is refused by name: only `.safetensors` is accepted. Validate refusing it is best. A
-  run-time refusal is acceptable only if the job fails at the `up` step before anything loads,
-  with no download started.
-- No error echoes a resolved server path.
-- The control, `model_name`/`weight_name` omitted, validates clean.
-It is a **finding** if any (a)/(b) probe validates, or if a `.pth`/`.bin`/`.pt`/`.ckpt`
-weight is fetched or loaded. `get_job_events` shows a fetch or a load phase for it, or
-`list_downloads` gains an entry. A load of a pickle-format weight is a hole: send it to
-`scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything that appeared.
-metrics: none.
-
-### SE-F040 — H3 `hold_audio` holds the path boundary, and the hold blocks aren't nameable from a workflow
-source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
-#598 adds a new media-taking argument, `hold_audio`, to the MiniMax H3 pipeline. It takes an Audio
-reference (`asset:`, `output:` or `previous_result:`). The plan says the trust gate is not
-widened: the hold and release steps are dw blocks that a workflow never names. So `hold_audio`
-must hold the same path boundary as every other media argument (SE-F038), and no workflow may
-reach the new block classes.
-
-Carrier: `templates/minimax/video-with-audio` as an inline workflow (from `get_workflow`), in
-workspace `regression-security`. Only the H3 step's arguments change.
-
-Probes, all through `validate_workflow`:
-- (a) `hold_audio` = each of P1 `/usr/share/sounds/alsa/Front_Center.wav`, P2
-  `/nonexistent-dw-probe/x.wav` and P3 `../../../../../usr/share/sounds/alsa/Front_Center.wav`.
-  Try each as a bare string and as `asset:` + the probe;
-- (b) `hold_audio` = `output:../../../../usr/share/sounds/alsa/Front_Center.wav` and
-  `output:/usr/share/sounds/alsa/Front_Center.wav`;
-- (c) `hold_audio` = `http://127.0.0.1:8765/x.wav` and `file:///usr/share/sounds/alsa/Front_Center.wav`;
-- (d) a workflow that names the new blocks: the H3 step given a `pipeline_type`, or any other
-  `*_type`/class-name argument the schema accepts, set to
-  `dw.pipeline_processors.h3_blocks.DwH3HoldAudioStep`, and the same for `DwH3ReleaseAudioStep`
-  and `DwH3RefineScheduleStep`. Also try the bare class names.
-
-For every refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
-expected:
-- Every (a)–(c) probe is `valid: false` at the H3 step's `hold_audio` argument path. Each is
-  refused as a path or reference outside the server's roots, or as a scheme or host that isn't
-  allowed.
-- P1 (exists) and P2 (doesn't exist) are refused with the same message, so the error can't be
-  used to test whether a file exists.
-- No error echoes a resolved server path.
-- (d) is refused as an untrusted or unknown type/class, the same way any non-allowlisted class
-  name is refused today.
-- `run_workflow` queues no job for any probe. Refusing at run time is refused too late, and that
-  is a finding.
-- The control, `hold_audio: "asset:qa-cast/hal-voice.wav"` (from `common`), validates clean.
-It is a **finding** if any probe validates, if P1 and P2 are told apart, if a server path is
-echoed, if a `127.0.0.1` fetch or a `file://` read happens, or if a workflow can name a dw block
-class. Each of those is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_output(job_id=...)` for any job (none should exist).
-metrics: none.
-
-### SE-F041 — `crop_face_track`'s `detector_repo` / `detector_file` are Hub ids and weight names, refused before any download
-source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
-Stage 1 adds a task that fetches its face detector from the Hub. That is a new place a caller
-names something the server downloads and loads. The plan says it goes through the same
-validators as SE-F039. Each arm is `validate_workflow` on an inline one-step workflow:
-`crop_face_track` with `clip: "asset:qa-cast/ep3-shot1-incident.mp4"` plus the probe. Then
-`run_workflow(..., acknowledged_cost=true)` on the same workflow.
-- `detector_repo`: `../../etc`, `/etc/passwd`, `http://127.0.0.1:8765/`, `org/name/../../x`,
-  `https://evil.example.com/model`, and an empty string.
-- `detector_file`: `../../../etc/passwd`, `/etc/passwd`, `sub/../../x.onnx`, and
-  `model.pkl` (a pickle, not the detector's format). Also an `http://` URL.
-- Control: the defaults (no `detector_repo` or `detector_file`) validate clean.
-expected:
-- Every probe is `valid: false` at `steps[…].task.arguments.detector_repo` (or
-  `detector_file`), and `run_workflow` queues no job.
-- `list_downloads` shows no entry for any probe.
-- No message echoes a server filesystem path beyond what the caller sent.
-It is a **finding** if a probe validates or is refused only at run time. If a probe reaches
-the network, reads a file outside the Hub cache, or loads a pickle, that is a hole: send it to
-`scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_output(job_id=...)` for any job (none should exist).
-metrics: none.
-
 ### SE-F042 — `window_video.video` and `join_windows.source` hold the media path gate, and the window-count check doesn't probe a refused path
 source: tester, spec for #628/#629/#630 from #601's plan v2 (claude-opus-5-5 via anthropic)
 Stages 1 and 2 add two media arguments. Stage 3 adds a validate-time check that reads the
@@ -772,26 +657,6 @@ expected:
 It is a **finding** if a probe validates or is refused only at run time. If a probe's message
 differs between the existing and nonexistent path, carries a frame count other than the
 control's, or shows file contents, that is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_output(job_id=...)` for any job (none should exist).
-metrics: none.
-
-### SE-F043 — `fit_to_model.video` and `restore_to_source.video` hold the media path gate
-source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
-Stage A adds two tasks that take a video. Each arm is `validate_workflow` on C-F238's RT
-workflow (`regression-suite-complete.md`) with one argument replaced:
-- `fit`'s `video` (via `src`), then `restore`'s `video` as a literal, each set to
-  `/etc/passwd`, `/nonexistent-dw-probe/x.mp4` and `../../../../etc/passwd`.
-- A `file:///etc/passwd` URL in `src`.
-- Control: `src: "asset:qa-fit/src-640x480-50f.mp4"` validates clean.
-Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/passwd` `src` arm.
-expected:
-- Every probe is `valid: false` at the argument's own path, with the refusal SE-F014 gives a
-  media argument. The existing and nonexistent paths get identical wording.
-- No message echoes anything beyond the string sent, such as a frame count, size or contents.
-- `run_workflow` queues no job.
-It is a **finding** if a probe validates or is refused only at run time. A message that
-differs between the existing and nonexistent path, or that shows file metadata or contents,
-is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
@@ -830,16 +695,20 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist); `delete_as
 `uploads/qa-lut/` asset this case created, including a probe that wrongly landed (after filing it).
 metrics: none.
 
-### SE-F045 — Media arguments without a conventional name keep their path gate after the registry move
+### SE-F045 — Media arguments without a conventional name keep their path gate after the registry move, as do `attribute_voices`' `audio` and nested voice references and `fit_to_model.video`/`restore_to_source.video`
 source: tester, spec for #773 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Three arms, R, V and F. Each has its own carrier, its own probe list and its own rule for which
+probes also go to `run_workflow`; do not swap them between arms.
+
+**Arm R (registry move).**
 Stage A replaces the hand-kept list of media arguments with registry metadata. The plan names
-path confinement as the check that could be lost. Each arm is `validate_workflow` on an inline
+path confinement as the check that could be lost. Each probe is `validate_workflow` on an inline
 one-step workflow, with every other argument valid. Put each probe into these arguments:
 - `apply_lut.lut`;
 - `join_windows.source`;
 - `restore_to_source.fit`;
 - `paste_face_track.track`;
-- `attribute_voices`, in a nested voice's reference audio (as SE-F038 does);
+- `attribute_voices`, in a nested voice's reference audio (as arm V does, on arm V's carrier);
 - `loop_frames.video`, as `{"media_type": "image", "location": <probe>}`.
 The probes:
 - `../x.png`;
@@ -847,8 +716,46 @@ The probes:
 - `/etc/hosts` (it exists on every server);
 - `/nonexistent-dw-probe/x.png`;
 - `file:///etc/hosts`.
-Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/hosts` arm of each argument.
+Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/hosts` probe of each argument.
+
+**Arm V (`attribute_voices`: `audio` and every nested voice reference).**
+Stage A of #485 adds `attribute_voices`, whose `voices` argument maps a name to either a
+list of spans or a clip reference. That clip reference is new nested input. The plan
+requires "the path gates of every existing audio task": a raw path is refused wherever
+it sits, the same way SE-F014 refuses one on an existing task.
+
+Carrier: a one-step workflow, `attr`, running `attribute_voices` and saving
+`application/json` to `final`. Its baseline arguments:
+- `"audio": "asset:qa-cast/priya-voice.wav"`;
+- `"voices": {"a": [{"start_seconds": 0.0, "duration_seconds": 3.5}], "b":
+  "asset:qa-cast/hal-voice.wav"}`;
+- `"lines": [{"start": 0.5, "end": 3.0}]`.
+
+Probe paths:
+- `P1` = `/usr/share/sounds/alsa/Front_Center.wav`, which exists on most Debian boxes;
+- `P2` = `/nonexistent-dw-probe/x.wav`, which is missing;
+- `P3` = `../../../../../usr/share/sounds/alsa/Front_Center.wav`.
+
+Call `validate_workflow` with each probe in each position:
+- (a) `audio` = the probe;
+- (b) voice `b` = the probe, as a bare string;
+- (c) voice `b` = `"asset:" + <probe>` (for `P3`, the `asset:../…` spelling);
+- (d) the probe in any other clip-reference form `get_task("attribute_voices")` documents
+  for a voice. For example, a list entry naming a clip, if the schema has one.
+
+Control: the baseline validates clean. Also `run_workflow` on any probe.
+
+**Arm F (`fit_to_model.video` and `restore_to_source.video`).**
+Stage A (#602) adds two tasks that take a video. Each probe is `validate_workflow` on C-F238's RT
+workflow (`regression-suite-complete.md`) with one argument replaced:
+- `fit`'s `video` (via `src`), then `restore`'s `video` as a literal, each set to
+  `/etc/passwd`, `/nonexistent-dw-probe/x.mp4` and `../../../../etc/passwd`.
+- A `file:///etc/passwd` URL in `src`.
+- Control: `src: "asset:qa-fit/src-640x480-50f.mp4"` validates clean.
+Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/passwd` `src` arm.
+
 expected:
+Arm R:
 - Every probe is `valid: false` at that argument's path, with the refusal SE-F014 gives a media
   argument.
 - `/etc/hosts` and `/nonexistent-dw-probe/x.png` get identical wording.
@@ -858,8 +765,32 @@ expected:
 It is a **finding** if a probe is refused only at run time. A probe that validates, a message
 that differs between the existing and nonexistent path, or one that discloses a path or file
 contents is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_output(job_id=...)` for any job (none should exist).
+Arm V:
+- Every probe is `valid: false`, with the error at the argument's path (e.g.
+  `steps[0].task.arguments.voices.b`).
+- `P1` and `P2` are refused **identically**, so the reply doesn't reveal whether a file
+  exists.
+- No error echoes a resolved server path beyond what the probe itself gave.
+- `run_workflow` on any probe is refused with no job queued. A job that queues and then
+  fails is refused too late, and counts as a **finding**.
+- It is a **finding** if any probe validates or runs, or if `P1` and `P2` get different
+  errors. A pass requires that the control validates.
+A hole here goes to `scripts/file-advisory.sh`, not a public issue.
+Arm F:
+- Every probe is `valid: false` at the argument's own path, with the refusal SE-F014 gives a
+  media argument. The existing and nonexistent paths get identical wording.
+- No message echoes anything beyond the string sent, such as a frame count, size or contents.
+- `run_workflow` queues no job.
+- The control validates clean.
+It is a **finding** if a probe validates or is refused only at run time. A message that
+differs between the existing and nonexistent path, or that shows file metadata or contents,
+is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist, in any arm).
 metrics: none.
+
+absorbs: SE-F038, SE-F043 (merged 2026-11-26, suite review)
+- SE-F038: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+- SE-F043: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 
 ### SE-F046 — The shared JSON-record reader confines `restore_to_source.fit` and `paste_face_track.track`
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
@@ -1006,12 +937,17 @@ gallery or asset library, or discloses a server path or content, is a hole: send
 cleanup: `delete_output(job_id=<G's run>, acknowledged_cost=true)`.
 metrics: none.
 
-### SE-F050 — `remove_object`'s `model_name`/`weight_name` hold the repo-id and weight-file boundary
+### SE-F050 — `remove_object`'s and `upscale_h3_latents`' `model_name`/`weight_name` and `crop_face_track`'s `detector_repo`/`detector_file` hold the repo-id and weight-file boundary
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Three arms, R, U and D: one per task that lets a caller name something the server downloads and
+loads. Each has its own carrier, probe list, `run_workflow` rule and expectations; do not swap
+them between arms.
+
+**Arm R (`remove_object`).**
 #956 adds a task, `remove_object`, that loads LaMa weights (default `michaelgold/big-lama`,
 `big-lama.safetensors`, pinned to a revision) and takes an optional `model_name` and
 `weight_name`. The plan puts it in `SAFETENSORS_ONLY_COMMANDS` and checks both at validate and
-again in the loader. These arguments must hold what SE-F039 holds, and must not become a way to
+again in the loader. These arguments must hold what arm U holds, and must not become a way to
 unpickle a file or fetch from an arbitrary host.
 
 Carrier, inline in workspace `regression-security`:
@@ -1029,7 +965,42 @@ Probes, all through `validate_workflow`:
 
 Pass one probe from each group to `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` as
 well. For any probe that validates clean, run it and read `get_job` and `get_job_events`.
+
+**Arm U (`upscale_h3_latents`).**
+#471 adds a task, `upscale_h3_latents`, that loads a vendored upscaler module inside the task.
+Its default weights are `LBH-123-AI/Minimax_h3_latent_Upscaler`, bf16 safetensors, pinned to
+a revision. The task also takes an optional `model_name` and `weight_name`. The plan says the
+trust boundary is not widened. So these two new arguments must hold what SE-F019 holds for
+`model_name` elsewhere, and must not become a way to unpickle an arbitrary file.
+
+Carrier: the documented base → upscale → decode workflow (M-F039, model-specific suite), as an
+inline workflow. Only the `upscale_h3_latents` step's arguments change.
+
+Probes, all through `validate_workflow`:
+- (a) `model_name` = each of these: `../../etc`, `/etc/passwd`, `http://127.0.0.1:8765/`,
+  `org/name/../../x`, `https://evil.example.com/model`;
+- (b) `weight_name` = each of these: `../../../../etc/passwd`, `/etc/passwd`,
+  `sub/../../x.safetensors`;
+- (c) `weight_name` = a non-safetensors file: `upscaler.pth`, `model.bin`, `x.pt`, `x.ckpt`.
+
+Arm R's one-probe-per-group submit is not part of arm U. In arm U: for any probe that validates
+clean, run it with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and read
+`get_job`'s error. The upscale step must refuse before any download or unpickling.
+
+**Arm D (`crop_face_track`'s detector).**
+Stage 1 of #599 adds a task that fetches its face detector from the Hub. That is a new place a
+caller names something the server downloads and loads. The plan says it goes through the same
+validators as arm U. Each probe is `validate_workflow` on an inline one-step workflow:
+`crop_face_track` with `clip: "asset:qa-cast/ep3-shot1-incident.mp4"` plus the probe. Then
+`run_workflow(..., acknowledged_cost=true)` on the same workflow.
+- `detector_repo`: `../../etc`, `/etc/passwd`, `http://127.0.0.1:8765/`, `org/name/../../x`,
+  `https://evil.example.com/model`, and an empty string.
+- `detector_file`: `../../../etc/passwd`, `/etc/passwd`, `sub/../../x.onnx`, and
+  `model.pkl` (a pickle, not the detector's format). Also an `http://` URL.
+- Control: the defaults (no `detector_repo` or `detector_file`) validate clean.
+
 expected:
+Arm R:
 - (a) is refused at validate, at `steps[…].task.arguments.model_name`, as not a Hugging Face repo
   id. No download entry appears in `list_downloads`.
 - (b) is refused as a path, never resolved against the server's filesystem.
@@ -1041,12 +1012,49 @@ It is a **finding** if any probe validates or queues a job, or a non-safetensors
 or loaded (`get_job_events` shows a fetch or load for it, or `list_downloads` gains an entry). A
 load of a pickle-format weight, a fetch from a non-Hub host, or a read of a local path is a hole:
 send it to `scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything that appeared.
+Arm U:
+- (a) is refused at validate, at `steps[…].task.arguments.model_name`, as not a Hugging Face
+  repo id (`owner/name`). No download entry appears in `list_downloads`.
+- (b) is refused as a path, never resolved against the server's filesystem.
+- (c) is refused by name: only `.safetensors` is accepted. Validate refusing it is best. A
+  run-time refusal is acceptable only if the job fails at the `up` step before anything loads,
+  with no download started. (This allowance is arm U's (c) only; it does not apply to arm R or D.)
+- No error echoes a resolved server path.
+- The control, `model_name`/`weight_name` omitted, validates clean.
+It is a **finding** if any (a)/(b) probe validates, or if a `.pth`/`.bin`/`.pt`/`.ckpt`
+weight is fetched or loaded. `get_job_events` shows a fetch or a load phase for it, or
+`list_downloads` gains an entry. A load of a pickle-format weight is a hole: send it to
+`scripts/file-advisory.sh`, not a public issue.
+Arm D:
+- Every probe is `valid: false` at `steps[…].task.arguments.detector_repo` (or
+  `detector_file`), and `run_workflow` queues no job.
+- `list_downloads` shows no entry for any probe.
+- No message echoes a server filesystem path beyond what the caller sent.
+- The control validates clean.
+It is a **finding** if a probe validates or is refused only at run time. If a probe reaches
+the network, reads a file outside the Hub cache, or loads a pickle, that is a hole: send it to
+`scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job, in any arm (none should exist in arm D);
+`cancel_download` anything that appeared.
 metrics: none.
 
-### SE-F051 — the download walk is no existence oracle for a local-path task `model_name`
-source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
-Free (validate only). #975 makes `validate_workflow` look at task model arguments. The plan says a
+absorbs: SE-F039, SE-F041 (merged 2026-11-26, suite review)
+- SE-F039: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
+- SE-F041: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+
+### SE-F052 — a traversal `filename` or a local-path task `model_name` gives no existence oracle and fetches nothing
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Two arms, F and M.
+
+**Arm F (`filename` / `weight_name`).** #978 checks per-file cache state and HEAD-sizes files, from the `filename` a
+workflow supplies. Carrier: an inline `upscale` step from `templates/upscale-spandrel`'s definition, with
+`model_name` at its default. Validate it with `filename` set, in turn, to:
+- pair 1: `"../../../../../../etc/hostname"` and `"../../../../../../etc/qa-975-absent"`;
+- pair 2: `"/etc/hostname"` and `"/qa-975-absent"`.
+Then repeat pair 1 against the `remove_object` step of complete's C-F511 workflow, as `weight_name`.
+`list_downloads` before and after.
+
+**Arm M (task `model_name`).** #975 makes `validate_workflow` look at task model arguments. The plan says a
 local-path-shaped name gives no entry and never touches the disk; if it did, the plan would tell a
 caller which server paths exist. Carrier: complete's C-F520 workflow (`segment` on
 `asset:qa-cast/priya-portrait.jpg`). Validate it with `model_name` set, in turn, to:
@@ -1054,26 +1062,7 @@ caller which server paths exist. Carrier: complete's C-F520 workflow (`segment` 
 - pair 2: `"../../../../../../etc"` and `"../../../../../../qa-975-absent"`;
 - pair 3: `"~/.bashrc"` and `"~/qa-975-absent"`.
 expected:
-- Within each pair, the two responses are identical apart from the probe string itself: the same
-  `valid`, the same error/warning codes and text, and the same `downloads_required` (neither lists
-  the probe, nor gives it a `gb`).
-- No response echoes a resolved server path (a home directory, the server's roots).
-It is a **finding** if any pair differs, or if a probe string appears as an entry. A difference, or a
-`gb` for a path that exists, discloses the server's filesystem: send it to `scripts/file-advisory.sh`,
-not a public issue.
-cleanup: none.
-metrics: none.
-
-### SE-F052 — a traversal `filename` gives no existence oracle and fetches nothing
-source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
-Free (validate only). #978 checks per-file cache state and HEAD-sizes files, from the `filename` a
-workflow supplies. Carrier: an inline `upscale` step from `templates/upscale-spandrel`'s definition, with
-`model_name` at its default. Validate it with `filename` set, in turn, to:
-- pair 1: `"../../../../../../etc/hostname"` and `"../../../../../../etc/qa-975-absent"`;
-- pair 2: `"/etc/hostname"` and `"/qa-975-absent"`.
-Then repeat pair 1 against the `remove_object` step of complete's C-F511 workflow, as `weight_name`.
-`list_downloads` before and after.
-expected:
+Arm F:
 - Within each pair, both responses are identical apart from the probe string: both refused the same
   way (the task's own filename rule, which names the argument), or both listed the same way with the
   same `gb` (null). A file that exists must never read as cached where its twin reads as missing.
@@ -1081,15 +1070,31 @@ expected:
 It is a **finding** if any pair differs, a probe is HEAD-sized to a number, or a download appears. A
 difference discloses the server's filesystem, and an off-repo fetch is egress: either is a hole, so
 send it to `scripts/file-advisory.sh`, not a public issue.
-cleanup: `cancel_download` anything that appeared.
+Arm M:
+- Within each pair, the two responses are identical apart from the probe string itself: the same
+  `valid`, the same error/warning codes and text, and the same `downloads_required` (neither lists
+  the probe, nor gives it a `gb`).
+- No response echoes a resolved server path (a home directory, the server's roots).
+It is a **finding** if any pair differs, or if a probe string appears as an entry. A difference, or a
+`gb` for a path that exists, discloses the server's filesystem: send it to `scripts/file-advisory.sh`,
+not a public issue.
+cleanup: `cancel_download` anything that appeared. Arm M: none.
 metrics: none.
 
-### SE-F054 — H3 regional edit: `source_video`, `mask_image` and `mask_video` hold the path boundary, and the mask blocks aren't nameable from a workflow
+absorbs: SE-F051 (merged 2026-11-26, suite review)
+- SE-F051: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+
+### SE-F054 — H3 regional edit and hold: `source_video`, `mask_image`, `mask_video` and `hold_audio` hold the path boundary, and the mask and hold blocks aren't nameable from a workflow
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Two arms, M (the regional-edit arguments and mask blocks) and H (`hold_audio` and the hold
+blocks). Both use the same template; each has its own carrier additions, probe paths and block
+names.
+
+**Arm M.**
 #1062 adds three media-taking arguments to the MiniMax H3 step: `source_video`, which loads by its
 `_video` suffix, `mask_image` and `mask_video`. It also adds two dw blocks,
 `DwH3SourceLatentsStep` and `DwH3MaskBlendStep`. The plan says no boundary is loosened. So each
-new argument must hold the same path boundary as `hold_audio` (SE-F040), and no workflow may reach
+new argument must hold the same path boundary as `hold_audio` (arm H), and no workflow may reach
 the new block classes.
 
 Carrier: `templates/minimax/video-with-audio` as an inline workflow (from `get_workflow`), in
@@ -1117,7 +1122,33 @@ Probes, all through `validate_workflow`. Each of (a)–(c) is run in turn on `so
 
 For every refused probe, also call `run_workflow(..., acknowledged_cost=true,
 workspace="regression-security")`.
+
+**Arm H.**
+#598 adds a new media-taking argument, `hold_audio`, to the MiniMax H3 pipeline. It takes an Audio
+reference (`asset:`, `output:` or `previous_result:`). The plan says the trust gate is not
+widened: the hold and release steps are dw blocks that a workflow never names. So `hold_audio`
+must hold the same path boundary as every other media argument (SE-F045), and no workflow may
+reach the new block classes.
+
+Carrier: `templates/minimax/video-with-audio` as an inline workflow (from `get_workflow`), in
+workspace `regression-security`, without arm M's additions. Only the H3 step's arguments change.
+
+Probes, all through `validate_workflow`:
+- (a) `hold_audio` = each of P1 `/usr/share/sounds/alsa/Front_Center.wav`, P2
+  `/nonexistent-dw-probe/x.wav` and P3 `../../../../../usr/share/sounds/alsa/Front_Center.wav`.
+  Try each as a bare string and as `asset:` + the probe;
+- (b) `hold_audio` = `output:../../../../usr/share/sounds/alsa/Front_Center.wav` and
+  `output:/usr/share/sounds/alsa/Front_Center.wav`;
+- (c) `hold_audio` = `http://127.0.0.1:8765/x.wav` and `file:///usr/share/sounds/alsa/Front_Center.wav`;
+- (d) a workflow that names the new blocks: the H3 step given a `pipeline_type`, or any other
+  `*_type`/class-name argument the schema accepts, set to
+  `dw.pipeline_processors.h3_blocks.DwH3HoldAudioStep`, and the same for `DwH3ReleaseAudioStep`
+  and `DwH3RefineScheduleStep`. Also try the bare class names.
+
+For every refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
+
 expected:
+Arm M:
 - Every (a)–(c) probe is `valid: false` at the H3 step's argument path for the argument probed.
   Each is refused as a path or reference outside the server's roots, or as a scheme or host that
   isn't allowed.
@@ -1134,9 +1165,27 @@ It is a **finding** if any probe validates, if P1 and P2 are told apart, if a mi
 shows that an out-of-root file was read, if a server path is echoed, if a `127.0.0.1` fetch or a
 `file://` read happens, or if a workflow can name either block. Each of those is a hole: send it to
 `scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_output(job_id=...)` for any job (none should exist). Delete the uploaded mask
-asset if one was uploaded.
+Arm H:
+- Every (a)–(c) probe is `valid: false` at the H3 step's `hold_audio` argument path. Each is
+  refused as a path or reference outside the server's roots, or as a scheme or host that isn't
+  allowed.
+- P1 (exists) and P2 (doesn't exist) are refused with the same message, so the error can't be
+  used to test whether a file exists.
+- No error echoes a resolved server path.
+- (d) is refused as an untrusted or unknown type/class, the same way any non-allowlisted class
+  name is refused today.
+- `run_workflow` queues no job for any probe. Refusing at run time is refused too late, and that
+  is a finding.
+- The control, `hold_audio: "asset:qa-cast/hal-voice.wav"` (from `common`), validates clean.
+It is a **finding** if any probe validates, if P1 and P2 are told apart, if a server path is
+echoed, if a `127.0.0.1` fetch or a `file://` read happens, or if a workflow can name a dw block
+class. Each of those is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist, in either arm). Delete the
+uploaded mask asset if one was uploaded.
 metrics: none.
+
+absorbs: SE-F040 (merged 2026-11-26, suite review)
+- SE-F040: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 
 ### SE-F055 — `match_color.reference` and `match_color.media` hold the media path gate at validate time
 pending: #1083
@@ -1194,27 +1243,52 @@ issue.
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
-### SE-F057 — the Audio8 branch of `generate_speech` runs the trust gate before any load
+### SE-F057 — the Audio8 branch of `generate_speech` and `generate_sound_effects` run the trust gate before any load
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
-Audio8 gets its own dispatch branch ahead of the transformers pipeline, and upstream loads only with
+Two arms, S (`generate_speech`, Audio8) and E (`generate_sound_effects`, MMAudio). Each probe adds
+one key to its arm's base carrier.
+
+**Arm S.** Audio8 gets its own dispatch branch ahead of the transformers pipeline, and upstream loads only with
 `trust_remote_code`. The plan says the branch runs the trust gate first. Use SE-F056's carrier,
 unmodified, as the base. Each probe adds one key:
 a. `"trust_remote_code": true` in the step's task `arguments`;
 b. `"forward_params": {"trust_remote_code": true}`;
 c. `"generate_kwargs": {"trust_remote_code": true}`;
 d. `"custom_pipeline": "lpw_stable_diffusion"` in the arguments.
-`validate_workflow` each; for any that validates or isn't clearly refused, `run_workflow(...,
+
+**Arm E.** MMAudio is vendored code loading three repos (MMAudio, Kandinsky 6 decoder files, DFN5B CLIP); the plan
+says the trust gate runs before any load. Use SE-F058's carrier, unmodified, as the base. Each probe
+adds one key:
+a. `"trust_remote_code": true` in the step's task `arguments`;
+b. `"model_kwargs": {"trust_remote_code": true}`;
+c. `"clip_kwargs": {"trust_remote_code": true}`;
+d. `"custom_pipeline": "lpw_stable_diffusion"` in the arguments.
+Also a text-only form of a (carrier without `video`).
+
+Both arms: `validate_workflow` each; for any that validates or isn't clearly refused, `run_workflow(...,
 acknowledged_cost=true, wait_seconds=55, workspace="regression-security")`, then `get_job_events`.
 expected:
-- Each probe is refused with the trust-gate message naming the key (as SE-F005 / SE-F006), at validate
+Arm S:
+- Each probe is refused with the trust-gate message naming the key (as SE-F005 / SE-F005), at validate
   or as a failed job.
 - A failed job shows no download or load phase event before the refusal (SE-F026's rule: a trust
   refusal emits no phase event).
 - No Audio8 file is fetched for these probes.
 It is a **finding** if a probe runs, or the refusal arrives after a download or load event. A probe
 that loads the model with remote code is a hole: send it to `scripts/file-advisory.sh`.
+Arm E:
+- Each probe is refused, at validate or as a failed job, with the trust-gate message naming the key
+  (as SE-F005 / SE-F005). b–d may instead get the task's unknown-argument refusal naming the key; that
+  passes too, as long as it comes before any load. (This allowance is arm E's b–d only.)
+- A failed job shows no download or load phase event before the refusal (SE-F026's rule).
+- No MMAudio, Kandinsky or DFN5B file is fetched for these probes.
+It is a **finding** if a probe runs, or the refusal arrives after a download or load event. A probe
+that loads any of the three with remote code is a hole: send it to `scripts/file-advisory.sh`.
 cleanup: `delete_output(job_id=...)` for any job.
 metrics: none.
+
+absorbs: SE-F059 (merged 2026-11-26, suite review)
+- SE-F059: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 
 ### SE-F058 — `generate_sound_effects.video` holds the media path gate at validate time
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
@@ -1242,29 +1316,6 @@ It is a **finding** if a probe is refused only at run time. A probe that validat
 told apart, a length message about an out-of-root file, an echoed server path, or a `127.0.0.1` fetch
 or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
-metrics: none.
-
-### SE-F059 — `generate_sound_effects` runs the trust gate before any load
-source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
-MMAudio is vendored code loading three repos (MMAudio, Kandinsky 6 decoder files, DFN5B CLIP); the plan
-says the trust gate runs before any load. Use SE-F058's carrier, unmodified, as the base. Each probe
-adds one key:
-a. `"trust_remote_code": true` in the step's task `arguments`;
-b. `"model_kwargs": {"trust_remote_code": true}`;
-c. `"clip_kwargs": {"trust_remote_code": true}`;
-d. `"custom_pipeline": "lpw_stable_diffusion"` in the arguments.
-Also a text-only form of a (carrier without `video`). `validate_workflow` each; for any that validates
-or isn't clearly refused, `run_workflow(..., acknowledged_cost=true, wait_seconds=55,
-workspace="regression-security")`, then `get_job_events`.
-expected:
-- Each probe is refused, at validate or as a failed job, with the trust-gate message naming the key
-  (as SE-F005 / SE-F006). b–d may instead get the task's unknown-argument refusal naming the key; that
-  passes too, as long as it comes before any load.
-- A failed job shows no download or load phase event before the refusal (SE-F026's rule).
-- No MMAudio, Kandinsky or DFN5B file is fetched for these probes.
-It is a **finding** if a probe runs, or the refusal arrives after a download or load event. A probe
-that loads any of the three with remote code is a hole: send it to `scripts/file-advisory.sh`.
-cleanup: `delete_output(job_id=...)` for any job.
 metrics: none.
 
 ### SE-F060 — `stills_to_video.images`, `analyze_face_drift.video`/`reference` and their templates' variables hold the media path gate at validate time
@@ -1547,28 +1598,6 @@ failure on a single-user box, and not worth an issue on their own.
 cleanup: delete the failed job's outputs if any.
 source: harness, initial security suite 2026-09-13.
 
-### SE-F030 — an unknown gallery name is refused without echoing a server path
-The gallery lookup shared by `get_gallery_metadata` (and the thumbnail /
-download / delete routes behind it) used to put the server's resolved absolute
-filesystem path in its 404 body, straight from the path validator's exception
-text (#247). The refusal must name what the caller sent, not where the server
-looked. Harmless probe: the names below exist nowhere.
-expected: `get_gallery_metadata(name="does-not-exist/0000/nope.png")` → an error
-whose text contains `does-not-exist/0000/nope.png` and **no** absolute path (no
-segment starting with `/home/`, `/var/`, `/srv/`, `/mnt/`, or the workspace root
-`get_server_info` reports); the 0.4.x wording is `Unknown file:
-does-not-exist/0000/nope.png`. Same with `name="../../etc/passwd"` → refused, the
-error echoes `../../etc/passwd` at most, and never a resolved `/etc/passwd` or a
-workspace-root-prefixed path. A positive control that a *real* `list_gallery`
-`name` still resolves is S-F119's job (smoke), not this case's.
-"It worked" looks like the error (or any response) carrying `/home/…` or the
-workspace's `outputs` directory. "Refused too late" does not apply — this is a
-read-only lookup; any leak is the failure.
-cleanup: none (read-only).
-source: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via
-provider `anthropic` — both names returned `Unknown file: <name as sent>` with
-no server path.
-
 ### SE-F062 — a restart tombstone's `error` names the run dir without a server path
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 A tombstone's `error` for a job that was running when the server died names
@@ -1731,7 +1760,7 @@ expected:
   `..` probe says.
 Fail on `valid: true` for either, and on any refusal that echoes a *normalized* form of the
 probe (it would say the name was resolved against the filesystem before being judged).
-The functional half — that a legitimate `shot@entry` name still round-trips — is S-F033 in
+The functional half — that a legitimate `shot@entry` name still round-trips — is S-F144 in
 `regression-suite-smoke.md`; a tightening that passes this case by refusing everything is
 caught there, not here.
 cleanup: none; both calls are free validate calls that write nothing.
@@ -1740,7 +1769,7 @@ against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep15`. The implementer proposed 
 boundary beside the widened pattern; the leading-`@` probe is mine.
 
 ### SE-F026 — a trust refusal emits no phase event, and a legitimate load still does
-SE-F005 and SE-F006 say a probe must not "start loading the model" before it
+SE-F005 and SE-F005 say a probe must not "start loading the model" before it
 fails, and read that off `get_job_events`. #137 was the case where that evidence
 went bad without the gate moving: the `loading` phase marker was emitted on entry
 to `pipeline.load()`, with both trust gates *inside* that call, so a job refused
@@ -1752,7 +1781,7 @@ the trust checks over the definition as a pre-flight, ahead of the marker.
 This case pins both halves of that, because each alone is satisfiable by a bug:
 expected:
 - **The refusal side.** Re-run the SE-F005 probe (`trust_remote_code: true`) and
-  the SE-F006 probe (`custom_pipeline: "lpw_stable_diffusion"`) with `run_workflow`.
+  the SE-F005 probe (`custom_pipeline: "lpw_stable_diffusion"`) with `run_workflow`.
   Since #1410 each is refused at submit, with the trust-gate message naming its key
   at `steps[0].pipeline`, and **no job is created** (`list_jobs` shows none for it):
   there are no events at all, so no `phase` event. `validate_workflow` on the same
@@ -1908,7 +1937,7 @@ release, which SE-P001 then measured. Run three jobs in order in one workspace:
 1. **Warm:** a legitimate small pipeline job, e.g. inline `StableDiffusionPipeline` on
    `hf-internal-testing/tiny-stable-diffusion-torch` (2 steps, 64x64, no trust flags).
    It must succeed.
-2. **Refuse:** the SE-F005 probe (`trust_remote_code: true`), and separately the SE-F006
+2. **Refuse:** the SE-F005 probe (`trust_remote_code: true`), and separately the SE-F005
    probe (`custom_pipeline: "lpw_stable_diffusion"`).
 3. **Repeat:** job 1, unchanged.
 expected:

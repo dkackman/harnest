@@ -891,7 +891,7 @@ source: tester, verified in #223, model `opus` via provider `anthropic`, on 2026
 control, `c3525c29b650` Bark rejection). Placed here rather than `smoke` because it is tied to one
 checkpoint and one encoder and needs a CUDA box for the dtype half to mean anything.
 
-### M-F020 — editing one shot of an identity-referenced H3 `for_each` list re-renders only that shot
+### M-F020 — editing one shot of an identity-referenced H3 `for_each` list re-renders only that shot, and casting it from files actually skips the portrait steps
 The step cache's whole value on a seeded, list-driven template is that fixing one line of one shot
 does not pay for the others. Before #253 it never did for any step carrying an image/audio/video
 reference: the `MiniMaxH3*Reference` / `LTX2ReferenceCondition` dataclasses are rebuilt fresh from
@@ -905,16 +905,29 @@ Model/pipeline: `MiniMaxAI/MiniMax-H3` via `templates/minimax/dialogue-short` (s
 — opt-in, run it when the step cache, `for_each` expansion, `realize_args`, or the H3 reference
 adapters change. Both runs must land on the same worker process (nothing between them, no restart),
 since the cache is in-memory and #244 (persistence across a restart) is a separate, parked question.
+**Cast arm (rides on step 1's validate and job).** `templates/minimax/dialogue-short` can be cast
+from portraits that already exist: a shot entry's subject reference takes `from_file: "asset:..."`
+exactly as its voice references do. Before #122 the two Z-Image `draw_character_a` /
+`draw_character_b` steps still ran and their output was discarded — about 55 s and two model loads
+bought and thrown away on every episode, with no argument a caller could pass to avoid it. A
+recurring cast is the headline use of this template, so the saving is the feature, and it is
+invisible from the deliverable: a cast run and an uncast run produce the same kind of file. S-F027
+pins the *engine's* elision cheaply; this arm pins that this template is actually wired to benefit,
+which takes a real run.
 1. `validate_workflow(name="templates/minimax/dialogue-short", workspace=<this suite's>,
    arguments=A)` where `A` = `character_a_voice`/`character_b_voice` as the two voice assets,
    `seam_fade_ms: 80`, and a two-entry `shots` list — `accuse` (124 frames, both portraits as
    `variable:subject_reference_type` `from_file` refs + both voices as `variable:voice_reference_type`
    refs from the two variables) and `deflect` (124 frames, hal's portrait + `character_b_voice`),
-   each with a `subject_definitions:`/`summary:` prompt. Then `run_workflow` with the bound ack;
-   `wait_for_job`.
+   each with a `subject_definitions:`/`summary:` prompt. Keep this validate's `plan` for the cast
+   arm. Then `run_workflow` with the bound ack; `wait_for_job`. For the cast arm, read this job's
+   `get_job` (its `warnings` and manifest) and its `get_job_events` (the `warning` events and the
+   `loading` phases).
 2. Change **only** the spoken line inside `deflect`'s prompt. `validate_workflow` again, same
    name/workspace; then `run_workflow`, `wait_for_job`, `get_job_events(after=-1, limit=14)`.
 3. Adjacent: `validate_workflow` a third time with step 2's arguments unchanged.
+4. Cast-arm control: `validate_workflow` on the same template, same workspace, with **no** `shots`
+   override.
 expected:
 - Step 1: `plan.cached_steps: 0`; the job succeeds with no `reused` on any manifest entry.
   - M-F001's paid form, on this job: the concatenated `episode` output is stereo at the shots' own
@@ -930,15 +943,45 @@ expected:
 - Step 3: `plan.cached_steps: 3` — every member and the join are held.
 - (#255, verified: the cached estimate is `plan.estimate.cached_minutes`; `minutes` is unchanged
   by design. Not asserted here.)
+- Cast arm, on step 1:
+  - **Before the run, which is the part the cost acknowledgement depends on.** Step 1's validate
+    (voices, and `shots` entries whose subject references use `from_file: "asset:<portrait>"`) →
+    a `plan` whose `elided_steps` names **both** `draw_character_a` and `draw_character_b`, each
+    with a reason, and whose `steps` is reduced accordingly (2 for a one-entry `shots` list,
+    against 8 for the stock five-shot default). The count a caller acknowledges must be the count
+    that runs.
+  - **The run.** Step 1's job → `succeeded`, with both draw steps named in the job's
+    **`warnings`** as not having run, each naming the argument that overrode them
+    (`overridden_by`, and `kind: "step_elided"` on the matching `warning` event). Per #157 the
+    wording must **not** suggest a misspelled reference or a missing `result` when the step was
+    elided because an argument was supplied — that is the happy path, not a suspected fault.
+  - **Neither portrait is written.** The manifest contains only the shot(s) under
+    `intermediate/` and the assembled episode under `final/` — no Z-Image output.
+  - **No Z-Image is ever loaded.** `progress` / `get_job_events` go straight to the first shot
+    step with `phase_detail` naming the H3 pipeline. There must be no `loading` phase for the
+    portrait model at all: a run that loads the weights and then discards the image has not saved
+    the expensive half.
+  - **Control — the uncast default is unchanged (step 4).** `validate_workflow` on the same
+    template with **no** `shots` override → `steps: 8`, `elided_steps: []`,
+    `list_entries.shots: 5`. Both draw steps still run for a caller who did not supply portraits,
+    because the stock shots reference them. This control is the whole safety margin: elision that
+    fired here would silently break the default deliverable.
+  - The template's `save: false` on the two draw steps is what lets elision reach them (the
+    engine keeps any step that saves — S-F027 guardrail 1), so the cast validate above is itself
+    the check that the template half is still in place.
 metrics: step 2's job `started_at`→`finished_at` in seconds (`latency`, `condition:
 one-shot-cached`), logged to `regression-perf/M-F020.jsonl`. A reading near step 1's full time is
 the miss back even if `reused` somehow survived.
-cleanup: `delete_output` on both run directories. The cast assets are the tester's `qa-cast`
-fixtures — leave them.
+cleanup: `delete_output` on both run directories (this sweeps the cast run's outputs too). The cast
+assets are the tester's `qa-cast` fixtures — portraits and voice clips are durable fixtures; leave
+them.
 source: tester, verified in #253, model `opus` via provider `anthropic`, on 2026-09-20 against dw
 `0.4.0-beta.6` on `lem` (jobs `410af2dcc1aa` cold, 877 s; `2493b23f555f` one shot cached, 285 s;
 third validate `cached_steps: 3`). Implementer proposed the case in its hand-off; placed here
 because it depends on the H3 reference dataclasses and a CUDA box.
+
+absorbs: M-F032 (merged 2026-11-26, suite review)
+- M-F032: tester, model `opus` via provider `anthropic`, verified in #122 on 2026-09-14 against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job `af59273620ae`, run `20260914-044007-369fdaf5`, one-entry `shots` cast from `asset:qa-cast/{priya,hal}-portrait.jpg`, succeeded in 535.8 s against an 8.4 min `derived` estimate; both draw steps warned, manifest two entries, first `loading` phase was `pipeline: MiniMaxAI/MiniMax-H3`). Proposed by the implementer in that issue; the one-entry `shots` list is mine, to buy the same evidence for a quarter of the five-shot price. source: moved from C-F021 (curation 2026-09-24)
 
 ### M-F021 — a hot intermediate that a normalizer consumes is not warned about; one nothing re-levels still is
 Music 3 always lands at or over full scale, and `templates/minimax/music-video` saves that raw
@@ -1311,56 +1354,6 @@ It is a **finding** if `shots` is missing or its count isn't 3, if the frame cou
 don't sum to the file's frames, or if `seams=true` still needs `boundaries`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
-
-### M-F032 — casting an H3 short from files actually skips the portrait steps
-`templates/minimax/dialogue-short` can be cast from portraits that already exist: a
-shot entry's subject reference takes `from_file: "asset:..."` exactly as its voice
-references do. Before #122 the two Z-Image `draw_character_a` / `draw_character_b`
-steps still ran and their output was discarded — about 55 s and two model loads
-bought and thrown away on every episode, with no argument a caller could pass to
-avoid it. A recurring cast is the headline use of this template, so the saving is the
-feature, and it is invisible from the deliverable: a cast run and an uncast run
-produce the same kind of file. S-F027 pins the *engine's* elision cheaply; this case
-pins that this template is actually wired to benefit, which takes a real run.
-expected:
-- **Before the run, which is the part the cost acknowledgement depends on.**
-  `validate_workflow(name="templates/minimax/dialogue-short", workspace=<one that can
-  reach the cast>, arguments={<voices>, "shots": [entries whose subject references use
-  `from_file: "asset:<portrait>"`]})` → a `plan` whose `elided_steps` names
-  **both** `draw_character_a` and `draw_character_b`, each with a reason, and whose
-  `steps` is reduced accordingly (2 for a one-entry `shots` list, against 8 for the
-  stock five-shot default). The count a caller acknowledges must be the count that runs.
-- **The run.** That workflow run for real → `succeeded`, with both draw steps named in
-  the job's **`warnings`** as not having run, each naming the argument that overrode them
-  (`overridden_by`, and `kind: "step_elided"` on the matching `warning` event). Per #157
-  the wording must **not** suggest a misspelled reference or a missing `result` when the
-  step was elided because an argument was supplied — that is the happy path, not a
-  suspected fault.
-- **Neither portrait is written.** The manifest contains only the shot(s) under
-  `intermediate/` and the assembled episode under `final/` — no Z-Image output.
-- **No Z-Image is ever loaded.** `progress` / `get_job_events` go straight to the first
-  shot step with `phase_detail` naming the H3 pipeline. There must be no `loading`
-  phase for the portrait model at all: a run that loads the weights and then discards
-  the image has not saved the expensive half.
-- **Control — the uncast default is unchanged.** `validate_workflow` on the same
-  template with **no** `shots` override → `steps: 8`, `elided_steps: []`,
-  `list_entries.shots: 5`. Both draw steps still run for a caller who did not supply
-  portraits, because the stock shots reference them. This control is the whole safety
-  margin: elision that fired here would silently break the default deliverable.
-- The template's `save: false` on the two draw steps is what lets elision reach them
-  (the engine keeps any step that saves — S-F027 guardrail 1), so the cast validate
-  above is itself the check that the template half is still in place.
-cleanup: delete the cast run's outputs (sweeps its run directory). Keep the cast
-assets — portraits and voice clips are durable fixtures.
-source: tester, model `opus` via provider `anthropic`, verified in #122 on 2026-09-14
-against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job `af59273620ae`, run
-`20260914-044007-369fdaf5`, one-entry `shots` cast from
-`asset:qa-cast/{priya,hal}-portrait.jpg`, succeeded in 535.8 s against an 8.4 min
-`derived` estimate; both draw steps warned, manifest two entries, first `loading`
-phase was `pipeline: MiniMaxAI/MiniMax-H3`). Proposed by the implementer in that
-issue; the one-entry `shots` list is mine, to buy the same evidence for a quarter of
-the five-shot price.
-source: moved from C-F021 (curation 2026-09-24)
 
 ### M-F033 — each LTX-2.5 chained segment's audio spans its own frames, so sync doesn't drift per segment
 source: tester (`claude-opus-5-5` via `anthropic`), verified in #408
@@ -1827,40 +1820,6 @@ cleanup: if a job was created, `cancel_job` it at once, then `delete_output(job_
 Otherwise none.
 metrics: none.
 
-### M-F047 — every H3 template still validates at its defaults, the Ref2VA templates declare the per-reference term, and the LTX ceiling is untouched
-source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: every `templates/minimax/*` entry, plus LTX-2.5 `templates/ltx2/text-to-video`.
-Plan v1 gives `vram_estimate` blocks to:
-- `dialogue-short`, `music-video` and `composable-references`, which had none;
-- `reference-to-video`, which it recalibrates.
-
-It leaves the T2VA/FL2VA templates as they were. A tighter ceiling that refuses a template's
-own defaults would break the catalog. Free: listing, `get_workflow` and validate calls only.
-Steps:
-1. `list_workflows()`, and collect every `templates/minimax/*` name.
-2. For each one, `validate_workflow(name=<it>)` with no arguments.
-3. `get_workflow` on `templates/minimax/reference-to-video`, `dialogue-short`, `music-video`
-   and `composable-references`.
-4. `get_workflow("templates/minimax/video-with-audio")` and
-   `get_workflow("templates/minimax/video-with-audio-768p")`.
-5. `validate_workflow(name="templates/ltx2/text-to-video", arguments={"num_frames": 900})` and
-   `arguments={"num_frames": 121}`.
-expected:
-- Step 2: every H3 template is `valid: true` with no VRAM error. Existing unrelated warnings,
-  such as no seed, are fine.
-- Step 3: all four carry a `vram_estimate` with a `gb_per_reference` (1.0 at the plan v1
-  calibration) and `voxel_variables` covering width, height and num_frames.
-  `composable-references` counts its `motion` video reference like any other.
-- Step 4: the T2VA templates' `vram_estimate` is unchanged from before #479. Per M-F026 that
-  means no `gb_per_reference` is required, and the 768p breakpoint is between 277 and 294
-  frames.
-- Step 5: 900 frames is still `valid: false`, with the two co-reported errors M-F022 pins. 121
-  is still `valid: true`.
-It is a **finding** if any H3 template's defaults are refused, if one of the four lacks the
-per-reference term, or if the T2VA or LTX ceilings moved.
-cleanup: none.
-metrics: none.
-
 ### M-F048 — `vram_estimate.gb_per_reference` is an optional non-negative number in the schema, and omitting it means no per-reference term
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA, using R3 from M-F043: the inline reference-to-video copy with
@@ -2295,7 +2254,7 @@ expected:
   text for the same variable. The plan says they are copied.
 - In `get_workflow`'s full document:
   - Step `source_audio` is `normalize_audio` of `variable:source_video` to a −3 dBFS peak, and saves
-    nothing. It is also the silent-source check (M-F066).
+    nothing. It is also the silent-source check (C-F249).
   - The steps are `source_audio`, `fit`, `upscale`, `refine`, `restore`, `with_source_audio`, in that
     order (#632 replaced the old `source_frames` step with `fit` and `restore`).
   - Step `fit` is `fit_to_model(video=variable:source_video, width, height, num_frames, mode=variable:fit)`,
@@ -2446,36 +2405,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
 fixtures.
 metrics: `latency` (s) per arm, conditions `aspect-384x288` and `short-97f`, to
 `regression-perf/M-F065.jsonl`. The first run seeds the file.
-
-### M-F066 — `refine-clip` refuses a silent source before the pipeline load, naming the missing soundtrack
-source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F062. At most one job, which must fail fast. The plan's Q2 decision is "refuse
-early, before the ~80s pipeline load". It does not say whether that happens at validate or as a
-first-step check, so either counts. Fixture: `asset:refine/src-512x288-silent.mp4` (or
-`asset:upscale/src-480x272-silent.mp4`, or any mp4 with no audio stream; see Fixtures). Confirm with `get_gallery_metadata` that it has no audio stream. If none
-exists, record "fixture missing" and skip. Pass `width: 512, height: 288`, so the size isn't what gets
-refused.
-Steps:
-1. `validate_workflow(name="templates/ltx2/refine-clip", arguments={"source_video": <silent>, "width": 512,
-   "height": 288, "seed": 543})`.
-2. If that is `valid: true`, `run_workflow` with the same arguments and the quoted `acknowledged_cost`,
-   `wait_seconds=55`, then `wait_for_job` to the end. Then read `get_job` and `get_job_events`.
-expected, either one:
-- **(a) Refused at validate.** `valid: false`, with an error at `arguments.source_video` saying the
-  source has no soundtrack or audio stream. `run_workflow` with the same arguments is refused too, with
-  no `job_id`.
-- **(b) Refused as the job's first act.** The job **fails**, and its error names the missing soundtrack
-  or audio stream in the source:
-  - `get_job_events` shows no load of `LTX2LatentUpsamplePipeline` or `LTX2Pipeline` before the
-    failure;
-  - job `started_at`→`finished_at` is well under the ~80 s load (under 60 s);
-  - the manifest has no `final/` file and no `refine` output.
-In either case, a success, or a failure at `with_source_audio` after the refine has run (the late
-failure `upscale-clip`'s M-F061 accepts, and this plan's Q2 rules out), is a **finding**. So is an
-error that doesn't say the soundtrack is what's missing.
-cleanup: if a job ran, `delete_output(job_id=<id>, workspace="regression-model-specific")`. Keep the
-fixture.
-metrics: none.
 
 ### M-F067 — a declared `vram_estimate` is checked against the device's capacity when the workflow has no `cost` block
 source: tester, verified in #552 (claude-opus-5-5 via anthropic)
@@ -2929,32 +2858,19 @@ onsets with the mouth open). Record them in `regression-perf/M-F081.jsonl` with 
 `chain-sung10s-seed42`. The first run seeds the file. Flag a minutes reading more than 50% over
 the median.
 
-### M-F082 — the guide's 768p section documents the refine pass, and the guide's workflow validates
-source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 + `upscale_h3_latents` + H3 refine (`refine_strength`).
-Steps:
-1. `list_guides`. Then `get_guide(<the guide holding it>, section="Promoting an H3 take to 768p in
-   latent space")`.
-2. `validate_workflow` the section's example workflow as written (inline). Then validate it again
-   with `refine_strength` 0.001 and 0.999.
-expected:
-- The section exists and no longer says "There is no refine pass".
-- Its example is base → `upscale_h3_latents` → an H3 step at 1344×768 with
-  `latents: previous_result:up`, `refine_strength: 0.2` and
-  `hold_audio: previous_result:base.audio` (step names may differ; the shape is what counts).
-- The section, or the template/guide `cost_drivers` it points at, says refine runs
-  `num_inference_steps − 1` evaluations, so refine time scales with `num_inference_steps`.
-- The example validates clean. Both 0.001 and 0.999 are inside the open range and validate.
-It is a **finding** if the old "no refine pass" text remains, if the example fails validation, or
-if 0.001 or 0.999 is refused.
-cleanup: none (validation only).
-metrics: none.
-
-### M-F083 — `validate_workflow` refuses `refine_strength` at 0, 1.0 and outside, and without `latents` or `hold_audio`
+### M-F083 — `validate_workflow` refuses `refine_strength` at 0, 1.0 and outside, without `latents` or `hold_audio`, with fewer than 2 points, and on a non-H3 step; the refusals keep their exact messages and are unchanged without a mask
 source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine (`refine_strength`), plus the SD 1.5 template as a non-H3 step.
-The carrier is M-F082's example workflow, inline. Each probe edits only the refine step's
-arguments:
+The points arm adds `templates/ltx` (any LTX-2/2.5 t2v template in `list_workflows(shape="shot")`)
+as a non-H3 step; the messages arm uses MiniMax H3 t2va, plus the SD 1.5 pipeline as the non-H3
+step. Free: no GPU.
+Setup: `use_workspace("regression-model-specific")`, created if it is missing.
+Four arms. Probes (a)–(j) are the range-and-pairing arm; (k)–(n) the points arm (they were
+M-F097's (a)–(d)); (o)–(v) the messages arm (they were M-F115's (a)–(h)); the last is the no-mask
+arm.
+
+**Range-and-pairing arm.** The carrier is M-F096's example workflow, inline. Each probe edits only
+the refine step's arguments:
 - (a) `refine_strength: 0`;
 - (b) `refine_strength: 1.0`;
 - (c) `refine_strength: -0.2`;
@@ -2968,16 +2884,105 @@ arguments:
 - (j) `templates/minimax/video-with-audio` (no latents, no hold) with `"refine_strength": 0.2`
   added to its H3 step.
 For each refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
+
+**Points arm.** Covers the refusals plan v3 added. The carrier is M-F096's refine example, inline.
+Each probe edits only the refine step's arguments:
+- (k) `num_inference_steps: 1` with `refine_strength: 0.2`;
+- (l) `num_inference_steps: 0` with `refine_strength: 0.2`;
+- (m) an LTX template (named above) with `"refine_strength": 0.2` added to its pipeline step;
+- (n) the control: `templates/minimax/video-with-audio` with `num_inference_steps: 1` and no
+  `refine_strength`.
+For each refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
+
+**Messages arm.** Stage B of #691 moves these rules into `h3_rules` and deletes `h3_blocks.py`.
+The plan requires every refusal to say exactly what it said before the split. The texts below were
+captured on mini-ai on 2026-10-08, before the split.
+Carriers, each an inline `workflow` passed to `validate_workflow`:
+- **H3**: `{"id":"probe","steps":[{"name":"base","pipeline":{"configuration":{"component_type":
+  "ModularPipeline"},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":
+  "t2va"},"arguments":{"prompt":"a fox","num_frames":124,"width":960,"height":544,
+  "num_inference_steps":9,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":
+  "video/mp4","fps":24}}]}`, with the probe's keys added to `arguments`.
+- **SD**: `{"id":"probe","steps":[{"name":"img","pipeline":{"configuration":{"component_type":
+  "StableDiffusionPipeline"},"from_pretrained_arguments":{"model_name":
+  "stable-diffusion-v1-5/stable-diffusion-v1-5"},"arguments":{"prompt":"a fox"}},"result":
+  {"content_type":"image/png"}}]}`, with the probe's keys added to `arguments`.
+- **Refine**: the example in `get_guide("workflows", section="Promoting an H3 take to 768p in
+  latent space")`, which M-F096 also uses, passed with `refine_strength` replaced by the probe's
+  value.
+Probes:
+- (o) SD carrier, plus `"hold_audio": "asset:qa-cast/hal-voice.wav"` and `"refine_strength": 0.2`;
+- (p) H3 carrier, plus `"refine_strength": 0`;
+- (q) H3 carrier, plus `"refine_strength": 1.5` and `"hold_audio": "asset:qa-cast/hal-voice.wav"`;
+- (r) Refine carrier at 0.2;
+- (s) Refine carrier at 1.0;
+- (t) Refine carrier at 0.999;
+- (u) Refine carrier at 0.001;
+- (v) Refine carrier at -0.2.
+Then `run_workflow(..., acknowledged_cost=true)` (o) as an inline workflow.
+
+**No-mask arm.** Stage A of #1062 adds blocks to the H3 denoise. The plan promises that a step
+without a mask runs exactly as before; the three arms above, run as written, are that check. In
+addition: run the example in `get_guide("workflows", section="Promoting an H3 take to 768p in
+latent space")` as `validate_workflow` only. Compare its `plan.estimate` with the regional-edit RE
+from M-F215 (a).
 expected:
-- Every probe is `valid: false`. The error names `refine_strength` and gives the reason: the range
-  (0,1) for (a)–(d), the type for (e), "requires both `latents` and `hold_audio`" for (f)–(h) and
-  (j), and "not an H3 pipeline input" for (i).
-- No probe queues a job.
-- The unedited carrier validates clean as the control.
-It is a **finding** if any probe validates, if (a) or (b) (the boundaries) is accepted, or if a
-probe queues and fails in the pipeline (refused too late).
-cleanup: `delete_output(job_id=...)` for any job (none should exist).
+- Range-and-pairing arm:
+  - Every probe (a)–(j) is `valid: false`. The error names `refine_strength` and gives the reason:
+    the range (0,1) for (a)–(d), the type for (e), "requires both `latents` and `hold_audio`" for
+    (f)–(h) and (j), and "not an H3 pipeline input" for (i).
+  - No probe queues a job.
+  - The unedited carrier validates clean as the control.
+- Points arm:
+  - (k) and (l) are `valid: false`. The error names `num_inference_steps` and/or
+    `refine_strength`, and says refine needs at least 2 points.
+  - (m) is `valid: false`, saying `refine_strength` is not an input of that pipeline (or that it
+    is H3-only).
+  - No refused probe queues a job.
+  - (n) gets no error that mentions `refine_strength` or refine: the new rule applies only when
+    `refine_strength` is set. Whatever H3's pre-existing rule on one step is, it still applies.
+- Messages arm (messages verbatim; `<v>` is the value as passed):
+  - (o) `valid: false`, three errors:
+    - at `steps[0].pipeline.arguments.hold_audio`: `hold_audio is a MiniMax-H3 argument, taken by
+      its fl2va, ref2va, t2va workflows, and this step loads StableDiffusionPipeline`;
+    - at `steps[0].pipeline.arguments.refine_strength`: the same sentence beginning
+      `refine_strength is a MiniMax-H3 argument, …`;
+    - at the same path: `refine_strength re-denoises the 'latents' it is passed - pass the upscaled
+      latents, e.g. 'previous_result:up'`.
+  - (p) `valid: false`, three errors at `steps[0].pipeline.arguments.refine_strength`:
+    - `refine_strength is a sigma in (0, 1) - about 0.2 refines an upscaled take - and 0 is outside
+      it`;
+    - the `re-denoises the 'latents'` sentence above;
+    - `refine_strength re-denoises the video only, so it needs 'hold_audio' to keep a soundtrack -
+      e.g. the base pass's 'previous_result:base.audio'`.
+  - (q) `valid: false`, two errors at `steps[0].pipeline.arguments.refine_strength`: the range
+    sentence ending `and 1.5 is outside it`, and the `re-denoises the 'latents'` sentence. There is
+    no `hold_audio` error, since one was passed.
+  - (r), (t) and (u) are `valid: true`.
+  - (s) and (v) are `valid: false` with the range sentence for that value, and no other error.
+  - `run_workflow` on (o) is refused with the same errors and queues no job.
+- No-mask arm:
+  - (b) (`refine_strength: 1.0` with `latents`, no mask) is still refused, and (j) is still
+    refused with the "requires both `latents` and `hold_audio`" reason. A plain `video-with-audio`
+    with `refine_strength` and no `source_video` or mask is not treated as a regional edit.
+  - The latent refine example validates clean. No warning mentions masks or `source_video`.
+It is a **finding** if:
+- any of (a)–(j) validates, if (a) or (b) (the boundaries) is accepted, or if a probe queues and
+  fails in the pipeline (refused too late);
+- (k), (l) or (m) validates, a refused probe queues and fails in the pipeline (refused too late),
+  or (n) is refused with a refine error;
+- in (o)–(v), any message's wording, its JSON path, or the number of errors per probe differs from
+  the above (today's set is the contract);
+- a bound moves (0 or 1 accepted, or 0.001 or 0.999 refused);
+- a refused probe queues a job;
+- a mask-free refine gains a mask-related warning or requirement.
+cleanup: `delete_output(job_id=...)` for any job that queued (none should exist).
 metrics: none.
+
+absorbs: M-F097, M-F115, M-F217 (merged 2026-11-26, suite review)
+- M-F097: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
+- M-F115: tester, spec for #771 from #691's plan v1 (claude-opus-5-5 via anthropic)
+- M-F217: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F087 — `LTX2RefinePipeline` is discoverable, and its signature has `video` beside the parent's `latents`, `noise_scale` and `sigmas`
 source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
@@ -3255,11 +3260,12 @@ fixture.
 metrics: `latency` per job, condition `512x288-121f-s<strength>` (e.g. `-s0`, `-s2`), to
 `regression-perf/M-F095.jsonl`. The first run seeds the file.
 
-### M-F096 — the 768p guide section documents refine schedule (B): 5 points / 0.2 example, evaluations = `num_inference_steps − 1`, and 2 points validates
+### M-F096 — the 768p guide section documents refine schedule (B): 5 points / 0.2 example, evaluations = `num_inference_steps − 1`, 2 points validates, and strengths 0.001 and 0.999 validate
 source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 + `upscale_h3_latents` + H3 refine (`refine_strength`, schedule (B)).
-This case covers what plan v3/v4 changed. M-F082's own claim that refine time doesn't scale with
-`num_inference_steps` is superseded by D6. Where the two disagree, this case is the current one.
+This case covers what plan v3/v4 changed. The plan-v2 claim that refine time doesn't scale with
+`num_inference_steps` is superseded by D6; what is kept from plan v2 is the open-range boundary
+arm in step 4.
 Steps:
 1. `list_guides`. Then `get_guide(<the guide holding it>, section="Promoting an H3 take to 768p in
    latent space")`.
@@ -3267,8 +3273,9 @@ Steps:
    for the **refine** example, at its written values.
 3. Validate the refine example again three times, each with only the refine step changed:
    `num_inference_steps: 2`, then `num_inference_steps: 6`, then `refine_strength: 0.4`.
+4. Boundary arm: validate the refine example again with `refine_strength` 0.001 and 0.999.
 expected:
-- The section no longer says "There is no refine pass" or anything like it.
+- The section exists and no longer says "There is no refine pass" or anything like it.
 - The first JSON example is still the upscale-only workflow (base → `upscale_h3_latents` → decode
   → `pair_audio`, no `refine_strength`). The refine example comes **after** it.
 - The section still names `upscale_h3_latents`, `pair_audio`, `previous_result:base.videos` and
@@ -3276,45 +3283,26 @@ expected:
 - The refine example is base → `upscale_h3_latents` → an H3 step at 1344×768 with
   `latents: previous_result:up` (or whatever the upscale step is named), `refine_strength: 0.2`,
   `num_inference_steps: 5` and `hold_audio: previous_result:base.audio`.
-- The cost note says refine runs `num_inference_steps − 1` evaluations, so 4 at the example's 5.
-  It does not say refine cost is independent of `num_inference_steps`.
+- The cost note says refine runs `num_inference_steps − 1` evaluations, so 4 at the example's 5,
+  so refine time scales with `num_inference_steps`. It does not say refine cost is independent of
+  `num_inference_steps`.
 - Where the section calls hold opt-in, it says refine uses hold to keep the base pass's own audio,
   and that this is a different case from lip sync to supplied audio.
 - Both examples validate clean, and so do all three variants. `num_inference_steps: 2` is the
   smallest legal value (one evaluation).
+- Boundary arm (step 4): both 0.001 and 0.999 are inside the open range and validate.
 It is a **finding** if any of these:
 - the "no refine pass" text remains;
 - the refine example is the first JSON block, or has a different strength or step count from 0.2
   and 5;
 - the cost note is missing or still says cost doesn't scale with `num_inference_steps`;
-- either example or any variant fails validation (2 points is the boundary and must pass).
+- either example or any variant fails validation (2 points is the boundary and must pass);
+- 0.001 or 0.999 is refused.
 cleanup: none (validation only).
 metrics: none.
 
-### M-F097 — `validate_workflow` refuses `refine_strength` with fewer than 2 points, and on an LTX step; with no `refine_strength`, few points are not a refine error
-source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 refine, plus `templates/ltx` (any LTX-2/2.5 t2v template in
-`list_workflows(shape="shot")`) as a non-H3 step.
-Covers the refusals plan v3 added. M-F083's probes (a)–(j) stand and still apply. The carrier is
-M-F096's refine example, inline. Each probe edits only the refine step's arguments:
-- (a) `num_inference_steps: 1` with `refine_strength: 0.2`;
-- (b) `num_inference_steps: 0` with `refine_strength: 0.2`;
-- (c) an LTX template (named above) with `"refine_strength": 0.2` added to its pipeline step;
-- (d) the control: `templates/minimax/video-with-audio` with `num_inference_steps: 1` and no
-  `refine_strength`.
-For each refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
-expected:
-- (a) and (b) are `valid: false`. The error names `num_inference_steps` and/or `refine_strength`,
-  and says refine needs at least 2 points.
-- (c) is `valid: false`, saying `refine_strength` is not an input of that pipeline (or that it is
-  H3-only).
-- No refused probe queues a job.
-- (d) gets no error that mentions `refine_strength` or refine: the new rule applies only when
-  `refine_strength` is set. Whatever H3's pre-existing rule on one step is, it still applies.
-It is a **finding** if (a), (b) or (c) validates, if a refused probe queues and fails in the
-pipeline (refused too late), or if (d) is refused with a refine error.
-cleanup: `delete_output(job_id=...)` for any job (none should exist).
-metrics: none.
+absorbs: M-F082 (merged 2026-11-26, suite review)
+- M-F082: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F098 — refine schedule (B): 4 evaluations at 5 points and 5 at 6; strength 0.4 runs the same 4 and moves the picture further than 0.2; audio and composition kept
 source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
@@ -3531,100 +3519,6 @@ That means the split dropped a block from the pipeline's composition.
 cleanup: none.
 metrics: none.
 
-### M-F114 — `chained-segments` with `continuity:"guide"` accepts `guide_frames` 22 and 39 only, with today's message
-source: tester, spec for #770 from #691's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3, via `templates/minimax/chained-segments`.
-Per #691's plan, the `guide_frames` message is rebuilt from `GUIDE_CHAIN_FRAMES` when the module
-is split, and its text must not change. This case pins the text as it stood before the split
-(captured on mini-ai, 2026-10-08). Free: no GPU.
-Setup:
-- `use_workspace("regression-model-specific")`. If it doesn't exist, `create_workspace` it
-  first. `asset:qa-cast/priya-portrait.jpg` comes from the shared `common/assets`.
-Steps: `validate_workflow(name="templates/minimax/chained-segments", arguments={"image":
-"asset:qa-cast/priya-portrait.jpg", "seed": 42, "continuity": "guide", "guide_frames": N})`
-for each N:
-- (a) 22;
-- (b) 39;
-- (c) 40;
-- (d) 0;
-- (e) 23;
-- (f) 38;
-- (g) 56;
-- (h) 5.
-Then `run_workflow` the same call with `guide_frames: 40` and `acknowledged_cost=true`.
-expected:
-- (a) and (b) are `valid: true` with no error and no warning about `guide_frames`.
-- (c)–(h) are each `valid: false` with exactly one error at
-  `steps[0].pipeline.chain.guide_frames`. Its message is, verbatim:
-  `guide_frames must be 22 or 39 (the whole-latent guide lengths a chain carries), got <N>`,
-  where `<N>` is the value passed. For (c), the message ends `got 40`.
-- `run_workflow` with 40 is refused with the same error and queues no job.
-It is a **finding** if:
-- 22 or 39 is refused;
-- any other value validates;
-- the message's wording or the order of its allowed lengths differs from the text above;
-- a refused value queues a job (refused too late).
-cleanup: `delete_output(job_id=…)` for any job that queued.
-metrics: none.
-
-### M-F115 — `hold_audio` and `refine_strength` refusals keep their exact messages
-source: tester, spec for #771 from #691's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 t2va, plus the SD 1.5 pipeline as the non-H3 step.
-Stage B of #691 moves these rules into `h3_rules` and deletes `h3_blocks.py`. The plan requires
-every refusal to say exactly what it said before the split. The texts below were captured on
-mini-ai on 2026-10-08, before the split. Free: no GPU.
-Setup: `use_workspace("regression-model-specific")`, created if it is missing.
-Carriers, each an inline `workflow` passed to `validate_workflow`:
-- **H3**: `{"id":"probe","steps":[{"name":"base","pipeline":{"configuration":{"component_type":
-  "ModularPipeline"},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":
-  "t2va"},"arguments":{"prompt":"a fox","num_frames":124,"width":960,"height":544,
-  "num_inference_steps":9,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":
-  "video/mp4","fps":24}}]}`, with the probe's keys added to `arguments`.
-- **SD**: `{"id":"probe","steps":[{"name":"img","pipeline":{"configuration":{"component_type":
-  "StableDiffusionPipeline"},"from_pretrained_arguments":{"model_name":
-  "stable-diffusion-v1-5/stable-diffusion-v1-5"},"arguments":{"prompt":"a fox"}},"result":
-  {"content_type":"image/png"}}]}`, with the probe's keys added to `arguments`.
-- **Refine**: the example in `get_guide("workflows", section="Promoting an H3 take to 768p in
-  latent space")`, which M-F082 also uses, passed with `refine_strength` replaced by the probe's
-  value.
-Probes:
-- (a) SD carrier, plus `"hold_audio": "asset:qa-cast/hal-voice.wav"` and `"refine_strength": 0.2`;
-- (b) H3 carrier, plus `"refine_strength": 0`;
-- (c) H3 carrier, plus `"refine_strength": 1.5` and `"hold_audio": "asset:qa-cast/hal-voice.wav"`;
-- (d) Refine carrier at 0.2;
-- (e) Refine carrier at 1.0;
-- (f) Refine carrier at 0.999;
-- (g) Refine carrier at 0.001;
-- (h) Refine carrier at -0.2.
-Then `run_workflow(..., acknowledged_cost=true)` (a) as an inline workflow.
-expected (messages verbatim; `<v>` is the value as passed):
-- (a) `valid: false`, three errors:
-  - at `steps[0].pipeline.arguments.hold_audio`: `hold_audio is a MiniMax-H3 argument, taken by
-    its fl2va, ref2va, t2va workflows, and this step loads StableDiffusionPipeline`;
-  - at `steps[0].pipeline.arguments.refine_strength`: the same sentence beginning
-    `refine_strength is a MiniMax-H3 argument, …`;
-  - at the same path: `refine_strength re-denoises the 'latents' it is passed - pass the upscaled
-    latents, e.g. 'previous_result:up'`.
-- (b) `valid: false`, three errors at `steps[0].pipeline.arguments.refine_strength`:
-  - `refine_strength is a sigma in (0, 1) - about 0.2 refines an upscaled take - and 0 is outside
-    it`;
-  - the `re-denoises the 'latents'` sentence above;
-  - `refine_strength re-denoises the video only, so it needs 'hold_audio' to keep a soundtrack -
-    e.g. the base pass's 'previous_result:base.audio'`.
-- (c) `valid: false`, two errors at `steps[0].pipeline.arguments.refine_strength`: the range
-  sentence ending `and 1.5 is outside it`, and the `re-denoises the 'latents'` sentence. There is
-  no `hold_audio` error, since one was passed.
-- (d), (f) and (g) are `valid: true`.
-- (e) and (h) are `valid: false` with the range sentence for that value, and no other error.
-- `run_workflow` on (a) is refused with the same errors and queues no job.
-It is a **finding** if:
-- any message's wording, its JSON path, or the number of errors per probe differs from the above
-  (today's set is the contract);
-- a bound moves (0 or 1 accepted, or 0.001 or 0.999 refused);
-- a refused probe queues a job.
-cleanup: `delete_output(job_id=…)` for any job that queued.
-metrics: none.
-
 ### M-F116 — `guides` refusals (more than 4 clips, frame not a multiple of 17) keep their exact messages
 source: tester, spec for #771 from #691's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va.
@@ -3663,70 +3557,6 @@ At #771's verification, also re-run M-F113 and M-F114. Both must pass unchanged.
 It is a **finding** if a count or frame message changes wording or path, if 4 clips or a
 multiple-of-17 frame is refused, or if a refused probe queues a job.
 cleanup: `delete_output(job_id=…)` for any job that queued.
-metrics: none.
-
-### M-F117 — the H3 guide-memory record cites real runs, and 28.71 B per guide voxel separates every OOM from every completed run
-source: tester, spec for #778 from #694's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 T2VA, the stage-A measurement runs on lem's RTX 3090.
-Plan v2's stage A acceptance, replacing M-F104's "fit within 0.5 GB". The record is
-`docs/proposals/h3-guide-vram.md`: a table with job ids, a least-squares fit with its residuals,
-the check of the chosen term, the audio delta and the exit verdict. Don approved checking the
-stage by that record.
-Free: discovery calls only (`list_jobs`, `get_job`, `get_job_workflow`, `get_workflow`,
-`get_guide`). Nothing is run.
-Setup: find the record. On 2026-10-08 `list_guides()` serves no `docs/proposals/` file, so the
-record a consumer can read is #778's hand-off comment, which must quote the table, the fit and the
-verdict verbatim. If `list_guides()` lists the record by then, read it there instead. If it is in
-neither place, the stage can't be checked: bounce it with that reason.
-Terms: a row's **guide voxels** are Σ over its guides of (guide frames × width × height). The
-**guide term** is 28.71 B × guide voxels. Convert bytes in the unit the record's table uses: GiB
-is ÷ 2³⁰, GB is ÷ 10⁹. Every point is at `num_frames` 124. Two reference values: 4 × 124 at
-1344×768 is 511,967,232 voxels, a 13.69 GiB (14.70 GB) guide term, and 1 × 22 at 1344×768 is
-0.61 GiB (0.65 GB).
-Steps:
-1. For every table row, find its job id in `list_jobs`, then run `get_job` and
-   `get_job_workflow` on it.
-2. Check that the rows cover the plan v2 set. All are H3 t2va at `num_frames` 124, at 960×544 and
-   at 1344×768:
-   - 0, 1, 2 and 4 guides of 22 frames;
-   - 1 and 4 guides of 124 frames;
-   - 1 guide of 39 frames, with `"audio": true` and without.
-   The plan names 14 runs. A missing point is acceptable only if the record says why. The near-top
-   frame counts v1 asked for are listed as superseded, with the reason (they filled the card with
-   no guides).
-3. For each row, recompute the projection as `plain projection + guide term`. The plain
-   projection is the H3 t2va template's own formula at that canvas and 124 frames, with no guides.
-   Read `base_gb` and `bytes_per_voxel` from `get_workflow("templates/minimax/video-with-audio")`
-   (or `-768p`), and the formula from the guide's `vram_estimate` formula text.
-4. Recompute the exit test: the guide term alone at 4 × 124 on 1344×768.
-expected:
-- Every cited job id exists in `list_jobs`. Its resolved workflow is H3 t2va with the stated
-  canvas, `num_frames` 124, guide count, guide lengths and `audio` flags.
-- Each row's status matches the table:
-  - a completed row is `completed`, and its output has the stated frame count;
-  - an OOM row is `failed`, with an error naming CUDA out-of-memory.
-- Step 3 reproduces the record's projection column to 0.05 (rounding).
-- The separation holds on every row:
-  - each OOM row projects **above 24 GiB**;
-  - each completed row, censored ones included, projects **below 24 GiB**;
-  - each uncensored row projects **at or above** its measured peak.
-- The record states:
-  - the separating range (27.7–35.9 B in the plan), with 28.71 inside it;
-  - the two deviations: 124 frames instead of near-top lengths, and the peak read from
-    `nvidia-smi memory.used` because the engine records no `max_memory_reserved`;
-  - the censored rows as ≥ 23.55, not as measured peaks;
-  - the 39-frame audio/no-audio delta, and that audio needs no term of its own;
-  - the two-term least-squares fit with its residuals, showing why it was not chosen.
-- The exit verdict is "not met". Step 4 gives about 13.7 GiB, far above the 0.5 GB exit line, so
-  stage B follows.
-It is a **finding** if:
-- a cited job doesn't exist, or its workflow or status doesn't match its row;
-- a planned point is missing with no stated reason;
-- any row breaks the separation at 28.71 B;
-- 28.71 lies outside the range the record states;
-- the record's projection column disagrees with step 3;
-- the exit arithmetic disagrees with the verdict.
-cleanup: none.
 metrics: none.
 
 ### M-F118 — `vram_estimate` takes one guide key, `bytes_per_guide_voxel`: optional, ≥ 0, absent means unchanged, and the dropped keys are refused
@@ -3940,19 +3770,42 @@ cleanup: `delete_workflow` on CS3 and CS1 if saved by name, and `cancel_job` and
 `delete_output(job_id=…)` on any accepted run.
 metrics: none.
 
-### M-F123 — every H3 template still validates at its defaults; t2va/fl2va estimates carry `bytes_per_guide_voxel` equal to their `bytes_per_voxel`, ref2va ones don't
+### M-F123 — every H3 template still validates at its defaults with no VRAM or adapter error; t2va/fl2va estimates carry `bytes_per_guide_voxel` equal to their `bytes_per_voxel`, ref2va ones don't; the Ref2VA templates declare the per-reference term, and the LTX ceiling is untouched
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: every `templates/minimax/*` template.
-The plan's catalog promise, sharing M-F047's sweep. Replaces M-F110, which named the dropped
-`gb_per_guide`.
+Model/pipeline: every `templates/minimax/*` template, every other catalog workflow on
+`MiniMaxAI/MiniMax-H3`, plus LTX-2.5 `templates/ltx2/text-to-video`.
+The plan's catalog promise, in one sweep with the per-reference arm and the adapter arm below.
+Replaces M-F110, which named the dropped `gb_per_guide`.
+Per-reference arm (#479's plan v1): the plan gives `vram_estimate` blocks to `dialogue-short`,
+`music-video` and `composable-references`, which had none, and to `reference-to-video`, which it
+recalibrates. It leaves the T2VA/FL2VA templates as they were. A tighter ceiling that refuses a
+template's own defaults would break the catalog.
+Adapter arm (#870's plan v1): #888 makes the partition check stricter wherever the catalog decides
+an adapter. A template that ships a catalogued LoRA by default on the wrong partition would now
+fail to validate. The plan's item 8 requires every catalog template to stay clean.
 Free: `list_workflows`, `get_workflow` and validate calls only.
-Steps: for each `templates/minimax/*` name `list_workflows` lists under any shape: `get_workflow`,
-then `validate_workflow(name, workspace="regression-model-specific")` with no arguments. Note each
-H3 step's `from_pretrained_arguments.workflow` (`t2va`, `fl2va` or `ref2va`).
+Setup: `use_workspace("regression-model-specific")`.
+Steps:
+1. For each `templates/minimax/*` name `list_workflows` lists under any shape (`list_workflows()`,
+   and collect every one): `get_workflow`, then `validate_workflow(name,
+   workspace="regression-model-specific")` with no arguments. Note each H3 step's
+   `from_pretrained_arguments.workflow` (`t2va`, `fl2va` or `ref2va`).
+2. Per-reference arm: read the `get_workflow` results for `templates/minimax/reference-to-video`,
+   `dialogue-short`, `music-video` and `composable-references`, and for
+   `templates/minimax/video-with-audio` and `templates/minimax/video-with-audio-768p`.
+3. LTX arm: `validate_workflow(name="templates/ltx2/text-to-video", arguments={"num_frames": 900})`
+   and `arguments={"num_frames": 121}`.
+4. Adapter arm: `list_workflows(shape="shot")` and `list_workflows(shape="sequence")`, plus any
+   other shape whose entries use `MiniMaxAI/MiniMax-H3` (`list_workflows(include_models=true)`
+   names each entry's model). Collect every `templates/…` entry on H3. `validate_workflow(name=…)`
+   each one with no arguments, or only with the required input-media arguments it names (step 1's
+   no-argument result serves for an entry already validated there). Use
+   `asset:qa-cast/priya-portrait.jpg` for an image if this server has it; otherwise use any image
+   asset uploaded for the case.
 expected:
 - Every H3 template (one with a MiniMax-H3 step) is `valid: true` at its defaults, with no VRAM
   error. That includes
-  `chained-segments`.
+  `chained-segments`. Existing unrelated warnings, such as no seed, are fine.
 - Every template with a `vram_estimate` whose H3 step is `t2va` or `fl2va` has
   `bytes_per_guide_voxel`, equal to that estimate's `bytes_per_voxel` (28.71 today). That includes
   `chained-segments`.
@@ -3961,11 +3814,32 @@ expected:
   refused there.
 - Every template uses no guides at its defaults, so each projects exactly what it did before. Each
   default-argument projection that M-F043–M-F054 pin is unchanged.
+- Per-reference arm (step 2): `reference-to-video`, `dialogue-short`, `music-video` and
+  `composable-references` all four carry a `vram_estimate` with a `gb_per_reference` (1.0 at the
+  plan v1 calibration) and `voxel_variables` covering width, height and num_frames.
+  `composable-references` counts its `motion` video reference like any other.
+- Per-reference arm (step 2), `video-with-audio` and `video-with-audio-768p`: the T2VA templates'
+  `vram_estimate` is unchanged from before #479. Per M-F026 that means no `gb_per_reference` is
+  required, and the 768p breakpoint is between 277 and 294 frames.
+- LTX arm (step 3): 900 frames is still `valid: false`, with the two co-reported errors M-F022
+  pins. 121 is still `valid: true`.
+- Adapter arm (step 4): every template returns no error whose path ends in `weight_name` or
+  `lora_weight_name`, and no message naming `transformer`/`transformer_ref` or a catalog entry as
+  a refusal.
+- Adapter arm: a template whose default `loras` entry is catalogued for its own workflow (e.g. a
+  turbo on t2va/fl2va) carries no "names neither" warning for it.
+- Adapter arm: errors unrelated to adapters (a missing input, a hardware gate on this server) are
+  recorded but are not this arm's.
 It is a **finding** if a template no longer validates at its defaults, if a t2va/fl2va estimate
 lacks the key or differs from its `bytes_per_voxel`, if a ref2va estimate has it, or if a dropped
-key appears.
-cleanup: none.
+key appears; if one of the four per-reference templates lacks the per-reference term, or if the
+T2VA or LTX ceilings moved; or if any template is refused on its default adapter.
+cleanup: delete any asset uploaded for step 4; otherwise none.
 metrics: none.
+
+absorbs: M-F047, M-F147 (merged 2026-11-26, suite review)
+- M-F047: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
+- M-F147: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F124 — the guide and the minimax-h3 skill state the guide term and that the 4-guide limit is checked against the card
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
@@ -4080,27 +3954,50 @@ source: tester, verified in #789, model `claude-opus-5-5` via provider `anthropi
 mini-ai (mps) `develop @ f7b15455`.
 metrics: none.
 
-### M-F128 — H3 SDNQ components are cached on a miss and loaded from cache on the next run, with the same output
+### M-F128 — on lem the H3 quantized cache is on and every `quantized_cache` event is well-formed; SDNQ components are cached on a miss and loaded from cache on the next run, with the same output; a skipped save is never a failed job
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
-Runs only with the cache on (M-F140's opt-in check passed this pass); otherwise skip as environment, not failure.
+Runs on lem only (`get_server_info` → `device: "cuda"`). Skip it on another target, as not a failure.
+Runs only with the cache on: the opt-in arm on run 1 below decides. If that arm finds the cache off, stop
+after run 1 and skip the rest as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Its SDNQ components are
 `transformer`, `text_encoder` and `vae`.
 #815 caches each SDNQ-quantized component on disk under the cache root (`DW_QUANTIZED_CACHE_DIR`, default `$HF_HOME/dw-quantized`). Every load emits a
 `quantized_cache` job event, `{component, result: hit|miss|saved|skipped, reason?, seconds, bytes}`. A
 miss quantizes and then saves the component, and a later identical load is a hit. The cache stores the
 component before pruning, LoRA and offload, so the output must not change.
+Plan v4 makes the cache opt-in, and lem opts in through its `.env` when stage A deploys. Every other on-lem
+cache case (M-F129–M-F133, M-F135–M-F137) assumes the cache is on. This case's run 1 checks that first, so a
+missing opt-in shows up as one environment report instead of eight engine failures. It also pins the event
+vocabulary v4 defines. The result is `hit`, `miss`, `saved` or `skipped`. The reasons are `low_disk`,
+`unpinned_snapshot`, `local_path`, `save_failed: <errno>`, `unsupported` and
+`already saved by another worker`.
 Short run, used here and by M-F129–M-F131 and M-F135: `arguments={"width": 480, "height": 288,
 "num_frames": 124, "num_inference_steps": 4, "seed": 42}`.
 Steps:
 1. `clear_memory`. Then `run_workflow("templates/minimax/video-with-audio", arguments=<short run>,
    acknowledged_cost=true, wait_seconds=55)`, and `wait_for_job` until it's done (run 1).
-2. `get_job_events(job_id=<run 1>, kinds=["quantized_cache"])`. Note the loading-phase duration: the
-   `at` of the phase event after `loading`, minus the `at` of the `loading` phase event.
+2. `get_job_events(job_id=<run 1>, kinds=["quantized_cache"])`. Apply the opt-in arm now. Note the
+   loading-phase duration: the `at` of the phase event after `loading`, minus the `at` of the `loading`
+   phase event.
 3. `clear_memory`. Then run the same call again (run 2) and read the same events and loading duration.
+   (Run 2 is also the rerun the skip arm needs when run 1 shows any `skipped` for a component.)
 4. `clear_memory`. Then run the same call once more (run 3, the determinism control).
 5. Compare outputs with `get_output_frames` (frames 0, 62 and 123) and `get_output_audio`. Compare
    run 2 with run 3 (control: hit vs hit), then run 1 with run 2.
 expected:
+- **Opt-in arm:** run 1 has at least one `quantized_cache` event for each of `transformer`, `text_encoder`
+  and `vae`. If it has **none**, lem isn't opted in. Report that as an environment problem on #815 or #826
+  for Don (lem's `.env` lacks `DW_QUANTIZED_CACHE=1`), not as an engine regression. Skip the rest of this
+  case, M-F129–M-F133 and M-F135–M-F137 for this pass. Only a component of the three having no event,
+  while the others do, is a finding.
+- **Shape arm (every run):** every event has `component`, `result` and `seconds` (≥ 0). `result` is one of
+  the four values. A `saved` or `hit` event has `bytes` > 0. A `skipped` event has a non-empty `reason`
+  from the list above, where `save_failed:` is followed by an errno name or number.
+- **Order arm (every run):** for each component, the events are exactly one of these:
+  - `hit`;
+  - `miss`, then `saved`;
+  - `miss`, then `skipped`.
+  Never `hit` together with `saved`.
 - Run 1 on a server that has never loaded this key:
   - each of the three components has a `miss` event, then a `saved` event;
   - the `saved` event has `bytes` > 0 and `seconds` ≥ 0.
@@ -4117,17 +4014,35 @@ expected:
   In that case, any visible difference between run 1 and run 2 is a finding. If the control pair itself
   differs, record that, and judge run 1 against run 2 only for "same scene, same composition".
 - No job fails because of the cache. Not even an error-level event names it.
-- If a component's run-1 events are `miss` then `skipped` with `reason: low_disk` (see M-F140), report its miss→saved expectation, and the run-2 hit and loading comparison that depend on it, as blocked by environment, not failed.
+- **Skip arm — a skip never fails a job.** The job succeeds whatever the events say.
+- **Skip arm — the stock H3 template on lem never skips for `unpinned_snapshot` or `local_path`.** Its
+  components come from hub repos whose snapshots are complete on lem, since earlier H3 runs used them.
+  Plan v4 names this as the risk it would revise the rule for.
+- **Skip arm — `low_disk` is environment, not an engine fault.** lem's `$HF_HOME` volume is shared with
+  model downloads and has been full before. Record a `low_disk` skip on the issue as an environment note.
+  In run 2 after it, that component shows `miss` again (or `miss` then `saved` if space was freed), never
+  `hit`. A skipped save leaves no entry behind, and no half-written one either. The miss→saved expectation
+  above can't be met on a pass where `low_disk` fires: if a component's run-1 events are `miss` then
+  `skipped` with `reason: low_disk`, report its miss→saved expectation, and the run-2 hit and loading
+  comparison that depend on it, as blocked by environment, not failed.
 It is a **finding** if:
 - run 2 shows a `miss` for a component that run 1 saved;
 - any `quantized_cache` event lacks `component`, `result` or `seconds`;
 - a `saved` event lacks `bytes`;
-- a hit run's output differs from a miss run's on a deterministic card.
+- a hit run's output differs from a miss run's on a deterministic card;
+- an event lacks a field, has a result outside the four, or is a `skipped` with an empty or unlisted reason;
+- a component's events are out of the orders above;
+- a job fails or has an error-level event naming the cache;
+- the stock template skips with `unpinned_snapshot` or `local_path`;
+- a component that was skipped in run 1 shows `hit` in run 2.
 On a later pass, where run 1 already hits, the miss→saved half is still covered by M-F129's first run
 of its saved copy (which is cold until it has run once).
-cleanup: `delete_output(job_id=…)` on all three jobs. A consumer can't remove cache entries, and they are
-meant to persist.
+cleanup: `delete_output(job_id=…)` on all three jobs (on each job that ran, if the opt-in arm stopped the
+case early). A consumer can't remove cache entries, and they are meant to persist.
 metrics: `loading_seconds` per run, with condition `miss` or `hit` (the loading-phase duration from step 2).
+
+absorbs: M-F140 (merged 2026-11-26, suite review)
+- M-F140: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
 
 ### M-F129 — changing only the H3 text encoder's `weights_dtype` misses that component and hits the other two
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
@@ -4283,46 +4198,88 @@ cleanup: `delete_output(job_id=…)` on all three jobs, then `delete_workflow("m
 leaves one small vae entry behind, and a consumer can't remove it.
 metrics: none.
 
-### M-F134 — on mps, an SDNQ workflow either caches and works or reports `skipped` with a reason, and never fails
+### M-F134 — on mps, an SDNQ workflow either caches and works or reports `skipped` with a reason, and never fails; on a server that hasn't opted in, it runs as before and emits no `quantized_cache` events
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on mps.
-Runs only on the mini-ai (mps) target: `get_server_info` → `device: "mps"`. Skip it on cuda, as not a
-failure.
-Runs only if mini-ai is opted in. If its run shows no `quantized_cache` events, run M-F139 instead.
+Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on the
+server under test (on mps for the on arm).
+Plan v4 makes the cache **opt-in**: `DW_QUANTIZED_CACHE=1` in the server's env turns it on, and anything else
+or unset means off. With it off, no reads, no writes and no events. A consumer can't see the env var, so a
+server's run shows which mode it's in: some `quantized_cache` events means on, none means off. This case
+has both arms, and run 1's events pick which one applies: the **on arm** on mps, and the **off arm**. M-F140
+is the on arm on lem.
+Where it runs:
+- On arm: only on the mini-ai (mps) target: `get_server_info` → `device: "mps"`, and only if mini-ai is
+  opted in. Skip it on cuda, as not a failure. If its run shows no `quantized_cache` events, run the off arm
+  instead.
+- Off arm: the mini-ai (mps) target while it isn't opted in, or any other server not opted in. On lem,
+  which opts in, skip this arm as not a failure. If mini-ai's first run below shows events, mini-ai has been
+  opted in: record that, skip the rest of this arm, and run the on arm instead.
 Steps:
-1. Find the template. Use `list_workflows(include_models=true)`, then `get_workflow` on candidates, and
-   pick the cheapest one whose `load_components.quantization_config` names `sdnq.SDNQConfig` and whose
-   `validate_workflow` is clean on this server. Record which template you used.
+1. `get_server_info`, and record `device`. Find the template. Use `list_workflows(include_models=true)`,
+   then `get_workflow` on candidates, and pick the cheapest one whose
+   `load_components.quantization_config` names `sdnq.SDNQConfig` and whose `validate_workflow` is clean on
+   this server. Record which template you used.
 2. `clear_memory`, then run it at its smallest valid size with `seed: 42`, `acknowledged_cost=true` and
-   `wait_seconds=55`, and `wait_for_job`. Read the `quantized_cache` events.
-3. `clear_memory`, then run it again and read the events.
-expected: both jobs succeed, and each SDNQ component follows one of two paths:
-- **cached:** first run `miss` then `saved` (`bytes` > 0), or `hit` once cached; second run `hit`. The two
-  outputs look the same.
-- **skipped:** `skipped` with a non-empty `reason` on both runs.
+   `wait_seconds=55`, and `wait_for_job` (run 1). Read the `quantized_cache` events:
+   `get_job_events(job_id=…, kinds=["quantized_cache"])`.
+3. `clear_memory`, then run it again with the same arguments (run 2) and read the same events.
+expected:
+- **On arm** (run 1 has `quantized_cache` events, on mps): both jobs succeed, and each SDNQ component
+  follows one of two paths:
+  - **cached:** first run `miss` then `saved` (`bytes` > 0), or `hit` once cached; second run `hit`. The
+    two outputs look the same.
+  - **skipped:** `skipped` with a non-empty `reason` on both runs.
+- **Off arm** (run 1 has no `quantized_cache` events):
+  - Both jobs succeed.
+  - Both filtered event pages are empty: no `hit`, `miss`, `saved` or `skipped`. This includes no
+    `skipped` with `unsupported`, since an off cache doesn't announce anything on any device.
 It is a **finding** if:
-- a job fails because of the cache;
-- a `skipped` event has no reason;
-- the second run of a cached component misses.
+- on arm: a job fails because of the cache;
+- on arm: a `skipped` event has no reason;
+- on arm: the second run of a cached component misses;
+- off arm: either job fails;
+- off arm: one run has events and the other has none (the mode flipped between runs with no restart);
+- off arm: run 1 has no events but run 2 has a `hit` (something was written while the cache was off).
 cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
-### M-F135 — LTX-2.5 SDNQ components are cached on a miss and hit on the rerun, with the same video and audio
+absorbs: M-F139 (merged 2026-11-26, suite review)
+- M-F139: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
+
+### M-F135 — LTX-2.5 SDNQ components are cached on a miss and hit on the rerun, with the same video and audio; the events are well-formed, a skipped save never fails the job, and on a hit the transformer is resident on cuda with no OOM and no per-step slowdown
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass); otherwise skip as environment, not failure.
+The event arm runs on lem only.
 Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`), the per-component (non-modular)
 load path. Its SDNQ components are the ones whose `quantization_config` names `sdnq.SDNQConfig` in
 `get_workflow`, at least `transformer` (`transformer_weights_dtype`, default `"{uint4}"`) and `text_encoder`
 (`text_encoder_weights_dtype`, default `"{int8}"`). Record the full list.
-Short run, also used by M-F136: `arguments={"width": 512, "height": 288, "num_frames": 41, "seed": 42}`.
+Event arm background: stage B brings v4's snapshot rule and free-space floor to the per-component path. On
+lem, LTX-2.5's `refs/main` once pointed at a re-sharded commit whose files weren't on disk. Under v4, an
+incomplete snapshot means **no lookup**. The load downloads or fails as it would without the cache. After a
+miss, the save takes the commit from the loaded object, and if that can't be pinned it skips with
+`unpinned_snapshot`. The cache must never turn an incomplete snapshot into a failed job, and never a wrong
+hit.
+Residency arm background: the template's transformer uses `return_device: "cuda"`, and on a hit the cache
+must place the component on that device itself. A hit that left the transformer on cpu would show as slower
+denoise steps or as an OOM when it moves. The residency arm needs this case's run-1 save not blocked by
+`low_disk`; otherwise skip that arm as environment, not failure.
+Short run: `arguments={"width": 512, "height": 288, "num_frames": 41, "seed": 42}`.
 Steps:
 1. `clear_memory`. Then `run_workflow("templates/ltx2/text-to-video", arguments=<short run>,
-   acknowledged_cost=true, wait_seconds=55)` and `wait_for_job` (run 1). Read the `quantized_cache` events
-   and the loading-phase duration (as in M-F128).
+   acknowledged_cost=true, wait_seconds=55)` and `wait_for_job` (run 1). If the job starts a download
+   (`plan.downloads_required` in `validate_workflow` first, or download events), let it finish and record
+   it. Read the `quantized_cache` events (`get_job_events(job_id=…, kinds=["quantized_cache"])`) and the
+   loading-phase duration (as in M-F128).
 2. `clear_memory`, then run 2 with the same arguments. Read the same things.
 3. `clear_memory`, then run 3 with the same arguments (determinism control).
 4. Compare run 2 with run 3, then run 1 with run 2, using `get_output_frames` (frames 0, 20 and 40) and
    `get_output_audio`.
+5. Residency arm: use run 1 (miss, if this is the first pass) and run 2 (hit), or any LTX miss/hit pair at
+   the same arguments. For each run, read `get_job_events` without a `kinds` filter:
+   - the denoise-step events, to compute the mean interval between consecutive steps;
+   - the `memory` events;
+   - any `warning` or `log` events that mention device placement or offload.
 expected:
 - Run 1 (first pass): each SDNQ component has `miss`, then `saved` with `bytes` > 0. On a later pass it
   shows `hit`, which also shows that entries survived the restarts since. A miss then is a finding unless
@@ -4331,37 +4288,42 @@ expected:
 - Run 2's loading duration is shorter than run 1's when run 1 missed. Report both, with the #825 baseline.
 - On a card where runs 2 and 3 match, run 1 and run 2 match in both video frames and audio.
 - If a component's run-1 events are `miss` then `skipped` with `reason: low_disk` (see M-F140), report its miss→saved expectation, and the run-2 hit and loading comparison that depend on it, as blocked by environment, not failed.
+- Event arm (runs 1 and 2):
+  - Both jobs succeed.
+  - Events follow M-F140's shape and order rules for each SDNQ component of the template (the list
+    recorded above). No non-SDNQ component has an event.
+  - Run 1 is per component `miss` then `saved`, or `hit`. Run 2 is `hit` for every component run 1 saved or
+    hit.
+  - If run 1 has `miss` then `skipped` with `unpinned_snapshot` for a component, run 2 shows `miss` for it
+    again, never `hit`. A second run in a row with `unpinned_snapshot` on a complete local snapshot is a
+    finding against stage B's acceptance B1–B2 (the cache never takes on LTX). Note it with the download
+    state from step 1.
+  - `low_disk` is handled as in M-F140: environment, never a failed job, and never followed by a `hit`.
+- Residency arm (step 5):
+  - Both jobs succeed, with no OOM error or warning.
+  - The hit run's mean denoise-step interval is no more than 1.2× the miss run's.
+  - The hit run's memory events show the transformer's weights on the GPU during denoising, at peak VRAM
+    comparable to the miss run's.
+  - If no miss run exists on this pass (because entries are already cached), compare against the step
+    interval recorded on the first pass, or the #825 baseline.
 It is a **finding** if:
 - run 2 misses a component that run 1 saved;
 - a non-SDNQ LTX component emits a `quantized_cache` event;
-- the hit output differs from the miss output on a deterministic card.
+- the hit output differs from the miss output on a deterministic card;
+- event arm: either job fails because of the cache, or has an error-level event naming it;
+- event arm: an event breaks M-F140's shape or order rules;
+- event arm: a component skipped in run 1 hits in run 2;
+- event arm: `unpinned_snapshot` repeats on run 2 after run 1 completed every download;
+- residency arm: the hit run OOMs;
+- residency arm: its step interval is more than 1.2× the miss run's;
+- residency arm: an event shows the transformer being moved from cpu on every step.
 cleanup: `delete_output(job_id=…)` on all three jobs.
-metrics: `loading_seconds` per run, with condition `miss` or `hit`.
+metrics: `loading_seconds` per run, with condition `miss` or `hit`. Residency arm: `step_seconds_mean`,
+with condition `miss` or `hit`.
 
-### M-F136 — on an LTX-2.5 cache hit the transformer is resident on cuda, with no OOM and no per-step slowdown
-source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
-Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
-Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`). Its transformer uses
-`return_device: "cuda"`, and on a hit the cache must place the component on that device itself. A hit
-that left the transformer on cpu would show as slower denoise steps or as an OOM when it moves.
-Steps: use M-F135's run 1 (miss, if this is the first pass) and run 2 (hit), or any LTX miss/hit pair at
-the same arguments. For each run, read `get_job_events` without a `kinds` filter:
-- the denoise-step events, to compute the mean interval between consecutive steps;
-- the `memory` events;
-- any `warning` or `log` events that mention device placement or offload.
-expected:
-- Both jobs succeed, with no OOM error or warning.
-- The hit run's mean denoise-step interval is no more than 1.2× the miss run's.
-- The hit run's memory events show the transformer's weights on the GPU during denoising, at peak VRAM
-  comparable to the miss run's.
-If no miss run exists on this pass (because entries are already cached), compare against the step
-interval recorded on the first pass, or the #825 baseline.
-It is a **finding** if:
-- the hit run OOMs;
-- its step interval is more than 1.2× the miss run's;
-- an event shows the transformer being moved from cpu on every step.
-cleanup: none beyond M-F135's.
-metrics: `step_seconds_mean`, with condition `miss` or `hit`.
+absorbs: M-F136, M-F141 (merged 2026-11-26, suite review)
+- M-F136: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
+- M-F141: tester, spec for #827 from #815's plan v4 (claude-opus-5-5 via anthropic)
 
 ### M-F137 — after LTX-2.5 runs, the H3 short run still hits all three components
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
@@ -4405,116 +4367,7 @@ Whisper or demucs build), say so rather than calling it a regression.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
-### M-F139 — on a server that hasn't opted in to the quantized cache, an SDNQ workflow runs as before and emits no `quantized_cache` events
-source: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on the
-server under test. M-F134 already picks it this way, so use the same template.
-Plan v4 makes the cache **opt-in**: `DW_QUANTIZED_CACHE=1` in the server's env turns it on, and anything else
-or unset means off. With it off, no reads, no writes and no events. A consumer can't see the env var, so a
-server's run shows which mode it's in: some `quantized_cache` events means on, none means off. This case is
-the off arm. M-F134 is the on arm on mps, and M-F140 is the on arm on lem.
-Where it runs: the mini-ai (mps) target while it isn't opted in, or any other server not opted in. On lem,
-which opts in, skip this case as not a failure. If mini-ai's first run below shows events, mini-ai has been
-opted in: record that, skip the rest of this case, and run M-F134 instead.
-Steps:
-1. `get_server_info`, and record `device`. Pick the template as in M-F134's step 1 and record which one.
-2. `clear_memory`. Run it at its smallest valid size with `seed: 42`, `acknowledged_cost=true` and
-   `wait_seconds=55`, then `wait_for_job` (run 1). Call `get_job_events(job_id=…, kinds=["quantized_cache"])`.
-3. `clear_memory`, then run it again with the same arguments (run 2). Read the same events.
-expected:
-- Both jobs succeed.
-- Both filtered event pages are empty: no `hit`, `miss`, `saved` or `skipped`. This includes no
-  `skipped` with `unsupported`, since an off cache doesn't announce anything on any device.
-It is a **finding** if:
-- either job fails;
-- one run has events and the other has none (the mode flipped between runs with no restart);
-- run 1 has no events but run 2 has a `hit` (something was written while the cache was off).
-cleanup: `delete_output(job_id=…)` on both jobs.
-metrics: none.
-
-### M-F140 — on lem the H3 quantized cache is on, every `quantized_cache` event is well-formed, and a skipped save is never a failed job
-source: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`), with M-F128's short run:
-`arguments={"width": 480, "height": 288, "num_frames": 124, "num_inference_steps": 4, "seed": 42}`.
-Runs on lem only (`get_server_info` → `device: "cuda"`). Skip it on another target, as not a failure.
-Plan v4 makes the cache opt-in, and lem opts in through its `.env` when stage A deploys. Every on-lem
-cache case (M-F128–M-F133, M-F135–M-F137) assumes the cache is on. This case checks that first, so a
-missing opt-in shows up as one environment report instead of eight engine failures. It also pins the event
-vocabulary v4 defines. The result is `hit`, `miss`, `saved` or `skipped`. The reasons are `low_disk`,
-`unpinned_snapshot`, `local_path`, `save_failed: <errno>`, `unsupported` and
-`already saved by another worker`.
-Steps:
-1. `clear_memory`. Run the short run with `acknowledged_cost=true` and `wait_seconds=55`, then
-   `wait_for_job`. Call `get_job_events(job_id=…, kinds=["quantized_cache"])`.
-2. If step 1 shows any `skipped` for a component, `clear_memory` and run it once more. Read the same events.
-expected:
-- **Opt-in:** step 1 has at least one `quantized_cache` event for each of `transformer`, `text_encoder` and
-  `vae`. If it has **none**, lem isn't opted in. Report that as an environment problem on #815 or #826 for
-  Don (lem's `.env` lacks `DW_QUANTIZED_CACHE=1`), not as an engine regression. Skip M-F128–M-F133 and
-  M-F135–M-F137 for this pass. Only a component of the three having no event, while the others do, is
-  a finding.
-- **Shape:** every event has `component`, `result` and `seconds` (≥ 0). `result` is one of the four values.
-  A `saved` or `hit` event has `bytes` > 0. A `skipped` event has a non-empty `reason` from the list above,
-  where `save_failed:` is followed by an errno name or number.
-- **Order:** for each component, the events are exactly one of these:
-  - `hit`;
-  - `miss`, then `saved`;
-  - `miss`, then `skipped`.
-  Never `hit` together with `saved`.
-- **A skip never fails a job.** The job succeeds whatever the events say.
-- **The stock H3 template on lem never skips for `unpinned_snapshot` or `local_path`.** Its components come
-  from hub repos whose snapshots are complete on lem, since earlier H3 runs used them. Plan v4 names this
-  as the risk it would revise the rule for.
-- **`low_disk` is environment, not an engine fault.** lem's `$HF_HOME` volume is shared with model
-  downloads and has been full before. Record a `low_disk` skip on the issue as an environment note. If
-  step 2 ran after it, that component shows `miss` again (or `miss` then `saved` if space was freed),
-  never `hit`. A skipped save leaves no entry behind, and no half-written one either. M-F128's miss→saved
-  expectation can't be met on a pass where `low_disk` fires, so report M-F128 as blocked by it, not failed.
-It is a **finding** if:
-- an event lacks a field, has a result outside the four, or is a `skipped` with an empty or unlisted reason;
-- a component's events are out of the orders above;
-- the job fails or has an error-level event naming the cache;
-- the stock template skips with `unpinned_snapshot` or `local_path`;
-- a component that was skipped in step 1 shows `hit` in step 2.
-cleanup: `delete_output(job_id=…)` on each job.
-metrics: none.
-
-### M-F141 — LTX-2.5's per-component path emits well-formed `quantized_cache` events, and a skipped save never fails the job
-source: tester, spec for #827 from #815's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`), with M-F135's short run:
-`arguments={"width": 512, "height": 288, "num_frames": 41, "seed": 42}`. Runs on lem only, with the cache
-on (M-F140's opt-in check passed this pass).
-Stage B brings v4's snapshot rule and free-space floor to the per-component path. On lem, LTX-2.5's
-`refs/main` once pointed at a re-sharded commit whose files weren't on disk. Under v4, an incomplete
-snapshot means **no lookup**. The load downloads or fails as it would without the cache. After a miss, the
-save takes the commit from the loaded object, and if that can't be pinned it skips with
-`unpinned_snapshot`. The cache must never turn an incomplete snapshot into a failed job, and never a wrong
-hit.
-Steps:
-1. `clear_memory`. Run the short run with `acknowledged_cost=true` and `wait_seconds=55`, then `wait_for_job`.
-   If the job starts a download (`plan.downloads_required` in `validate_workflow` first, or download
-   events), let it finish and record it. Call `get_job_events(job_id=…, kinds=["quantized_cache"])`.
-2. `clear_memory`, then run it again and read the same events.
-expected:
-- Both jobs succeed.
-- Events follow M-F140's shape and order rules for each SDNQ component of the template (the list M-F135
-  records). No non-SDNQ component has an event.
-- Run 1 is per component `miss` then `saved`, or `hit`. Run 2 is `hit` for every component run 1 saved or
-  hit.
-- If run 1 has `miss` then `skipped` with `unpinned_snapshot` for a component, run 2 shows `miss` for it
-  again, never `hit`. A second run in a row with `unpinned_snapshot` on a complete local snapshot is a
-  finding against stage B's acceptance B1–B2 (the cache never takes on LTX). Note it with the download
-  state from step 1.
-- `low_disk` is handled as in M-F140: environment, never a failed job, and never followed by a `hit`.
-It is a **finding** if:
-- either job fails because of the cache, or has an error-level event naming it;
-- an event breaks M-F140's shape or order rules;
-- a component skipped in run 1 hits in run 2;
-- `unpinned_snapshot` repeats on run 2 after run 1 completed every download.
-cleanup: `delete_output(job_id=…)` on both jobs.
-metrics: none.
-
-### M-F142 — H3: a catalogued `transformer` adapter on a `ref2va` step is refused at validate and at `run_workflow`, naming the catalog entry
+### M-F142 — H3: a catalogued `transformer` adapter on a `ref2va` step is refused at validate and at `run_workflow`, naming the catalog entry; on `t2va` and `fl2va` the same adapter is clean, with no "names neither" warning
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 (`MiniMaxAI/MiniMax-H3`) partition check on `loras`, Realism-People LoRA
 (`fal/MiniMax-H3-Realism-People-LoRA` / `h3-realism-people-t2v-i2v-r2v.safetensors`).
@@ -4523,15 +4376,26 @@ got a "names neither" warning, so Realism, a `transformer` adapter, validated on
 without any error. #888 consults the LoRA catalog first, matching on `model_name` + `weight_name`. An
 entry whose `workflow` is all in {`t2va`, `fl2va`} means `transformer`, and an entry of exactly `ref2va` means
 `transformer_ref`. After #888's catalog edit, Realism's entry is `["t2va","fl2va"]`, so on `ref2va` it is now
-an error. Validation only: this case spends no GPU time.
+an error. Before #888, Realism also warned "names neither 'ref2v' nor 'fl2v'" on every workflow. Now that the
+catalog decides it, the workflows its entry lists must validate with no adapter warning at all (the positive
+side, probes (d)–(g)). Validation only: this case spends no GPU time.
 Setup: `use_workspace("regression-model-specific")` (`create_workspace` it first if missing).
-**The H3 carrier** (M-F143 to M-F145 reuse it, with `<WF>` and `<LORAS>` filled in):
+**The H3 carrier** (probes (d)–(e) and M-F144 to M-F145 reuse it, with `<WF>` and `<LORAS>` filled in):
 `{"id":"probe","steps":[{"name":"base","pipeline":{"configuration":{"component_type":"ModularPipeline"},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":"<WF>"},"loras":<LORAS>,"arguments":{"prompt":"a fox","num_frames":124,"width":960,"height":544,"num_inference_steps":9,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":"video/mp4","fps":24}}]}`
-Probes:
+Probes, refused side:
 (a) Inline: `validate_workflow(workflow=<carrier, WF=ref2va, LORAS=[{"model_name":"fal/MiniMax-H3-Realism-People-LoRA","weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"}]>)`.
 (b) Through variables: `validate_workflow(name="templates/minimax/reference-to-video", arguments={"lora_model_name":"fal/MiniMax-H3-Realism-People-LoRA","lora_weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"})`.
 (c) Admission: note `list_jobs` (newest first), then call `run_workflow` with (b)'s name and arguments plus
 `acknowledged_cost=true`, then `list_jobs` again.
+Probes, clean side (`LORAS` is (a)'s Realism entry):
+(d) The carrier, `WF=t2va`.
+(e) The carrier, `WF=fl2va`. The inline carrier needs no image to validate. If this server's validate
+    asks for one, add the input the error names, using `asset:qa-cast/priya-portrait.jpg` or any image asset
+    in the workspace.
+(f) `validate_workflow(name="templates/minimax/video-with-audio", arguments={"lora_model_name":"fal/MiniMax-H3-Realism-People-LoRA","lora_weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"})` (t2va).
+(g) `validate_workflow(name="templates/minimax/image-to-video", arguments={…the same two…})` (fl2va). Add the
+    image argument the template declares as required. If no image asset exists on this server, `upload_asset`
+    any small JPEG first and delete it in cleanup.
 expected:
 - (a) `valid: false`. An error is at `steps[0].pipeline.loras[0].weight_name`, and its message:
   - names the `transformer` partition (the one the adapter is trained against) and `transformer_ref` or
@@ -4545,50 +4409,44 @@ expected:
   internal step path).
 - (c) `run_workflow` returns an error or refusal carrying (b)'s error. No `job_id` comes back, and `list_jobs`
   shows no new job.
+- (d) to (g) are each `valid: true`, with no error.
+- (d) to (g): no warning mentions `weight_name`, `lora_weight_name`, "names neither", `transformer` or
+  `transformer_ref`. Unrelated warnings, such as the carrier's no-seed warning, are fine.
 It is a **finding** if:
-- any probe validates, or reports only a warning;
+- any of (a)–(c) validates, or reports only a warning;
 - the message doesn't name the catalog entry, so a reader can't tell the refusal came from the catalog rather
   than the file name;
 - (b)'s path is the template's step path rather than `arguments.lora_weight_name`;
-- (c) queues a job.
-cleanup: none, unless (c) queued a job: then `cancel_job` it and `delete_output(job_id=…)`, and file the finding.
+- (c) queues a job;
+- any of (d)–(g) errors on the adapter, or still carries the "names neither" warning for Realism.
+cleanup: delete any asset uploaded for (g). Otherwise none, unless (c) queued a job: then `cancel_job` it and
+`delete_output(job_id=…)`, and file the finding.
 metrics: none.
 
-### M-F143 — H3: the same catalogued adapter on `t2va` and `fl2va` is clean, with no "names neither" warning
-source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3 partition check, Realism-People LoRA. This is the positive side of M-F142.
-Before #888, Realism warned "names neither 'ref2v' nor 'fl2v'" on every workflow. Now that the catalog
-decides it, the workflows its entry lists must validate with no adapter warning at all. Validation only.
-Setup: `use_workspace("regression-model-specific")`. `LORAS` below is M-F142's Realism entry.
-Probes:
-(a) M-F142's carrier, `WF=t2va`.
-(b) M-F142's carrier, `WF=fl2va`. The inline carrier needs no image to validate. If this server's validate
-    asks for one, add the input the error names, using `asset:qa-cast/priya-portrait.jpg` or any image asset
-    in the workspace.
-(c) `validate_workflow(name="templates/minimax/video-with-audio", arguments={"lora_model_name":"fal/MiniMax-H3-Realism-People-LoRA","lora_weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"})` (t2va).
-(d) `validate_workflow(name="templates/minimax/image-to-video", arguments={…the same two…})` (fl2va). Add the
-    image argument the template declares as required. If no image asset exists on this server, `upload_asset`
-    any small JPEG first and delete it in cleanup.
-expected:
-- (a) to (d) are each `valid: true`, with no error.
-- No warning mentions `weight_name`, `lora_weight_name`, "names neither", `transformer` or `transformer_ref`.
-  Unrelated warnings, such as the carrier's no-seed warning, are fine.
-It is a **finding** if any probe errors on the adapter, or still carries the "names neither" warning for
-Realism.
-cleanup: delete any asset uploaded for (d).
-metrics: none.
+absorbs: M-F143 (merged 2026-11-26, suite review)
+- M-F143: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F144 — H3: the filename rule still decides any adapter the catalog doesn't (uncatalogued, null `workflow`, other repo), and a revision mismatch still matches
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 partition check, fallback paths.
 #888 adds the catalog lookup ahead of the filename rule and leaves the rule unchanged. Each probe below is one
 way a lookup can find nothing, or find something that decides nothing. Each must behave exactly as before
-#888, except (f), where the plan matches on repo + file and ignores the revision (Q2). Validation only. `C(WF, LORAS)`
-is M-F142's carrier.
+#888, except (f), where the plan matches on repo + file and ignores the revision (Q2). Validation only: this
+case spends no GPU time. `C(WF, LORAS)` is M-F142's carrier.
 Setup: `use_workspace("regression-model-specific")`. First confirm with `list_loras(model="MiniMaxAI/MiniMax-H3")`
 that no entry has `weight_name` `qa-uncatalogued-adapter.safetensors` or `model_name` `qa-nonexistent/none`.
 Then confirm `minimax-h3/taomate` still has `"workflow": null` (if it doesn't, pick any H3 entry whose
 `workflow` is null and whose `weight_name` carries neither token, and say so in the report).
+Setup for (g): `H` = `[{"model_name":"videorebirth/hyperflow","weight_name":"minimax_h3_hyperflow_8step_v1.0.safetensors"}]`
+(`minimax-h3/hyperflow`, `status: rejected`, `workflow: null`, a file name carrying neither `ref2v` nor `fl2v`).
+In the same `list_loras(model="MiniMaxAI/MiniMax-H3")` reply, confirm `minimax-h3/hyperflow` still has the
+`workflow`, `model_name` and `weight_name` above. If its `workflow` now names a partition, (g) no longer probes
+what it says: record that and skip (g) rather than failing. If a shipped entry has gained a `workflow` list
+naming both `t2va`/`fl2va` and `ref2va`, also run (g)'s probes with that entry's file, and expect the same.
+(g) stands in for a mixed `workflow: ["t2va","ref2va"]` entry, which M-F146 (retired) probed: a list naming both
+partitions decides nothing, so the filename rule runs. No shipped entry carries a mixed list, and the catalog
+is read-only to MCP, so (g) probes the same path with a shipped entry whose `workflow` is `null`. Like a mixed
+list, it decides nothing.
 Probes:
 (a) The fl2v turbo on ref2va: `C(ref2va, [{"model_name":"lightx2v/Minimax-h3-Turbo","weight_name":"minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors"}])`.
 (b) The ref2v turbo on fl2va: `C(fl2va, [{"model_name":"lightx2v/Minimax-h3-Turbo","weight_name":"minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors"}])`.
@@ -4598,6 +4456,7 @@ Probes:
 (e) Realism's file under another repo on ref2va: `C(ref2va, [{"model_name":"qa-nonexistent/none","weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"}])`.
 (f) Realism with a revision that isn't the catalog's, on ref2va: `LORAS=[{"model_name":"fal/MiniMax-H3-Realism-People-LoRA","weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors","revision":"main"}]`.
     If the `loras` entry schema has no `revision` key (`get_schema` on the loras section), record that and skip (f).
+(g) A `rejected` catalogued entry with `workflow: null`, on both partitions: `C(t2va, H)` and `C(ref2va, H)`.
 expected:
 - (a) `valid: false`, with an error at `steps[0].pipeline.loras[0].weight_name` that names `transformer`
   (what the fl2v file is trained against) and the step's `ref2va`/`transformer_ref`.
@@ -4609,13 +4468,26 @@ expected:
 - (d) `valid: true` on both, with the same "names neither" warning. A null `workflow` decides nothing.
 - (e) `valid: true`, with the "names neither" warning. A match needs both `model_name` and `weight_name`.
 - (f) `valid: false`, with M-F142's catalog-entry error. A revision difference doesn't stop the match.
+- (g) Both `valid: true`, with no error.
+  - Each carries the filename rule's warning at `steps[0].pipeline.loras[0].weight_name`: the file "names neither
+    'ref2v' nor 'fl2v'", naming the step's workflow and its partition (`transformer` for `t2va`,
+    `transformer_ref` for `ref2va`).
+  - Neither warning names a catalog entry or claims a partition for it. An entry that decides nothing is not a
+    disagreement.
+  - Other warnings, such as the carrier's no-seed warning and an inherited-cost warning, are fine.
 It is a **finding** if:
 - (a) or (b) validate;
 - (c), (d) or (e) error, or lose the warning;
 - (e) names the Realism catalog entry;
-- (f) validates (the lookup is keyed on the revision, against the plan's Q2 ruling).
+- (f) validates (the lookup is keyed on the revision, against the plan's Q2 ruling);
+- either (g) probe is `valid: false` or carries an adapter error;
+- either (g) probe lacks the "names neither" warning, i.e. the entry's match silenced the filename rule;
+- either (g) warning treats the entry as deciding a partition.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F154 (merged 2026-11-26, suite review)
+- M-F154: Don, harnest#122 ruling keeping M-F146's probe (e); written and checked on lem 2026-10-14 (claude-opus-5-5 via anthropic)
 
 ### M-F145 — `list_loras` lists Realism-People for `t2va` and `fl2va`, with the h3-quality evidence and a "not reference-to-video" `use_when`
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
@@ -4641,31 +4513,6 @@ It is a **finding** if any of these fails. If the `workflow` filter in (b)/(c) m
 entries than on string entries (e.g. the turbo-keyframe entries, already `["t2va","fl2va"]`, show the same
 inclusion pattern as realism-people), treat that as a separate issue, not this case's.
 cleanup: none.
-metrics: none.
-
-### M-F147 — every MiniMax-H3 template still validates without an adapter error at its defaults
-source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: every catalog workflow on `MiniMaxAI/MiniMax-H3`.
-#888 makes the partition check stricter wherever the catalog decides an adapter. A template that ships a
-catalogued LoRA by default on the wrong partition would now fail to validate. The plan's item 8 requires every
-catalog template to stay clean. Validation only.
-Setup: `use_workspace("regression-model-specific")`.
-Steps:
-1. `list_workflows(shape="shot")` and `list_workflows(shape="sequence")`, plus any other shape whose entries
-   use `MiniMaxAI/MiniMax-H3` (`list_workflows(include_models=true)` names each entry's model). Collect
-   every `templates/…` entry on H3.
-2. `validate_workflow(name=…)` each one with no arguments, or only with the required input-media arguments it
-   names. Use `asset:qa-cast/priya-portrait.jpg` for an image if this server has it; otherwise use any image asset
-   uploaded for the case.
-expected:
-- Every template returns no error whose path ends in `weight_name` or `lora_weight_name`, and no message
-  naming `transformer`/`transformer_ref` or a catalog entry as a refusal.
-- A template whose default `loras` entry is catalogued for its own workflow (e.g. a turbo on t2va/fl2va)
-  carries no "names neither" warning for it.
-- Errors unrelated to adapters (a missing input, a hardware gate on this server) are recorded but are not this
-  case's.
-It is a **finding** if any template is refused on its default adapter.
-cleanup: delete any asset uploaded for step 2.
 metrics: none.
 
 ### M-F148 — a mag cache with `calibrate: true` reports its ratios to the client, one labeled list per CFG context
@@ -4762,7 +4609,7 @@ It is a **finding** if either entry opens on the other's source, or if validate 
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: none.
 
-### M-F152 — H3: a shipped `trial` catalog entry that decides against the step only warns, naming the entry and its status, the same in every workspace
+### M-F152 — H3: a shipped `trial` catalog entry that decides against the step only warns, naming the entry and its status, the same in every workspace; the Open-H3 refiner entry does the same, alone or stacked with the keyframe turbo
 source: tester, spec for #888 from #870's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 partition check against the shared LoRA catalog's `trial` entries.
 Plan v2 (Don's ruling (a)) lets only a `proven` entry refuse. A `trial` or `rejected` entry whose `workflow`
@@ -4781,6 +4628,12 @@ Setup:
    `model_name` and `weight_name` above. If one has been promoted to `proven` or its `workflow` changed, this
    case no longer probes what it says: record it and skip the probes that use it, rather than failing.
 2. `use_workspace("regression-model-specific")`, and `create_workspace("qa-c870-other")` (reuse it if it exists).
+3. For the refiner arm (f) to (i), from the same `list_loras(model="MiniMaxAI/MiniMax-H3")` reply:
+   - Read `model_name` and `weight_name` for `minimax-h3/open-h3-regenerate-2k` and `minimax-h3/turbo-4step-keyframe`.
+   - Call them `R` and `T`, each as a one-element `loras` list `[{"model_name":…,"weight_name":…}]`.
+   - `RT` is the two-element list `R` then `T`.
+   - If the refiner entry is `rejected` or its `workflow` changed, record it and skip (f) to (i): the arm no
+     longer probes what it says.
 Probes (all `validate_workflow`):
 (a) Conflict, ref-only trial on keyframe steps: `C(t2va, W)` and `C(fl2va, W)`.
 (b) Conflict, keyframe trial on a reference step: `C(ref2va, B)`.
@@ -4790,6 +4643,12 @@ Probes (all `validate_workflow`):
 (e) Workspace independence: repeat (a)'s `C(t2va, W)` and (b) three ways: with `workspace="qa-c870-other"`
     on the call; with `workspace="regression-model-specific"` on the call; and after
     `use_workspace("qa-c870-other")` with no `workspace` argument.
+Refiner arm (all `validate_workflow(…, workspace="regression-model-specific")`, so the session workspace (e)
+leaves behind doesn't matter):
+(f) `C(ref2va, R)`;
+(g) `C(t2va, R)` and `C(fl2va, R)`;
+(h) `C(t2va, RT)`;
+(i) `C(ref2va, RT)`.
 expected:
 - (a) and (b): each `valid: true`, with no error. A warning at `steps[0].pipeline.loras[0].weight_name` names the
   entry (`minimax-h3/wushu-action-reference` in (a), `minimax-h3/better-human-motion` in (b)) and its `trial`
@@ -4802,13 +4661,26 @@ expected:
   errors (intent 5), so a different path is a note, not a finding.
 - (e): every call gives the same `valid`, the same warnings and the same paths as the
   `regression-model-specific` result from (a)/(b).
+- (f) `valid: true`, with a warning at `steps[0].pipeline.loras[0].weight_name` that:
+  - names `minimax-h3/open-h3-regenerate-2k` and its `trial` status;
+  - says the step's partition (`transformer_ref` / `ref2va`) differs from the entry's (`transformer`, `t2va`/`fl2va`).
+- (g) and (h): `valid: true`, with no warning mentioning `weight_name`, "names neither", `transformer` or
+  `transformer_ref`.
+- (i) `valid: false`, because `T` is a `proven` keyframe entry and M-F142's refusal applies to it at `loras[1]`.
+  If `T` isn't `proven` on the day, record its status and expect a warning there instead.
 It is a **finding** if:
 - any probe in (a), (b) or (d) is `valid: false` or carries an adapter error: a trial entry refused;
 - the (a)/(b)/(d) warning doesn't name the entry, or doesn't name its `trial` status;
 - (c) still carries the "names neither" warning;
-- (e) differs between workspaces.
+- (e) differs between workspaces;
+- (f) is refused, or carries no warning naming the entry;
+- (g) or (h) warn about the partition;
+- (i) is accepted while `T` is `proven`.
 cleanup: `use_workspace("regression-model-specific")`, then `delete_workspace("qa-c870-other", acknowledged_cost=true)`.
 metrics: none.
+
+absorbs: M-F231 (merged 2026-11-26, suite review)
+- M-F231: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F153 — H3: the status gate's edges: a `proven` refusal names its status, and a `trial` entry never downgrades a filename-token error
 source: tester, spec for #888 from #870's plan v2 (claude-opus-5-5 via anthropic)
@@ -4844,36 +4716,6 @@ It is a **finding** if:
 - (a)'s message lacks the status;
 - either (b) probe validates;
 - (c) errors, or validates without naming the entry.
-cleanup: none.
-metrics: none.
-
-### M-F154 — H3: a catalog entry that decides no partition leaves the filename rule's verdict, on both partitions
-source: Don, harnest#122 ruling keeping M-F146's probe (e); written and checked on lem 2026-10-14 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3 partition check, a catalog entry that names no partition against the filename rule.
-M-F146 (retired) probed a mixed `workflow: ["t2va","ref2va"]` entry: a list naming both partitions decides
-nothing, so the filename rule runs. No shipped entry carries a mixed list, and the catalog is read-only to
-MCP, so this case probes the same path with a shipped entry whose `workflow` is `null`. Like a mixed list, it
-decides nothing. Validation only: this case spends no GPU time. `C(WF, LORAS)` is M-F142's carrier.
-`H` = `[{"model_name":"videorebirth/hyperflow","weight_name":"minimax_h3_hyperflow_8step_v1.0.safetensors"}]`
-(`minimax-h3/hyperflow`, `status: rejected`, `workflow: null`, a file name carrying neither `ref2v` nor `fl2v`).
-Setup: `use_workspace("regression-model-specific")`. Then run `list_loras(model="MiniMaxAI/MiniMax-H3")` and
-confirm `minimax-h3/hyperflow` still has the `workflow`, `model_name` and `weight_name` above. If its
-`workflow` now names a partition, this case no longer probes what it says: record that and skip it rather
-than failing. If a shipped entry has gained a `workflow` list naming both `t2va`/`fl2va` and `ref2va`, also
-run the probes with that entry's file, and expect the same.
-Probes: `C(t2va, H)` and `C(ref2va, H)`.
-expected:
-- Both `valid: true`, with no error.
-- Each carries the filename rule's warning at `steps[0].pipeline.loras[0].weight_name`: the file "names neither
-  'ref2v' nor 'fl2v'", naming the step's workflow and its partition (`transformer` for `t2va`,
-  `transformer_ref` for `ref2va`).
-- Neither warning names a catalog entry or claims a partition for it. An entry that decides nothing is not a
-  disagreement.
-- Other warnings, such as the carrier's no-seed warning and an inherited-cost warning, are fine.
-It is a **finding** if:
-- either probe is `valid: false` or carries an adapter error;
-- either probe lacks the "names neither" warning, i.e. the entry's match silenced the filename rule;
-- either warning treats the entry as deciding a partition.
 cleanup: none.
 metrics: none.
 
@@ -4982,55 +4824,6 @@ over MCP (`list_guides` has no such guide); its agreement with the record is a `
 item, not part of this case, unless a guide comes to serve it — then its verdicts must equal the
 record's.
 cleanup: none (reads only).
-metrics: none.
-
-### M-F159 — every WanGP probe job ran one pinned configuration: int8 weights and one turbo-LoRA state
-source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 (the probe jobs of M-F158). Free: reads only.
-Don's addition at approval: a lip-sync verdict must not secretly be a verdict on quantization
-(#984: int4 + turbo sounded digitized where int8 base did not).
-Steps: for every job M-F158 collected, read `get_job_workflow(job_id, workspace="qa-h3-wangp-probes")`
-and find the H3 step's resolved `weights_dtype` (today `{int4}`-style; the template variable of the
-same name) and its LoRA wiring (`lora_model_name` / `lora_weight_name`; null `lora_model_name`
-means turbo off, per M-F038).
-expected:
-- Every cited job's resolved `weights_dtype` is int8 (`{int8}` or the equivalent the server
-  resolves) — none int4, none bf16.
-- Every cited job has the same turbo-LoRA state: all on (and then the turbo weight each task type
-  ships with — the fl2v turbo file on fl2va, the ref2v one on ref2va) or all off. Mixed states
-  across P1 and P4 fail too, not only within an arm.
-- Each job's `note` states the same dtype and LoRA state its workflow shows.
-- The #985 record states that one configuration (int8 + the LoRA state) once for the whole probe.
-It is a **finding** if any job differs from the others in dtype or LoRA state, if a note claims a
-configuration its workflow doesn't run, or if the record omits the configuration.
-cleanup: none.
-metrics: none.
-
-### M-F160 — the probe record's measurements reproduce: each held output is its source track, and P4's frame 0 matches the record
-source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 probe outputs (M-F158), plus the CPU task `measure_sync`
-(`audio`, `reference`, `max_lag_seconds` 2.0, `threshold_seconds` 0.1, `min_confidence` 0.3 today).
-No GPU: `measure_sync` runs on cpu (`device: "cpu"`).
-Steps, in workspace `qa-h3-wangp-probes`:
-1. For each cited job, find its mp4 (`get_job`) and the track it held (`get_job_workflow`'s
-   `hold_audio`).
-2. Save an inline task-only workflow `m-wangp-sync` with one `measure_sync` step per job
-   (`audio: "output:<job's mp4>"`, `reference: <the held track>`, `device: "cpu"`), validate it, and
-   `run_workflow(..., acknowledged_cost=<validate's fingerprint>, wait_seconds=55)`.
-3. For P4a and P4b, `get_output_frames(name=<mp4>, at=[0])` and `get_output_image` on the input
-   picture `get_job_workflow` names (or `get_output_frames` if it is an `asset:`).
-expected:
-- Every `measure_sync` reading is a lag within ±0.1 s at confidence ≥ 0.3 — with `hold_audio`
-  the output audio is the held track, cropped to the clip — and agrees with the figure the
-  record cites for that job to within 0.05 s.
-- P4a's frame 0 keeps the input picture's pixels (same composition, face, colours; not merely
-  similar framing). P4b's frame 0 is whatever the record says it observed (pixels kept or framing
-  only), and the record's P4 row says which for each arm.
-It is a **finding** if a held output's lag is outside ±0.1 s or its confidence is unreliable, if a
-reading disagrees with the record's figure by more than 0.05 s, or if P4a's frame 0 is not the
-picture or contradicts the record. Evidence pruned after #988 verified: skip, as in M-F158.
-cleanup: `delete_output(job_id=<the m-wangp-sync job>)`, `delete_workflow("m-wangp-sync")`. Never
-delete the probe jobs themselves.
 metrics: none.
 
 ### M-F161 — the H3 enhancer keeps a held or reused track's words out of `<d>`
@@ -5174,96 +4967,6 @@ expected:
 It is a **finding** if any arm is refused, if 345 frames or the 544×672 canvas is refused or
 snapped, or if the null-LoRA warning is missing on (c)/(f) or present on (a)/(e).
 cleanup: none (validate only).
-metrics: none.
-
-### M-F166 — the #984 B0 record has a row per arm and seed, and every cited job exists, succeeded and is noted
-source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 fl2va (`templates/minimax/image-to-video`), int4/int8 × turbo on/off.
-Free: reads only (no job is run).
-The record is #984's B0 results comment (`gh issue view 984 --repo dkackman/diffusers-workflow
---comments`; the comment tabling arms (a), (c), (e), (f) by seed). The workspace the runs live in
-is the one the record names; if it names none, use `list_jobs` over the tester's `qa-` workspaces
-to find the jobs by id, and the missing workspace is itself a finding.
-Steps:
-1. Read the record: for each arm × seed, its run (job) id, assessment, levels, per-forward seconds
-   and load seconds; the two seeds; the two readings (cause, cost); the closing list of mp4s.
-2. For every cited job id: `get_job(job_id, workspace=<record's workspace>)`.
-expected:
-- Exactly 8 rows: arms (a), (c), (e), (f), each at seed 7 and at one other seed. The other seed is
-  one fixed integer, not 7, the same for all four arms, and stated in the record.
-- Each row has a job id, an assessment (from `assess_output`, with its transcript compared to the
-  prompt's `<d>` line), levels (integrated LUFS / peak or whatever `get_gallery_metadata` reports),
-  per-forward seconds and load seconds. A row that says *not run* or *failed* with a reason is
-  allowed only if the record says so plainly; it then still cites the failed job, and the stage
-  does not pass until it is rerun (all 8 must have succeeded).
-- Every cited job exists in that workspace, finished as `succeeded`, and its `note` names its arm
-  letter, its seed and "#984 B0". The 8 job ids are distinct.
-- The record answers "which digitizes the voice: int4, turbo, both, or neither" with exactly one of
-  those four words (or "inconclusive" when the two seeds disagree), and says whether the seeds
-  agree. It reads (a), (e) and (f) against (c), not against each other only.
-- The record states per-forward and per-load seconds for int4 and for int8 (cost question).
-- It ends with each arm's mp4 (8 files, or at least one per arm per seed), named as outputs a
-  consumer can fetch (`output:` names or `download_output` targets).
-It is a **finding** if a row is missing, a job is absent/failed/in another workspace, a note omits
-arm, seed or "#984 B0", the seed set differs between arms, or a verdict word is outside the five.
-Once #991 has closed verified, a job later pruned is recorded "evidence pruned" and skipped.
-cleanup: none (reads only).
-metrics: none.
-
-### M-F167 — every #984 B0 job ran its arm exactly, on the `sci0fi` take's shot, and differs from its seed pair only in seed
-source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 fl2va, the 8 jobs M-F166 collected. Free: reads only.
-Steps:
-1. `get_job_workflow("65267b93fd22", workspace="sci0fi")` (take 1): note its prompt text, its
-   `width`, `height`, `num_frames` and its image (`asset:uploads/spider/jumping-spider-face.png`).
-   If `sci0fi` or that job is gone, compare against the plan's stated values (544x672, 345
-   frames) and the record's quoted prompt, and say so.
-2. For each of the 8 jobs: `get_job_workflow(job_id, workspace=<record's workspace>)`, and read
-   the H3 step's resolved arguments.
-expected:
-- Every job: `templates/minimax/image-to-video` (or its resolved fl2va step); `width`/`height`/
-  `num_frames` equal take 1's (544x672 in the order take 1 used, 345 frames); the prompt equal to
-  take 1's, character for character; the image a copy of the spider image in the run's own
-  workspace (an `asset:` that resolves there, made by `copy_to_workspace` — not a `sci0fi` path);
-  `attention_backend` `sparse` with `sparse_tau` 0.5 and `sparse_topk` 0.15 (the template's).
-- Per arm, the resolved config is exactly:
-  - (a) `weights_dtype` `{int4}`, `lora_model_name` `lightx2v/Minimax-h3-Turbo` at `lora_scale` 1.0,
-    5 steps, shifts 6.0 / 3.0;
-  - (c) `{int8}`, `lora_model_name` null, 12 steps, 12.0 / 3.0;
-  - (e) `{int8}`, turbo at scale 1.0, 5 steps, 6.0 / 3.0;
-  - (f) `{int4}`, `lora_model_name` null, 12 steps, 12.0 / 3.0.
-- The two jobs of one arm differ only in `seed` (7 and the record's other seed). Across arms, a
-  pair at the same seed differs only in the arm's own knobs (dtype, LoRA, steps, shifts).
-- Each job's `note` states the same arm its workflow runs.
-It is a **finding** if any job's size, frames, prompt, image or attention differs from take 1, if
-a job's dtype/LoRA/steps/shifts don't match its arm, or a note names a different arm than the
-workflow runs. Evidence pruned after #991 verified: skip, as in M-F166.
-cleanup: none (reads only).
-metrics: none.
-
-### M-F168 — the #984 B0 record's readouts reproduce from the jobs: timings, levels and assessments
-source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 fl2va outputs (the M-F166 jobs). Free: `get_job`, `get_gallery_metadata`
-and `assess_output` (no GPU, no job queued).
-Steps, for each of the 8 jobs in the record's workspace:
-1. `get_job(job_id, workspace=…)`: the H3 step's `timing` (`load_s`, `load_cached`, `pass_s`,
-   `passes`, total).
-2. `get_gallery_metadata` on its mp4: duration, fps, frame count, audio levels.
-3. `assess_output` on its mp4.
-expected:
-- Each mp4 is 345 frames at 24 fps (≈14.4 s) with an audio stream; its size is take 1's.
-- `passes` is the step count minus 1: 4 for (a)/(e), 11 for (c)/(f). The record's per-forward
-  seconds equals `pass_s / passes` (or the per-pass figure `timing` reports) to within 0.5 s, and
-  its load seconds equals `load_s` to within 1 s, with `load_cached` stated where a load was warm
-  (a warm load is not a cold-load figure; the record must not table it as one).
-- The record's levels for each job equal `get_gallery_metadata`'s to within 0.1 dB.
-- The record's assessment for each job agrees with `assess_output`'s (same flags; transcript
-  compared to the `<d>` line). `assess_output` is deterministic for a fixed file; a disagreement is
-  the record's error, not chance.
-It is a **finding** if a job's mp4 has the wrong length/size or no audio, `passes` doesn't match
-its arm's steps, or a recorded figure disagrees beyond the tolerances above. Evidence pruned after
-#991 verified: skip.
-cleanup: none (reads only; never delete the B0 jobs).
 metrics: none.
 
 ### M-F173 — the guide's *Refining above 768p in tiles* section documents `refine_tiles`, and its inline workflow validates clean with no false VRAM warning
@@ -5470,10 +5173,12 @@ disagree, or a pinned line is gone.
 cleanup: none.
 metrics: none.
 
-### M-F190 — `references/style.md` names all eight MiniMax style packs by bare name, each with its shape, installed by name
+### M-F190 — `references/style.md` names all eight MiniMax style packs by bare name, each with its shape, installed by name; its "name the medium" line is attributed and unprobed (or its absence stated); and the plugin README agrees on installing a pack by name
 source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: plugin text for MiniMax H3. No job. Read `references/style.md` as in M-F189.
+Model/pipeline: plugin text for MiniMax H3. No job. Read `references/style.md` and SKILL.md as in M-F189, and
+the `dw` plugin's `README.md` at the plugin root (two levels above the skill's base directory).
 expected:
+**(A) The eight packs, in `style.md`.**
 - The file names exactly these eight packs, each by its bare upstream name, each with a line on
   the kind of video it suits:
   `papercraft-stop-motion-explainer` (papercraft stop-motion explainer),
@@ -5492,16 +5197,7 @@ expected:
   claims no dw template for a pack (none exists).
 - It copies none of einhorn13/AISkills' style recipes or A/B/C style ratings, and says nothing
   about ComfyUI `embedding:` prompts (the plan's non-goals).
-It is a **finding** if a pack is missing or misnamed, the install isn't by name, `'*'` is
-advised, or a recipe/rating/embedding appears.
-cleanup: none.
-metrics: none.
-
-### M-F191 — the "name the medium, then its physical traits" line is attributed and marked unprobed, or its absence is stated; it doesn't override the guide-clip rule
-source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: plugin text for MiniMax H3. No job. Read `references/style.md` and SKILL.md as
-in M-F189.
-expected, one of the two branches:
+**(B) The "name the medium, then its physical traits" line, in `style.md` and SKILL.md.** One of the two branches:
 - **Line kept.** `style.md` says, in its own words: name the medium, then describe what it
   physically looks like, with the claymation example (fingerprints, tool marks, stepped motion),
   because a bare "clay" tends to render as smooth CG. In the same place it:
@@ -5513,26 +5209,26 @@ expected, one of the two branches:
   says it was cut because the upstream packs read don't prompt that way.
 In neither branch does any skill file present the line as a probed rule, or cite a dw job or
 audit row for it.
-It is a **finding** if the line appears with no attribution, isn't marked unprobed, reads as if
-it overrides the guide-clip rule, or is absent with nothing saying so.
-cleanup: none.
-metrics: none.
-
-### M-F192 — the plugin README and `references/style.md` agree: install a style pack by name when a request wants that look
-source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: plugin text. No job. Read the `dw` plugin's `README.md` at the plugin root (two
-levels above the skill's base directory) and `references/style.md`.
-expected:
+**(C) The plugin README and `style.md` agree.**
 - The README's passage on MiniMax's skills still says to install `h3-prompt-writing` by name,
   and that `--skill '*'` would also pull in the eight style packs.
 - It now also says a style pack is worth installing, by name, when a request wants that pack's
   look. It points at the minimax-h3 skill's style reference, or else agrees with it.
 - The two files give the same install form, the same count (eight) and no pack name the other
   lacks. Neither says not to install packs while the other says to.
-It is a **finding** if the README still treats the packs only as something to avoid, or the
-two files disagree on the command, the count or the advice.
+It is a **finding** if:
+- (A) a pack is missing or misnamed, the install isn't by name, `'*'` is
+  advised, or a recipe/rating/embedding appears;
+- (B) the line appears with no attribution, isn't marked unprobed, reads as if
+  it overrides the guide-clip rule, or is absent with nothing saying so;
+- (C) the README still treats the packs only as something to avoid, or the
+  two files disagree on the command, the count or the advice.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F191, M-F192 (merged 2026-11-26, suite review)
+- M-F191: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+- M-F192: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F193 — the AISkills probe record has a verdict for P2, P3 and P5 with both seeds of both arms cited, and states its configuration once
 source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
@@ -5566,42 +5262,6 @@ fewer than two seeds, a failed run is reported as a result, or the configuration
 cleanup: none (reads only).
 metrics: none.
 
-### M-F194 — every job the AISkills record cites exists in `qa-h3-aiskills-probes`, succeeded, is noted, and ran its arm
-source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 probe jobs (M-F193). Free: reads only. For **every** cited job id:
-`get_job(job_id, workspace="qa-h3-aiskills-probes")` and `get_job_workflow`.
-expected:
-- Each job is in `qa-h3-aiskills-probes` (not a `regression-*`, `default` or one of Don's own
-  workspaces) and `succeeded` with an mp4 output, except one a **not run** row cites, which
-  shows the error the row quotes.
-- Its `note` names the probe, the arm and the seed, enough to tell P2 clip 1 from clip 2, P3a
-  from P3b and P5a from P5b.
-- Its resolved seed is 1001 or 2002. Within a probe, the arms use the same seed pair, and two
-  jobs of the same arm and seed differ only in what the arm varies.
-- **P2:** the workflow is `templates/minimax/voice-timbre-reference`, or a copy whose H3 step
-  matches it (ref2va, the shipped ref2v turbo LoRA, 9 steps, shift 12). The `<d>` line shares no
-  content words (articles, pronouns and auxiliaries aside) with the reference clip's spoken text
-  (the template's `voice_line`, or whatever text made the second clip). The second clip's words
-  differ from the first's. They may differ by a `voice_line` override, or by a separately made
-  asset (`templates/generate-speech` or similar) wired into a copy. Either way, the record says
-  which.
-- **P3:** a Ref2VA workflow with exactly one image reference and no audio reference. Its prompt
-  gives the image a style-only role, in the record's quoted words (e.g. "<Image 1> sets only the
-  medium and palette. Its subject and framing are not used"). It names a text subject unrelated
-  to the image (e.g. a cyclist on a beach). Read the two reference pictures (`get_output_image`
-  on their job outputs, or `get_output_frames` on an `asset:`): arm a's shows a distinctive
-  person and composition (e.g. an old man at a window), arm b's the same medium with no person
-  (e.g. a still life). Both arms' prompts are otherwise the same.
-- **P5:** T2VA (`templates/minimax/video-with-audio` or the same H3 step), turbo, 960×544,
-  124 frames. One person facing camera raises a red mug. Arm a's prompt says "in her left hand"
-  and arm b's says "in her left hand, on screen right", and the prompts are otherwise identical.
-It is a **finding** if a cited job is missing, failed without a not-run row, in another
-workspace, or un-noted, or if its workflow contradicts its arm: a P2 `<d>` that shares the
-source's words, a P3 prompt with no style-only role or a second reference, or P5 prompts that
-differ by more than the screen-side phrase.
-cleanup: none.
-metrics: none.
-
 ### M-F195 — P2's `check-script` reading reproduces for one job per source clip
 source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/check-script` (Whisper, word timestamps) over P2's outputs. About
@@ -5621,31 +5281,6 @@ expected:
 It is a **finding** if any of the three disagrees with the record, i.e. the record says no leak
 where the transcript shows source words, or the reverse.
 cleanup: `delete_output(job_id=…)` on each check-script job this case ran.
-metrics: none.
-
-### M-F196 — P3's and P5's cited frames show what their rows say, and every held verdict meets the two-seed bar
-source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 probe outputs (M-F194). Free: reads only. Workspace
-`qa-h3-aiskills-probes`.
-Steps:
-- **P3:** for at least one job in each arm, `get_output_frames(name=<mp4>, count=12)` and
-  `get_output_frames(name=<mp4>, at=["frame:0", "frame:1", "frame:2", "frame:3", "frame:4",
-  "frame:5"])`. Compare them with the reference picture.
-- **P5:** for at least one job in each arm, `get_output_frames` at the raise (the record's
-  moment, or `count=12` to find it).
-- For **every** row marked held, judge all four of its jobs (both arms, both seeds) the same way.
-  For P2, use M-F195's reading on the jobs it covered, and the record's per-job figures for the
-  rest.
-expected:
-- P3: the reference's person, pose or window framing appears, or doesn't, as the row says. Style
-  carry-over and any frame-0 leak of the reference picture match the row too.
-- P5: the mug's screen side and the hand holding it match the row for each job read. "Screen
-  right" means the viewer's right. For a person facing camera, that's their left hand.
-- A held row has the effect in both broken-arm seeds and in neither followed-arm seed. A row
-  where one seed shows it and the other doesn't is **not settled**, never held or refuted.
-It is a **finding** if a read output contradicts its row, a held row fails the bar, or a split
-is called held or refuted.
-cleanup: none.
 metrics: none.
 
 ### M-F197 — each AISkills verdict lands where the plan says: held as a rule citing its row, the rest in a "Probed and not a rule" list
@@ -5726,165 +5361,6 @@ expected:
   `voice_line`'s content words that aren't in the `<d>` line.
 It is a **finding** if source words are spoken, the new line isn't spoken, or the run fails.
 cleanup: `delete_output(job_id=…)` on both jobs.
-metrics: none.
-
-### M-F200 — the #1073 measurement record on #1060 gives all three stage-0 results, each citing jobs that exist and ran what the result says
-source: tester, spec for #1073 from #1060's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 ref2va (`templates/minimax/composable-references`, which is the only
-template that takes a video reference, or `templates/minimax/reference-to-video` for the image
-reference). Free: reads only, and no job is run.
-The record is the #1073 results comment on #1060 (`gh issue view 1060 --repo
-dkackman/diffusers-workflow --comments`), or on #1073 if #1060 links it from there. The plan's
-stage 0 names three results:
-- R1: the `vae_encoder` share of the reference lead-in, for an image reference and for a video
-  reference (the issue's case is 5 s at 960×544), taken from the per-block `log` events and
-  `timing.encode_s`;
-- R2: whether the stock H3 reference block samples `latent_dist` with the job's generator or
-  takes a deterministic value (the mode or the mean);
-- R3: the on-disk size of one cached video-reference latent at 544p (960×544) and at 768p.
-Steps:
-1. Read the record. For each of R1–R3, collect its figure or verdict, its job ids and the
-   workspace they are in.
-2. For every cited job, call `get_job(job_id, workspace=<ws>)` and `get_job_workflow(job_id,
-   workspace=<ws>)`.
-expected:
-- The record gives all three results, and each one cites at least one job id. A result that
-  could not be settled over MCP says *not settled*, gives the reason, and names what would
-  settle it. It still cites the jobs it tried.
-- R1 gives, per reference kind (image and video): the lead-in in seconds (from `generating` to the
-  first `pipeline_step`); the `vae_encoder` block's seconds; the `text_encoder` block's seconds;
-  and `timing.encode_s`. It also states the share as seconds and as a fraction of the lead-in, so
-  it is clear whether the 629 s figure is mostly VAE encode or mostly the first denoise pass.
-- R1 also states the per-reference VAE seconds for an image reference against Q4's ~30 s bar, and
-  says which side of the bar it falls. For an audio reference it either does the same or states
-  that audio was not measured.
-- R2 is exactly one of: *samples with the job generator*, *deterministic (mode or mean)*, or
-  *not settled*. The record states the MCP evidence it rests on: an event, a `get_class` /
-  `get_pipeline_signature` reading, or a run comparison.
-- R3 gives a size in bytes or MB for each of 544p and 768p. Each size comes with the latent shape
-  and dtype it rests on, and shape × bytes per element equals the stated size to within 5%. The
-  768p/544p size ratio matches the ratio of the two latent shapes' element counts.
-- Every cited job exists in the workspace the record names and finished `succeeded`. Its `note`
-  says what it measured. Its `get_job_workflow` shows an H3 ref2va step with the reference kind
-  and canvas the result claims: a video reference for the video rows, an image reference for the
-  image rows, and 960×544 or the 768p canvas as stated.
-It is a **finding** if a result is missing with no *not settled* line, a result cites no job, a
-cited job is absent or failed or ran a different reference kind or canvas, R2's verdict is
-outside the three allowed words, or R3's size contradicts its own shape and dtype. If the jobs or
-their workspace were pruned after #1073 closed verified, record "evidence pruned" and skip. That
-is not a finding.
-cleanup: none (reads only).
-metrics: none.
-
-### M-F201 — the R1 lead-in split reproduces from the cited jobs' events
-source: tester, spec for #1073 from #1060's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 ref2va, the R1 jobs of M-F200. Free: reads only.
-How a block's time is read today: `get_job_events(job_id, kinds=["log"])` emits one
-`MiniMaxAI/MiniMax-H3: <block>` line as each block **starts**, with `at` in seconds since the job
-started. A block's seconds are therefore the `at` of the next log line minus its own. On an fl2va
-job, for example, `text_encoder` at 0.0 is followed by `vae_encoder` at 25.1 and then
-`denoise.prepare_layout` at 28.4.
-Steps: for each R1 job, call `get_job_events(job_id, kinds=["log"])`, then the same call without
-`kinds` filtered to the first `pipeline_step` (page with `after` if needed). Also read
-`get_job(job_id, workspace=<ws>)` for the manifest's `timing.encode_s`.
-expected:
-- Each job has a `MiniMaxAI/MiniMax-H3: vae_encoder` log line and a `text_encoder` line, and the
-  seconds computed from them agree with the record's figures to within 1 s.
-- The lead-in (from the `generating` phase to the first `pipeline_step`) agrees with the record
-  to within 2 s. `timing.encode_s` equals the figure the record cites.
-- For each job, the record's VAE seconds + text-encode seconds + the remainder it attributes
-  elsewhere (the first denoise pass, preparation) add up to the lead-in to within 2 s.
-It is a **finding** if a cited job has no per-block `vae_encoder` line (the narration that both
-this stage and the planned cache wrapper rely on), or if any figure disagrees with the job's
-events beyond the bounds above. Evidence pruned: skip, as in M-F200.
-cleanup: none.
-metrics: none.
-
-### M-F202 — the #1074 probe record on #1061 gives two runs and all three answers, each citing jobs that ran what it says
-source: tester, spec for #1074 from #1061's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 ref2va (hand-built probe shots). Free: reads only, and no job is run.
-The record is the stage-A results comment on #1061 (`gh issue view 1061 --repo
-dkackman/diffusers-workflow --comments`), or on #1074 if #1061 links it from there. The plan
-names two runs:
-- shot 1: one ref2va shot with two `MiniMaxH3VideoReference`s, the driving window (source frames
-  `[0,124)`) and a 48-frame tail of an earlier H3 render standing in for the carry;
-- shot 2: the window `[85,209)` of the same source, carrying shot 1's tail.
-It also names three answers: (a) does the motion follow, (b) the peak VRAM and pass/OOM at
-124 frames with 2 video references, (c) the seam verdict.
-Steps:
-1. Read the record. Collect both runs' job ids, the workspace they are in, and each answer.
-2. For every cited job, call `get_job(job_id, workspace=<ws>)` and `get_job_workflow(job_id,
-   workspace=<ws>)`. For each job (or upstream cut job) that made a driving window, call
-   `get_gallery_metadata` on the window it fed in.
-expected:
-- The record cites both runs by job id, and gives all three answers:
-  - (a) is *yes* or *no*, with frames: named times or a `get_output_frames` /
-    `compare_outputs` call, set beside the source at the same times;
-  - (b) gives a peak VRAM figure in GB and *pass* or *OOM* for each run;
-  - (c) gives a seam verdict that rests on `get_output_frames(seams=true)` (and `assess_output`
-    if used).
-- Each shot job's workflow is a ref2va step with `num_frames` 124 and exactly two
-  `MiniMaxH3VideoReference`s. Shot 1's driving window is 124 frames from the source's head.
-  Shot 2's is 124 frames starting at source frame 85, and its second video reference is
-  shot 1's output tail, not the stand-in render.
-- A run marked *pass* finished `succeeded`. A run marked *OOM* failed with an out-of-memory error
-  in its events.
-- The record states the gate: *build* if (a) is yes and (b) passes. Otherwise it says *don't
-  build* and names what would reopen it: a lighter H3 build, or #1045's guide path.
-It is a **finding** if an answer is missing, a run cites no job, a cited job is absent or ran
-other windows, reference count or frame count than the record says, the VRAM figure has no
-pass/OOM beside it, or the gate verdict contradicts (a) and (b). If the jobs or their workspace
-were pruned after #1074 closed, record "evidence pruned" and skip. That is not a finding.
-cleanup: none (reads only).
-metrics: none.
-
-### M-F203 — the probe's seam verdict and motion answer reproduce from shot 2's output
-source: tester, spec for #1074 from #1061's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 ref2va, the shot 2 job of M-F202. Free: reads only.
-Steps:
-1. `get_output_frames(<shot 2's mp4>, workspace=<ws>, seams=true)`.
-2. `compare_outputs` over shot 2's mp4 and its driving window, at four times spread over the
-   clip (e.g. `at=[0.5, 2.0, 3.5, 5.0]`).
-expected:
-- The seam reading agrees with the record's verdict (c): where the record says the seam holds,
-  no hard cut or look step is reported at shot 2's head. Where it says it fails, the reading
-  shows the step the record names.
-- The side-by-side agrees with answer (a). On *yes*, the output's camera framing and the main
-  figure's position and direction of travel match the window at each time. On *no*, they don't,
-  and the record says what does carry (composition, identity or nothing).
-It is a **finding** if either reading contradicts the record. Evidence pruned: skip, as in M-F202.
-cleanup: none.
-metrics: none.
-
-### M-F214 — the workflows guide has a "Regional edit" section that states the mask rules, `refine_strength`'s meaning and what stays unchanged
-source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 regional edit (`source_video` + `mask_image`/`mask_video` +
-`refine_strength` on a t2va step). Free: discovery only.
-Steps:
-1. `get_guide("workflows")` (the index form). Find the "Regional edit" section and its position
-   relative to the refine section ("Promoting an H3 take to 768p in latent space" or its successor).
-2. `get_guide("workflows", section="Regional edit")`.
-expected:
-- The section exists and sits beside the refine section, either directly before or directly after it.
-- It names `source_video`, `mask_image`, `mask_video`, `mask_grow`, `refine_strength` and
-  `hold_audio`, and states these rules:
-  - `source_video` must match the step's `width`, `height` and `num_frames`;
-  - white means regenerate, and the mask is binarized at 128;
-  - the grain is the patch grid, 16 px × patch size in space and about 4 pixel frames per latent
-    frame in time;
-  - `mask_grow` dilates by whole cells and defaults to 1;
-  - an empty mask is refused;
-  - `refine_strength` is required with a mask, where 1.0 regenerates from noise and lower values
-    rework lightly (e.g. 0.4);
-  - `hold_audio` is still required, normally the `source_video` itself.
-- It says the area outside the mask comes back **near-identical, not bit-identical**, because
-  there is no paste-back.
-- It has a worked example that is a complete step (it passes as M-F215's carrier shape) and lists
-  the refused combinations: a mask with `refine_tiles`, a chained step, a non-H3 step, or both
-  mask kinds.
-It is a **finding** if the section is missing, if it omits any argument or rule above, or if it
-promises a bit-identical outside.
-cleanup: none.
 metrics: none.
 
 ### M-F215 — build the #1062 masks; a regional edit with `mask_image` or `mask_video` validates clean and quotes an estimate, at the boundary values too
@@ -5989,26 +5465,6 @@ It is a **finding** if any probe validates, if one queues and then fails in the 
 too late), if (e), (f), (i) or (j) leaves out either size or count, or if (g) runs (an empty mask
 reproduces the source at full cost).
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
-metrics: none.
-
-### M-F217 — without a mask, refine and `hold_audio` refusals are unchanged
-source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 refine. Free. Stage A adds blocks to the H3 denoise. The plan promises
-that a step without a mask runs exactly as before.
-Steps:
-1. Run M-F083 (all probes) and M-F115 (all probes) as written.
-2. Run the example in `get_guide("workflows", section="Promoting an H3 take to 768p in latent
-   space")` as `validate_workflow` only. Compare its `plan.estimate` with the regional-edit RE
-   from M-F215 (a).
-expected:
-- M-F083 and M-F115 pass as written. M-F115's messages are still verbatim. M-F083 (b)
-  (`refine_strength: 1.0` with `latents`, no mask) is still refused, and M-F083 (j) is still
-  refused with the "requires both `latents` and `hold_audio`" reason. A plain `video-with-audio`
-  with `refine_strength` and no `source_video` or mask is not treated as a regional edit.
-- The latent refine example validates clean. No warning mentions masks or `source_video`.
-It is a **finding** if any M-F083 or M-F115 expectation now fails, or if a mask-free refine gains a
-mask-related warning or requirement.
-cleanup: none.
 metrics: none.
 
 ### M-F219 — an all-white mask behaves as a plain refine of the whole take
@@ -6145,13 +5601,19 @@ It is a **finding** if any of the following holds:
 cleanup: none. Discovery only, writes nothing.
 metrics: none.
 
-### M-F224 — `alpha-matte` refuses off-grid sizes, frame counts past 145 and below 9 for free, and accepts the boundary values and 1920×1088
+### M-F224 — `alpha-matte` refuses off-grid sizes, frame counts past 145 and below 9 for free, and accepts the boundary values and 1920×1088; `restore-colorize` validates a real clip clean and refuses off-bucket sizes and frame counts, as `restore-deblur` does
 source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F223. Free: `validate_workflow` only, no GPU. `A` is
-`asset:qa-cast/ep6-shot1-priya.mp4` (shared). Every call below is
+Model/pipeline: as M-F223 for the `alpha-matte` arm, as M-F227 for the `restore-colorize` arm. Free:
+`validate_workflow` only, no GPU.
+**`alpha-matte` arm.** `A` is
+`asset:qa-cast/ep6-shot1-priya.mp4` (shared). Every call in this arm is
 `validate_workflow(name="templates/ltx2/alpha-matte", workspace="regression-model-specific",
 arguments={"source_video": A, ...})` with the stated override.
-expected:
+**`restore-colorize` arm.** `B` is `asset:ic-colorize/src-bw-124f.mp4`
+(Fixtures, "Sources for the #1064 IC-LoRA cases"). If it's missing, use `asset:qa-cast/ep6-shot1-priya.mp4`,
+since validation doesn't read colour. Calls in this arm are `validate_workflow(name="templates/ltx2/restore-colorize",
+workspace="regression-model-specific", arguments={"source_video": B, ...})`.
+expected, `alpha-matte` arm:
 - **The defaults are clean.** With no override the result is `valid: true`, with `checked_arguments`
   including `source_video`. `plan.estimate` is non-null, since the template carries a `cost`.
 - **The 145 cap.**
@@ -6174,13 +5636,27 @@ expected:
   arguments={"source_video": A, "num_frames": 153}, acknowledged_cost=true)` is refused with the
   same `arguments.num_frames` error, and `list_jobs` shows no new job queued. If it queues one, cancel it
   at once (`cancel_job`). That's a finding.
-It is a **finding** if any of the following holds:
+expected, `restore-colorize` arm:
+- With no override → `valid: true`, `warnings: []`, and a non-null `plan.estimate`.
+- `lora_scale: 0.8` → `valid: true`.
+- `num_frames: 120` → `valid: false` at `arguments.num_frames`.
+- `num_frames: 9` → `valid: true`.
+- `width: 1000` → `valid: false` at `arguments.width`.
+- `height: 550` → `valid: false` at `arguments.height`.
+- Each of these gives the same verdict, at the same path, as the same override on
+  `templates/ltx2/restore-deblur`. Run deblur's call too and compare: a difference is a finding.
+It is a **finding**, on the `alpha-matte` arm, if any of the following holds:
 - an off-grid or past-cap value passes;
 - 9, 145 or 1920×1088 is refused;
 - an error lands at a path other than the argument;
 - the 153 refusal doesn't name 145.
+It is a **finding**, on the `restore-colorize` arm, if an off-bucket value passes, a valid one is refused,
+or the verdicts differ from deblur's.
 cleanup: none (unless the `run_workflow` arm queued a job: `cancel_job`, then `delete_output(job_id=<id>)`).
 metrics: none.
+
+absorbs: M-F228 (merged 2026-11-26, suite review)
+- M-F228: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F225 — `alpha-matte` on a person clip gives a grey soft-edged matte at the source's size, frame-aligned, with no soundtrack; at 145 frames it is still a matte
 source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
@@ -6310,26 +5786,6 @@ It is a **finding** if any of the following holds:
 cleanup: none. Discovery only.
 metrics: none.
 
-### M-F228 — `restore-colorize` validates a real clip clean and refuses off-bucket sizes and frame counts, as `restore-deblur` does
-source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F227. Free: `validate_workflow` only. `B` is `asset:ic-colorize/src-bw-124f.mp4`
-(Fixtures, "Sources for the #1064 IC-LoRA cases"). If it's missing, use `asset:qa-cast/ep6-shot1-priya.mp4`,
-since validation doesn't read colour. Calls are `validate_workflow(name="templates/ltx2/restore-colorize",
-workspace="regression-model-specific", arguments={"source_video": B, ...})`.
-expected:
-- With no override → `valid: true`, `warnings: []`, and a non-null `plan.estimate`.
-- `lora_scale: 0.8` → `valid: true`.
-- `num_frames: 120` → `valid: false` at `arguments.num_frames`.
-- `num_frames: 9` → `valid: true`.
-- `width: 1000` → `valid: false` at `arguments.width`.
-- `height: 550` → `valid: false` at `arguments.height`.
-- Each of these gives the same verdict, at the same path, as the same override on
-  `templates/ltx2/restore-deblur`. Run deblur's call too and compare: a difference is a finding.
-It is a **finding** if an off-bucket value passes, a valid one is refused, or the verdicts differ from
-deblur's.
-cleanup: none.
-metrics: none.
-
 ### M-F229 — `restore-colorize` on a black-and-white clip gives a colour clip at the source's size, keeping subject, framing and motion
 source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: one LTX-2.5 job at 960×544×121 on lem (RTX 3090), the shape of
@@ -6401,85 +5857,6 @@ It is a **finding** if:
 - it points at the community r128 file;
 - the guide still carries the unmeasured 25-30 min figure.
 cleanup: none.
-metrics: none.
-
-### M-F231 — the Open-H3 refiner entry warns on a `ref2va` step through the partition check, and is quiet on `t2va`/`fl2va`, alone or stacked with the keyframe turbo
-source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3 partition check against the catalog's `trial` entries (M-F152's rule: a `trial` entry
-that disagrees with the step warns and never refuses). Validation only, no GPU.
-Setup:
-- Read `model_name` and `weight_name` for `minimax-h3/open-h3-regenerate-2k` and `minimax-h3/turbo-4step-keyframe`
-  from `list_loras(model="MiniMaxAI/MiniMax-H3")`.
-- Call them `R` and `T`, each as a one-element `loras` list `[{"model_name":…,"weight_name":…}]`.
-- `RT` is the two-element list `R` then `T`.
-- The carrier is M-F142's `C(WF, LORAS)`.
-- If the refiner entry is `rejected` or its `workflow` changed, record it and skip: the case no longer probes what
-  it says.
-Probes (all `validate_workflow(…, workspace="regression-model-specific")`):
-- (a) `C(ref2va, R)`;
-- (b) `C(t2va, R)` and `C(fl2va, R)`;
-- (c) `C(t2va, RT)`;
-- (d) `C(ref2va, RT)`.
-expected:
-- (a) `valid: true`, with a warning at `steps[0].pipeline.loras[0].weight_name` that:
-  - names `minimax-h3/open-h3-regenerate-2k` and its `trial` status;
-  - says the step's partition (`transformer_ref` / `ref2va`) differs from the entry's (`transformer`, `t2va`/`fl2va`).
-- (b) and (c): `valid: true`, with no warning mentioning `weight_name`, "names neither", `transformer` or
-  `transformer_ref`.
-- (d) `valid: false`, because `T` is a `proven` keyframe entry and M-F142's refusal applies to it at `loras[1]`.
-  If `T` isn't `proven` on the day, record its status and expect a warning there instead.
-It is a **finding** if:
-- (a) is refused, or carries no warning naming the entry;
-- (b) or (c) warn about the partition;
-- (d) is accepted while `T` is `proven`.
-cleanup: none.
-metrics: none.
-
-### M-F232 — the stage A probe record: the recorded P2 (or P3) job ran the refiner on the refine step to a 1920×1088 clip with base audio, with no LoRA-load warning, and its workflow re-validates clean
-source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 t2va 768p base → `upscale_h3_latents` 1920×1088 → H3 refine with the Open-H3 refiner
-LoRA. Free: it reads the recorded jobs, it doesn't re-run them. The record is the table stage A posts on #1065
-(`gh issue view 1065 --repo dkackman/diffusers-workflow --comments`). Workspace `qa-h3-regen-2k`.
-Steps:
-1. From the table, take the P2 job id. If P2 ran out of memory, also take the P3 job id, and the P2 job id that
-   records the OOM.
-2. `get_job(<id>, workspace="qa-h3-regen-2k")` and `get_job_events` on each.
-3. `get_job_workflow(<P2-or-P3 id>)`. Then `validate_workflow(inline_workflow=<that workflow>,
-   workspace="qa-h3-regen-2k")`.
-4. `get_gallery_metadata` on the final mp4.
-5. `assess_output` on the final mp4. Do this only for P3 (tiles), as a check for seams.
-expected:
-- **Workflow shape.** The workflow from step 3 has:
-  - a 768p base (1344×768, 124 frames, seed 42, the #500 crowd-face prompt);
-  - `upscale_h3_latents` to 1920×1088;
-  - a refine step with `refine_strength: 0.909375`, `num_inference_steps: 4`, and `hold_audio` from the base;
-  - a video shift about 2;
-  - the draft's own prompt;
-  - `loras` that include the refiner entry's file, plus `turbo-4step-keyframe` per Q1's default.
-  - For P3: `refine_tiles` `{"width":1344,"height":768,"overlap":256}`.
-  - Validation is `valid: true` with no error.
-- **Job.** `get_job` shows the job `succeeded`.
-- **Events.**
-  - They show **3** refine evaluations (4 points), or 3 per tile under P3.
-  - No event or `job.warnings` entry mentions unmatched keys, unexpected keys, skipped modules, or a LoRA that
-    didn't load.
-  - Which transformer ran (pruned or not) is recorded, either in the events or on the record. Missing is a note,
-    not a finding.
-- **Output.** The final mp4 is 1920×1088, 124 frames, 24 fps, with exactly one audio stream lasting the clip.
-- **Record.**
-  - The table's wall time for the job matches `get_job`'s `started_at`→`finished_at` to within a minute.
-  - The table has a peak-memory column and #1049's crop PSNR/SSIM at 2.0 s and 4.5 s against arm (a).
-- **P3 only.** `assess_output` raises no seam flag, or the record names the seam or duplicated subject as the
-  finding that failed the gate.
-It is a **finding** if:
-- there is no recorded job;
-- the job failed but the table reports it as run;
-- the size, frame count or audio are wrong;
-- a LoRA-load warning appears;
-- the evaluation count isn't 3;
-- the recorded workflow fails validation;
-- the table's wall time doesn't match the job's.
-cleanup: none. Never delete the probe jobs: the gate cites them.
 metrics: none.
 
 ### M-F233 — `refine_sigmas` with the regenerate recipe validates, at its boundaries and with `refine_tiles`, and the guide documents it with that example
@@ -6605,53 +5982,6 @@ cleanup:
 metrics: `refine_s` and `refine_evals` per job, conditions `768p-s0.909-sigmas` and `768p-s0.909-grid`, to
 `regression-perf/M-F235.jsonl`. The first run seeds the file.
 
-### M-F236 — with no `refine_sigmas`, the refine pass is unchanged: existing refine cases hold and their evaluation counts don't move
-source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 refine (`refine_strength`, `refine_tiles`) without the new input. Free, except where it
-reuses M-F098's runs when the same pass runs them.
-Steps:
-1. Run the free refine cases M-F083, M-F096, M-F097, M-F173, M-F174 and M-F177 as written.
-2. If this pass also runs M-F098, compare its evaluation counts and `refine_s` with the medians in
-   `regression-perf/M-F098.jsonl`.
-expected:
-- Every listed case passes unchanged. Their refusal messages are the same as before; M-F115's standard is
-  byte-identical.
-- None of their valid carriers gains a warning or error that mentions `refine_sigmas`.
-- M-F098 (if run): A, B and C still run 4, 5 and 4 evaluations, and `refine_s` is within that file's 50% flag
-  band. Without `refine_sigmas`, the shift grid is the same as before.
-It is a **finding** if a plain refine case changes verdict or message, or a count or time drifts outside the band.
-cleanup: none.
-metrics: none.
-
-### M-F237 — the faithful-arm record: the stage B job ran the recipe's exact sigmas at 1920×1088 and sits in #1065's table beside the stage A arm
-source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F232, with `refine_sigmas`. Free: it reads the recorded job. Workspace `qa-h3-regen-2k`.
-Steps:
-1. From #1065's table (`gh issue view 1065 --repo dkackman/diffusers-workflow --comments`), take the faithful
-   arm's job id.
-2. `get_job`, `get_job_events` and `get_job_workflow` on it.
-3. `validate_workflow(inline_workflow=<that workflow>, workspace="qa-h3-regen-2k")`.
-4. `get_gallery_metadata` on the final.
-expected:
-- **Workflow.** It is M-F232's probe workflow with:
-  - `refine_sigmas: [0.909375, 0.857143, 0.666667, 0]`;
-  - `refine_strength: 0.909375`;
-  - `num_inference_steps: 4`;
-  - the same base draft and seed as stage A's arm.
-  It validates clean.
-- **Job.** It succeeded, with 3 refine evaluations (3 per tile if it ran tiled) and no LoRA-load warning.
-- **Output.** 1920×1088, 124 frames, 24 fps, with one audio stream.
-- **Record.** The table row has the job id, peak memory, the measured wall time (matching `get_job` to within a
-  minute) and crop PSNR/SSIM at 2.0 s and 4.5 s against (a), like the stage A row.
-It is a **finding** if:
-- there's no row;
-- the sigmas differ from the recipe;
-- the job didn't succeed;
-- the size or audio are wrong;
-- the wall time doesn't match.
-cleanup: none. Never delete the arm's job: the gate cites it.
-metrics: none.
-
 ### M-F243 — a full-frame H3 refine whose width/height don't match the upscaled canvas is refused at validate, naming both sizes
 source: tester, verified in #1087 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va (`MiniMaxAI/MiniMax-H3`, ModularPipeline) base → `upscale_h3_latents` → H3 refine
@@ -6677,16 +6007,37 @@ It is a **finding** if (a) or (c) validates, since the run would then fail about
 cleanup: none (no job is queued).
 metrics: none.
 
-### M-F244 — the "Regional edit" guide section carries the measured `refine_strength` bands, the conditions they were measured under, and the shifted-σ meaning
+### M-F244 — the workflows guide's "Regional edit" section states the mask rules and what stays unchanged, and carries the measured `refine_strength` bands, the conditions they were measured under, and the shifted-σ meaning
 source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 regional edit docs. Free: discovery only. This adds plan v2's docs to M-F214;
-where M-F214's strength bullet (1.0 regenerates, 0.4 reworks lightly) and this case differ, this case is
-the plan's current wording.
+Model/pipeline: MiniMax H3 regional edit (`source_video` + `mask_image`/`mask_video` +
+`refine_strength` on a t2va step) docs. Free: discovery only. This case has two arms: the section and its
+mask rules (plan v1), and plan v2's docs added to it. Where the mask-rules arm's strength bullet (1.0
+regenerates, 0.4 reworks lightly) and the bands arm differ, the bands arm is the plan's current wording.
 Steps:
 1. `get_guide("workflows", section="Regional edit")`.
-2. `get_guide("workflows")` (the index form), to confirm no second, conflicting strength table lives in
-   another section (the refine section may point at this one).
-expected:
+2. `get_guide("workflows")` (the index form). Find the "Regional edit" section and its position
+   relative to the refine section ("Promoting an H3 take to 768p in latent space" or its successor), and
+   confirm no second, conflicting strength table lives in another section (the refine section may point
+   at this one).
+expected, the section and its mask rules:
+- The section exists and sits beside the refine section, either directly before or directly after it.
+- It names `source_video`, `mask_image`, `mask_video`, `mask_grow`, `refine_strength` and
+  `hold_audio`, and states these rules:
+  - `source_video` must match the step's `width`, `height` and `num_frames`;
+  - white means regenerate, and the mask is binarized at 128;
+  - the grain is the patch grid, 16 px × patch size in space and about 4 pixel frames per latent
+    frame in time;
+  - `mask_grow` dilates by whole cells and defaults to 1;
+  - an empty mask is refused;
+  - `refine_strength` is required with a mask, where 1.0 regenerates from noise and lower values
+    rework lightly (e.g. 0.4);
+  - `hold_audio` is still required, normally the `source_video` itself.
+- It says the area outside the mask comes back **near-identical, not bit-identical**, because
+  there is no paste-back.
+- It has a worked example that is a complete step (it passes as M-F215's carrier shape) and lists
+  the refused combinations: a mask with `refine_tiles`, a chained step, a non-H3 step, or both
+  mask kinds.
+expected, the bands:
 - **The bands**, as a table or a list, each with what happens inside the mask:
   - up to 0.85 (0.8 and 0.85 named or covered by "≤0.85"): a light rework, re-detail only; the source's
     objects and colours stay;
@@ -6701,13 +6052,18 @@ expected:
   `refine_tiles` uses), so the useful range sits high. Either the formula (u = s / (shift − (shift−1)·s),
   i.e. s / (6 − 5s) at shift 6) or at least one worked value (0.8 → about 0.40, 0.9 → about 0.60,
   0.95 → about 0.76 of the unshifted schedule). Values within ±0.02 of these meet it.
-- Its worked example (the one M-F214 checks) uses a strength from the bands, 0.9 or 0.95, not 0.4 or 0.8
-  presented as a region change.
-It is a **finding** if the bands are missing or contradict the list above, if the section still says
-0.8 (or any value below 1.0) changes the region "per the prompt" in general, if the measurement
+- Its worked example (the one the mask-rules arm checks) uses a strength from the bands, 0.9 or 0.95, not
+  0.4 or 0.8 presented as a region change.
+It is a **finding**, on the mask-rules arm, if the section is missing, if it omits any argument or rule
+above, or if it promises a bit-identical outside.
+It is a **finding**, on the bands arm, if the bands are missing or contradict the list above, if the section
+still says 0.8 (or any value below 1.0) changes the region "per the prompt" in general, if the measurement
 conditions or the shifted-σ meaning are missing, or if another section gives different bands.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F214 (merged 2026-11-26, suite review)
+- M-F214: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F245 — a regional edit at `refine_strength` 0.9 replaces the held object while identity and pose hold, logs a regional-edit event, keeps the outside close, and keeps the take's audio
 source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
@@ -6841,89 +6197,6 @@ cost.
 cleanup: `delete_output(job_id=...)`. After the last #1062 case, `delete_asset` each `h3-mask/` asset.
 metrics: `wall_minutes`, to `regression-perf/M-F249.jsonl` on each run.
 
-### M-F250 — `alpha-matte`'s `frame_rate` defaults to `"source"`, its matte step is held at 24, its restore step carries the rate, and the registry links Alpha-Gen by an `evidence` item with `workflow: null`
-source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F223. Free: discovery calls and a skill read only, no GPU. This is plan v3/v4's
-amendment of M-F223 (Q5, Q6). Where the two differ, this case is the plan's current wording: M-F223's
-`frame_rate` 24.0 default and its "`workflow` naming `templates/ltx2/alpha-matte`" bullet are replaced by
-the checks below. M-F223's other checks stand.
-expected:
-- **Catalog.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
-  `templates/ltx2/alpha-matte` entry shows `frame_rate`'s default as the string `"source"`, not a number.
-- **Variables.** `get_workflow(name="templates/ltx2/alpha-matte", variables_only=true)`: `frame_rate`
-  defaults to `"source"`. `width` 960, `height` 544, the `num_frames` default and constraints, and `seed`
-  are as M-F223 records them.
-- **Document.** In the full `get_workflow` document:
-  - the pipeline (matte) step's own `frame_rate` argument is the literal number 24 (24.0), **not**
-    `variable:frame_rate`, and its `result.fps` is a literal 24, not a variable;
-  - the restore step is `restore_to_source` with an `fps` argument of `variable:frame_rate`;
-  - the restore step's `result` declares **no** `fps`.
-- **Task.** `get_task("restore_to_source")` lists an optional `fps` parameter. Its description says:
-  - omitted keeps the input video's rate;
-  - `"source"` takes the fit record's source rate, falling back to the input video's rate when the
-    record has none;
-  - a positive number sets that rate;
-  - it is for a fixed-edit route whose output has to line up frame for frame with its source.
-- **Description.** The full description says the matte is written at the source's frame rate and that
-  `frame_rate` overrides it. It no longer says "24 fps - set 'frame_rate' to the source's" or any
-  wording that the output is 24 fps by default.
-- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`:
-  - `ltx-2.5/ic-alpha-gen` is `status: proven`, with `workflow: null`, and an `evidence` item whose note
-    names `templates/ltx2/alpha-matte` (a lem job id beside it, e.g. `7219cf6b4cf5`, is expected but its
-    exact value isn't checked);
-  - `ltx-2.5/ic-clean-plate` and `ltx-2.5/ic-day-to-night` are still `trial` with `workflow: null`, each
-    with an `evidence` item for issue 1064 whose note gives the card mismatch and the trigger that would
-    bring it back (a guided dev/full IC route or a `field-report`; Day-To-Night also fps resampling).
-    If `list_loras` shows no `evidence` field at all, that half can't be checked over MCP. Record that,
-    and leave it to docs-review.
-- **Skill.** The `dw:ltx-2.5` skill's `alpha-matte` row says, in a few words, that the matte keeps the
-  source's frame rate (or that `frame_rate` overrides it). It doesn't say it is written at 24 fps.
-It is a **finding** if any of the following holds:
-- `frame_rate` defaults to a number;
-- the matte step's `frame_rate` or `result.fps` reads the variable, or the restore step doesn't;
-- the restore step's `result` declares an `fps`;
-- `restore_to_source` has no `fps` parameter, or its description misses one of the three modes;
-- the description or skill still says 24 fps by default;
-- `ic-alpha-gen` isn't `proven`, has a non-null `workflow`, or has no `evidence` item naming the
-  template.
-cleanup: none. Discovery only, writes nothing.
-metrics: none.
-
-### M-F251 — `restore_to_source`'s `fps` refuses a non-positive or non-numeric value other than `"source"` for free, and `alpha-matte` validates with each legal `frame_rate`
-source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: the `fit_to_model` → `restore_to_source` tasks, and `templates/ltx2/alpha-matte`. Free:
-`validate_workflow` only, no GPU. Workspace `regression-model-specific`. `P` is
-`asset:ic-alpha/src-384x544-97f.mp4` and `P8` is `asset:ic-alpha/src-384x544-97f-8fps.mp4` (Fixtures,
-"Sources for the #1064 IC-LoRA cases"). Validation reads only the files' headers, so if `P8` is missing
-use `P` for the probes below and say so.
-Steps:
-1. An inline task-only workflow `W(fps)` for `validate_workflow(workflow=..., workspace="regression-model-specific")`:
-   - `fit`: `fit_to_model(video=P8, width=384, height=544, num_frames=97, mode="letterbox")`,
-     `save: false`;
-   - `back`: `restore_to_source(video=P, fit="previous_result:fit.fit", fps=<fps>)`, result
-     `video/mp4`.
-   (If the fit record's reference form has changed, pin it from `get_task("restore_to_source")`'s `fit`
-   description.)
-2. Validate `W` with `fps` set to each of: omitted, `"source"`, `12`, `24`, `0`, `-8`, `"fast"`, `"Source"`.
-3. `validate_workflow(name="templates/ltx2/alpha-matte", workspace="regression-model-specific",
-   arguments={"source_video": P8, "num_frames": 97, ...})` with `frame_rate` omitted, `24`, `12`, then
-   `0` and `"fast"`.
-expected:
-- Step 2:
-  - omitted, `"source"`, `12` and `24` → `valid: true`;
-  - `0`, `-8` and `"fast"` → `valid: false`, each with an error at the `back` step's `fps` argument
-    naming what it accepts (a positive number or `"source"`). No download or load is planned. The
-    refusal is free.
-  - `"Source"` (a different case): either refused like `"fast"` or accepted as `"source"`. Record which.
-    Neither is a finding, but an accept that then writes at some other rate would be, in M-F252.
-- Step 3: omitted, `24` and `12` → `valid: true`, each with a non-null `plan.estimate`. `0` and
-  `"fast"` → `valid: false`, with the error at `arguments.frame_rate` or at the restore step's `fps`.
-  A pass on either is a finding.
-It is a **finding** if a bad `fps` passes validate, a legal one is refused, or the refusal names
-no path.
-cleanup: none (inline validation writes nothing).
-metrics: none.
-
 ### M-F252 — `restore_to_source` writes the rate the caller picks: the fit record's source rate with `"source"`, the input's rate when omitted, a number when given, and never changes the frame count
 source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: `fit_to_model` and `restore_to_source` only. CPU, no model, no GPU time beyond the
@@ -6985,79 +6258,6 @@ It is a **finding** if any of the following holds:
 - the follow arm warns about its rate.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Keep the
 fixture.
-metrics: none.
-
-### M-F254 — `restore-colorize` is `fit` → model → `final`, with `frame_rate` defaulting to `"source"`, the model held at 24, and the registry linking Colorization by an `evidence` item with `workflow: null`
-source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F227. Free: discovery calls and a skill read only, no GPU. This is plan v4's
-amendment of M-F227 (Q5, Q7). Where the two differ, this case is the plan's current wording: M-F227's
-`frame_rate` 24.0 default, its "same variable set as `restore-deblur`" where `frame_rate` is concerned,
-and its "`workflow` naming `templates/ltx2/restore-colorize`" bullet are replaced by the checks below.
-M-F227's other checks (cost, constraints as deblur's, `lora_scale` 1.0, the stored prompt's four
-phrases, the skill row) stand.
-expected:
-- **Catalog.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
-  `templates/ltx2/restore-colorize` entry has a non-null `cost`, a `lora_scale` default of 1.0 and a
-  `frame_rate` default of the string `"source"`.
-- **Variables.** `get_workflow(name="templates/ltx2/restore-colorize", variables_only=true)`: `width` 960,
-  `height` 544, `num_frames` 121, `lora_scale` 1.0, `frame_rate` `"source"`, a `prompt` that is a
-  `prompt:ltx2/…` reference, and a `seed`.
-- **Document.** In the full `get_workflow` document the steps are, in order:
-  1. a `fit_to_model` step reading `variable:source_video`, `mode` fixed at `letterbox` (not a
-     variable; see below for `crop`), `downscale` 1, not saved;
-  2. the `LTX2InContextPipeline` step:
-     - the Colorization weight from `Lightricks/LTX-2.5-22b-IC-LoRA-Colorization` at
-       `variable:lora_scale`;
-     - one reference condition reading the fit step's video at strength 1.0, with
-       `reference_downscale_factor` 1;
-     - its own `frame_rate` argument and its `result.fps` are a literal 24, not `variable:frame_rate`;
-     - its result is not saved (or is intermediate);
-  3. a `restore_to_source` step reading the pipeline's output and the fit record, with
-     `fps: variable:frame_rate`, whose `result` declares no `fps` and is final.
-  If the stage records that the build switched the fit to `crop` (the plan's letterbox-bleed risk),
-  the fit's mode reads `crop`, fixed, and the rest of this case holds.
-- **Description.** It says:
-  - the template is for black-and-white or washed-out source footage;
-  - the output keeps the source's size and frame rate, and `frame_rate` overrides the rate;
-  - how a longer or shorter source is fitted (as `alpha-matte`'s does: trimmed or held to
-    `num_frames`);
-  - to lower `lora_scale` toward 0.8 if it oversaturates or bleeds.
-  It doesn't say the output is 960×544 or 24 fps.
-- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is
-  `status: proven`, `workflow: null`, with an `evidence` item whose note names
-  `templates/ltx2/restore-colorize` (and a lem job). If no `evidence` field shows, record that the link
-  can't be checked over MCP; `proven` and `workflow: null` still can.
-- **Skill.** The `dw:ltx-2.5` skill's `restore-colorize` row doesn't say the output is 960×544 or 24
-  fps. If it gives a size or rate, it is the source's.
-It is a **finding** if any of the following holds:
-- `frame_rate` defaults to a number;
-- there is no fit step before the pipeline or no `restore_to_source` step after it;
-- the pipeline's `frame_rate` or `result.fps` reads the variable, or the restore step's `fps` doesn't;
-- the description says the output is the working size or 24 fps;
-- `ic-colorization` isn't `proven`, or has a non-null `workflow`.
-cleanup: none. Discovery only.
-metrics: none.
-
-### M-F255 — `restore-colorize` validates 8 fps and non-16:9 sources clean, accepts each legal `frame_rate`, and refuses a bad one for free
-source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F227. Free: `validate_workflow` only. Workspace `regression-model-specific`. This
-adds to M-F228, whose size and frame checks stand. Calls are
-`validate_workflow(name="templates/ltx2/restore-colorize", workspace="regression-model-specific",
-arguments={"source_video": <S>, ...})`.
-Setup: `B8` = `asset:ic-colorize/src-bw-960x544-97f-8fps.mp4` and `BP` =
-`asset:ic-colorize/src-bw-384x544-97f.mp4` (Fixtures). Make them if missing.
-expected:
-- `S = B8`, `num_frames: 97`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
-- `S = BP`, `num_frames: 97` → `valid: true`, `warnings: []`. The non-16:9 source isn't refused or
-  warned about for its aspect.
-- `S = B8`, `num_frames: 97`, `frame_rate` `24`, then `12` → `valid: true`.
-- `S = B8`, `frame_rate` `0`, then `"fast"` → `valid: false`, with the error at `arguments.frame_rate`
-  or at the restore step's `fps`, naming what it accepts. Free: nothing is downloaded or loaded.
-- `S = B8` with the default `num_frames` (121, longer than the 97-frame source) → `valid: true`. The
-  template holds or loops a short source as the description says; it isn't refused.
-It is a **finding** if either source is refused or warned about, a legal `frame_rate` is refused, or a
-bad one passes.
-cleanup: none.
 metrics: none.
 
 ### M-F256 — `restore-colorize` on an 8 fps black-and-white source comes back in colour at 8 fps with the source's frame count by default, and at 24 fps with the same count when `frame_rate=24`
@@ -7150,17 +6350,18 @@ the server reads `join`.
 cleanup: none.
 metrics: none.
 
-### M-F259 — `joins.md` states the cutaway and lead-in recipes over existing templates, each named template resolves, and the A-tail video reference is one line, not the recipe
+### M-F259 — `joins.md` states the cutaway and lead-in recipes over existing templates, each named template resolves, the A-tail video reference is one line, not the recipe, and it states render order, re-roll invalidation and the attempt budget, with concat as assembly, not a chain splice
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `dw:script-to-video`'s `references/joins.md`, and the MiniMax H3 templates it names.
-Free (discovery calls only).
+Model/pipeline: `dw:script-to-video`'s `references/joins.md` and SKILL.md, and the MiniMax H3 templates
+`joins.md` names. Free (discovery calls only).
 Steps:
-1. Read `references/joins.md` from the loaded skill.
+1. Read `references/joins.md` from the loaded skill, and SKILL.md's seams/splices text (step 5 and the
+   "never splice" rule).
 2. For each catalog name it gives, `get_workflow(name=<name>, variables_only=true)`. At least
    `templates/minimax/image-to-video`, `templates/minimax/first-and-last-frame`,
    `templates/minimax/last-frame-only` and `templates/minimax/dialogue-short`.
 3. `get_task("get_first_frame")` and `get_task("get_last_frame")`.
-expected:
+expected, the recipes:
 - **Cutaway A, B, C**, as separate runs: render A; render B as its own shot (a `continue` off A's last
   frame through `image-to-video`, or a fresh `cut`; it says real B-roll is usually a cut); render C
   **from A, not B**: `get_last_frame` of A's output into `templates/minimax/image-to-video` for a
@@ -7179,18 +6380,7 @@ expected:
 - One line says an LTX-2.5 `image-to-video` re-entry works the same way.
 - Every catalog name in step 2 resolves (no "Unknown workflow"), and both tasks in step 3 exist and
   take a `video`.
-It is a **finding** if C's source is B or unstated, the lead-in doesn't render its target first, a
-named template or task doesn't resolve, the A-tail video reference is presented as the default route,
-or the concat order isn't story order.
-cleanup: none.
-metrics: none.
-
-### M-F260 — `joins.md` states render order, re-roll invalidation and the attempt budget, and that concat here is assembly, not a chain splice
-source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `dw:script-to-video`'s `references/joins.md` and SKILL.md. Free.
-Steps: read `references/joins.md` and SKILL.md's seams/splices text (step 5 and the "never splice"
-rule).
-expected:
+expected, order, re-rolls and budget (`joins.md` and SKILL.md):
 - **Render order follows sources, not the story**: a lead-in's target renders before the lead-in.
 - **Re-rolling C invalidates the lead-in B** built on its first frame, so B is re-rendered after it,
   and the quote given before a re-roll covers **both** C and B.
@@ -7199,10 +6389,16 @@ expected:
   **dependent** shot.
 - "Never splice a re-rolled segment into a *chain* with concat" still stands, and the text says these
   joins are separate shots, so concat is the assembly, not a splice. No sentence contradicts the other.
-It is a **finding** if any of the four rules is missing, if a re-roll of C is quoted without B, or if
-the skill reads as both forbidding and requiring concat for these shots.
+It is a **finding**, on the recipes, if C's source is B or unstated, the lead-in doesn't render its target
+first, a named template or task doesn't resolve, the A-tail video reference is presented as the default
+route, or the concat order isn't story order.
+It is a **finding**, on order, re-rolls and budget, if any of the four rules is missing, if a re-roll of C
+is quoted without B, or if the skill reads as both forbidding and requiring concat for these shots.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F260 (merged 2026-11-26, suite review)
+- M-F260: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F261 — a dialogue–cutaway–dialogue triple built per `joins.md`: C opens on A's scene, not B's, and the concat plays A, B, C with two cuts
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
@@ -7354,34 +6550,6 @@ were pruned after #1102 closed verified, record "evidence pruned" and skip. That
 cleanup: none (reads only).
 metrics: none.
 
-### M-F265 — both arms share one shot-1 output, and the two arms differ only in how shots 2–5 were made
-source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 ref2va and fl2va, the M-F264 jobs. Free: reads only.
-Steps:
-1. From M-F264's `get_job_workflow` readings, take shot 1's job and output file, arm A's chain job
-   (or jobs) and assembly job, and arm B's shot 3, shot 5, bridge and assembly jobs.
-2. `get_gallery_metadata` on shot 1's output.
-expected:
-- Shot 1 is one job and one output. Arm A's chain continues from it (its first carry, or its first
-  segment's input, is an `output:` reference to that file), and arm A's concat lists that same
-  `output:` reference as its first video. Arm B's concat lists the same reference first, and bridge
-  2's `image` reads its last frame. "Same" means the same `output:` path, not a re-render with the
-  same seed.
-- Shot 1 is 124 frames (`frame_count` 124 at 24 fps).
-- Shots 3 and 5 of arm B are two **separate** jobs (two job ids), each a single ref2va render, not a
-  chain and not one job with both.
-- The reference image(s) are the same reference(s) in shot 1, every arm A segment, and arm B's
-  shots 3 and 5: an `asset:`, or the one shared HF-URL subject and voice pair the #1102 run used
-  (amended per Don's ruling on #1094). Arm B's shots 3 and 5 use the seed the record states for them, and the record
-  states every render's seed.
-- Each beat's prompt (shots 2–5) is the same text in arm A's segment and arm B's shot for that beat,
-  except that a bridge's prompt may add its arrival. Every beat prompt says its arrival state.
-It is a **finding** if shot 1 was rendered twice, an arm's assembly or chain names a different shot-1
-file, shots 3 and 5 are one job or chained, the references or a beat's prompt differ between arms,
-or a seed is unstated. Evidence pruned: skip, as in M-F264.
-cleanup: none.
-metrics: none.
-
 ### M-F266 — every bridge is pinned to its neighbours: `image` is the previous odd shot's last frame and `last_image` the next one's first
 source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 fl2va (`templates/minimax/first-and-last-frame`), arm B's bridges 2 and 4
@@ -7410,43 +6578,6 @@ It is a **finding** if a bridge's endpoint names any file other than its neighbo
 output, a bridge is under 124 frames, an endpoint frame visibly differs from the frame it was pinned
 to, or the tail-snap reading contradicts the record. Evidence pruned: skip, as in M-F264.
 cleanup: none.
-metrics: none.
-
-### M-F267 — both arms were joined with `trim_frames: 1` and measured with `analyze_seams(shots=...)`, no seam `hard_cut`, and the seam table reproduces
-source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: utility tasks over the M-F264 H3 outputs (`concat_videos`, `analyze_seams`). No GPU
-render; step 3 runs a utility job. Workspace `qa-1094-bridge` for reading, `regression-model-specific`
-for the re-run.
-Background (today's behaviour): `concat_videos` marks every seam it makes `hard_cut`, and
-`analyze_seams` skips `seam_frame_jump` at a `hard_cut` seam. Passing `shots=` overrides the records
-the video carries.
-Steps:
-1. `get_job_workflow` for each arm's assembly and seam jobs.
-2. Read each arm's `analyze_seams` result (`get_job`, and `get_output_text` if the result is a
-   file).
-3. Re-run one arm's measurement: an inline workflow with one `analyze_seams` step whose `video` is
-   that arm's concat output (`output:` reference into `qa-1094-bridge`, or `copy_to_workspace` it into
-   `regression-model-specific` first) and whose `shots` are exactly the records the original job
-   passed. `validate_workflow`, then `run_workflow(..., workspace="regression-model-specific",
-   wait_seconds=55)` with the quoted `acknowledged_cost`.
-expected:
-- Each arm's concat step has `trim_frames: 1`, lists five videos in shot order (1, 2, 3, 4, 5), and its
-  output's `frame_count` is the sum of the five shots' frame counts minus 4.
-- Each arm's `analyze_seams` step passes `shots`, and no record in it has `hard_cut: true`. Its result
-  has 4 seams, and every seam carries a numeric `seam_frame_jump` (none skipped as a cut).
-- The boundaries in `shots` fall where the shots meet in the trimmed concat (the cumulative frame
-  counts after the head trims), to within 1 frame.
-- Step 3's numbers match the original job's for every seam. If step 3 reads the encoded concat
-  output, the match is within ±0.15 absolute on `seam_frame_jump`, `jump_ratio`, `look_ratio` and
-  `detail_ratio` and ±0.25 on the saturation, lightness and contrast steps, and no seam's
-  classification changes. If it repeats the original's in-job chain (concat → `previous_result` →
-  `analyze_seams`), the match is within 1%. The original job's numbers equal the record's table as
-  printed (to its rounding).
-It is a **finding** if an arm was joined without `trim_frames: 1`, measured without `shots=` or with a
-`hard_cut` record, a seam has no `seam_frame_jump`, the boundaries are off by more than a frame, or the
-re-run or the table disagrees with the job. Evidence pruned: skip, as in M-F264.
-cleanup: `delete_output(job_id=<step 3's job>, workspace="regression-model-specific")`, and delete any
-copied asset.
 metrics: none.
 
 ### M-F268 — the take drift reproduces from a call the record names, and the verdict follows the win rule as written
@@ -7652,24 +6783,54 @@ the variable, the restore step lacks the `fps` binding, any step after the resto
 cleanup: none.
 metrics: none.
 
-### M-F274 — the three fit-shaped templates validate a 30 fps source clean, accept each legal `frame_rate`, and refuse a bad one for free, naming `fps`
+### M-F274 — the three fit-shaped templates, `restore-colorize`, `restore-deblur` and `restore-decompression` validate 30 fps, 8 fps and non-16:9 sources clean, accept each legal `frame_rate`, hold a short source, and refuse a bad rate for free
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F273. Free: `validate_workflow` only. Workspace `regression-model-specific`.
-Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` (Fixtures, "Sources for the #1090 frame-rate
-cases"); make it if missing. `S24` = `asset:qa-cast/ep6-shot1-priya.mp4`.
+Model/pipeline: as M-F273 for the fit-shaped arm, as M-F227 for the `restore-colorize` arm, as M-F285 for
+the `restore-deblur`/`restore-decompression` arm. Free: `validate_workflow` only. Workspace
+`regression-model-specific`.
+Setup:
+- `S30` = `asset:fps-1090/priya-30fps-124f.mp4` (Fixtures, "Sources for the #1090 frame-rate
+  cases"); make it if missing. `S24` = `asset:qa-cast/ep6-shot1-priya.mp4`.
+- `SP30` = `asset:fps-1090/priya-30fps-384x544-97f.mp4` (Fixtures).
+- `B8` = `asset:ic-colorize/src-bw-960x544-97f-8fps.mp4` and `BP` =
+  `asset:ic-colorize/src-bw-384x544-97f.mp4` (Fixtures). Make them if missing.
 Calls: `validate_workflow(name=<t>, workspace="regression-model-specific", arguments={"source_video": <S>, ...})`
-for each of the three templates.
-expected, for each template:
+for each template of each arm. In the `restore-colorize` arm `<t>` is `templates/ltx2/restore-colorize`.
+expected, **fit-shaped arm**, for each of M-F273's three templates:
 - `S30`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
 - `S24`, no `frame_rate` → `valid: true`, `warnings: []`.
 - `S30` with `frame_rate` `24`, `30`, `12`, the string `"24"` and `"source"` → each `valid: true`.
 - `S30` with `frame_rate` `0`, `-8`, `"fast"` → `valid: false`, each with an error that names `fps`
   (at the restore step's `fps`, or at `arguments.frame_rate` while saying it feeds `fps`) and what it
   accepts (a positive number or `"source"`). Nothing is downloaded or loaded.
-It is a **finding** if a legal value is refused, a bad one passes, the refusal doesn't name `fps`,
-or a clean source draws a warning.
+expected, **`restore-colorize` arm** (this adds to M-F228, whose size and frame checks stand):
+- `S = B8`, `num_frames: 97`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
+- `S = BP`, `num_frames: 97` → `valid: true`, `warnings: []`. The non-16:9 source isn't refused or
+  warned about for its aspect.
+- `S = B8`, `num_frames: 97`, `frame_rate` `24`, then `12` → `valid: true`.
+- `S = B8`, `frame_rate` `0`, then `"fast"` → `valid: false`, with the error at `arguments.frame_rate`
+  or at the restore step's `fps`, naming what it accepts. Free: nothing is downloaded or loaded.
+- `S = B8` with the default `num_frames` (121, longer than the 97-frame source) → `valid: true`. The
+  template holds or loops a short source as the description says; it isn't refused.
+expected, **`restore-deblur`/`restore-decompression` arm**, for each of the two templates:
+- `S30`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
+- `SP30` with `num_frames: 97` → `valid: true`, `warnings: []`: the non-16:9 source isn't refused or
+  warned about.
+- `SP30` with the default `num_frames` 121 (longer than its 97 frames) → `valid: true`: the short
+  source is held as the fit does, not refused.
+- `SP30`, `num_frames: 97`, `frame_rate` `24`, `12`, `"source"` → `valid: true`.
+- `SP30`, `frame_rate` `0`, `"fast"` → `valid: false`, with the error at `arguments.frame_rate` or the
+  restore step's `fps`, naming what it accepts. Nothing is downloaded or loaded.
+It is a **finding**, on the fit-shaped arm, if a legal value is refused, a bad one passes, the refusal
+doesn't name `fps`, or a clean source draws a warning.
+It is a **finding**, on the `restore-colorize` arm and on the `restore-deblur`/`restore-decompression` arm,
+if either source is refused or warned about, a legal `frame_rate` is refused, or a bad one passes.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F255, M-F286 (merged 2026-11-26, suite review)
+- M-F255: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+- M-F286: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F275 — `refine-in-place` on a 30 fps source with audio writes at 30 fps by default with the fitted frame count and the source's audio paired to it, and at 24 fps with the same frames when `frame_rate=24`
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
@@ -7775,11 +6936,15 @@ It is a **finding** if either task argument is missing or undescribed, either te
 cleanup: none.
 metrics: none.
 
-### M-F279 — the new `fps` arguments refuse a non-positive or non-numeric value other than `"source"` for free, and both templates validate with each legal `frame_rate`
+### M-F279 — the `fps` arguments (the face paste, the window join, `restore_to_source`) refuse a non-positive or non-numeric value other than `"source"` for free, and `face-repair`, `restore-long` and `alpha-matte` validate with each legal `frame_rate`
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F278. Free: `validate_workflow` only. Workspace `regression-model-specific`.
+Model/pipeline: as M-F278; plus the `fit_to_model` → `restore_to_source` tasks, and
+`templates/ltx2/alpha-matte`. Free: `validate_workflow` only, no GPU. Workspace `regression-model-specific`.
 Setup: `F30` = `asset:fps-1090/priya-30fps-124f.mp4`, `L30` = `asset:fps-1090/ep13-30fps-282f.mp4`
 (Fixtures). Validation reads headers only; if either is missing, make it first.
+`P` is `asset:ic-alpha/src-384x544-97f.mp4` and `P8` is `asset:ic-alpha/src-384x544-97f-8fps.mp4` (Fixtures,
+"Sources for the #1064 IC-LoRA cases"). Validation reads only the files' headers, so if `P8` is missing
+use `P` for the probes in steps 4 to 6 and say so.
 Steps:
 1. Copy `face-repair`'s `crop` (`crop_face_track`) and paste steps from its document into an inline
    task-only workflow that pastes the crops straight back (`repaired` = the crop step's crops, no model
@@ -7790,15 +6955,39 @@ Steps:
    `"source"`, `12`, then `0`, `"x"`.
 3. Validate both templates (`face-repair` on `F30`, `restore-long` on `L30` with its default three
    windows) with `frame_rate` omitted, `24`, `30`, `"source"`, then `0` and `"fast"`.
+4. An inline task-only workflow `W(fps)` for `validate_workflow(workflow=..., workspace="regression-model-specific")`:
+   - `fit`: `fit_to_model(video=P8, width=384, height=544, num_frames=97, mode="letterbox")`,
+     `save: false`;
+   - `back`: `restore_to_source(video=P, fit="previous_result:fit.fit", fps=<fps>)`, result
+     `video/mp4`.
+   (If the fit record's reference form has changed, pin it from `get_task("restore_to_source")`'s `fit`
+   description.)
+5. Validate `W` with `fps` set to each of: omitted, `"source"`, `12`, `24`, `0`, `-8`, `"fast"`, `"Source"`.
+6. `validate_workflow(name="templates/ltx2/alpha-matte", workspace="regression-model-specific",
+   arguments={"source_video": P8, "num_frames": 97, ...})` with `frame_rate` omitted, `24`, `12`, then
+   `0` and `"fast"`.
 expected:
 - Steps 1 and 2: omitted, `"source"` and the positive numbers (and `"12"`) → `valid: true`. `0`, `-5`
   and `"x"` → `valid: false`, each with an error at that step's `fps` naming what it accepts. Free.
 - Step 3: the legal values → `valid: true`, `warnings: []`, non-null `plan.estimate`. `0` and `"fast"` →
   `valid: false` with the error at `arguments.frame_rate` or the carrying step's `fps`.
-It is a **finding** if a bad `fps` passes validate, a legal one is refused, or the refusal names no
-path.
-cleanup: none.
+- Step 5:
+  - omitted, `"source"`, `12` and `24` → `valid: true`;
+  - `0`, `-8` and `"fast"` → `valid: false`, each with an error at the `back` step's `fps` argument
+    naming what it accepts (a positive number or `"source"`). No download or load is planned. The
+    refusal is free.
+  - `"Source"` (a different case): either refused like `"fast"` or accepted as `"source"`. Record which.
+    Neither is a finding, but an accept that then writes at some other rate would be, in M-F252.
+- Step 6: omitted, `24` and `12` → `valid: true`, each with a non-null `plan.estimate`. `0` and
+  `"fast"` → `valid: false`, with the error at `arguments.frame_rate` or at the restore step's `fps`.
+  A pass on either is a finding.
+It is a **finding**, in any step, if a bad `fps` passes validate, a legal one is refused, or the refusal
+names no path.
+cleanup: none (inline validation writes nothing).
 metrics: none.
+
+absorbs: M-F251 (merged 2026-11-26, suite review)
+- M-F251: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 
 ### M-F280 — `paste_face_track` writes the clip's rate when `fps` is omitted or `"source"` and the given rate otherwise, never changing the frame count or dropping the clip's audio
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
@@ -7825,16 +7014,21 @@ isn't 124, the audio is dropped, or the frames differ between arms.
 cleanup: `delete_output(job_id=<id>)`, then `delete_workflow("m-fps-paste")`. Keep the fixture.
 metrics: none.
 
-### M-F281 — `face-repair` on a 30 fps source writes at 30 fps with the source's frame count and its audio intact by default, and at 24 fps when `frame_rate=24`
+### M-F281 — `face-repair` on a 30 fps source writes at 30 fps with the source's frame count and its audio intact by default, and at 24 fps when `frame_rate=24`; on a 24 fps source it is unchanged
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/face-repair`. Paid: two LTX-2.5 face-crop jobs at `crop_size` 512 on
-lem (about 1.3 min each cold). Workspace `regression-model-specific`, `"seed": 1090`.
+lem (about 1.3 min each cold), plus one job at the defaults on lem for the 24 fps control arm. Workspace
+`regression-model-specific`, `"seed": 1090`. (`restore-long`'s 24 fps behaviour is covered by M-F283's
+control arm; a paid 24 fps run of it is not repeated here.)
 Setup: `F30` (Fixtures). Confirm 124 frames at 30 fps with audio, and one clear face at `frame:60`.
 Arms (validate, bind, `run_workflow(..., note="M-F281 <arm>", wait_seconds=55)`, `wait_for_job`):
 - **follow**: `{"source_video": F30, "seed": 1090}`, no `frame_rate`.
 - **override**: the same plus `"frame_rate": 24`.
+Control arm:
+- **control-24**: validate and run `{"source_video": "asset:qa-cast/ep6-shot1-priya.mp4", "seed": 1090}`
+  (`wait_seconds=55`, `wait_for_job`); `get_gallery_metadata`, `get_job`.
 expected:
-- Both jobs succeed.
+- Both `F30` jobs succeed.
 - **follow.** 960×544, **124 frames at 30 fps** (about 4.133 s), the source's own frame count. Its
   audio is `F30`'s: the same duration within a frame, and `assess_output`'s `sync_length` reports no
   drift. **No** `fps_mismatch` and no `video_fps_defaulted` in `job.warnings` or the events.
@@ -7842,13 +7036,20 @@ expected:
   (now shorter than the picture); a length warning is allowed and recorded.
 - **Repaired, in place.** At `frame:60` (`get_output_frames` beside `F30`), the face is repaired and
   sits where it sat in the source; the rest of the frame matches the source.
-- `compare_outputs` between the two finals at `frame:0`, `frame:60`, `frame:123` measures them identical
-  or near it.
+- `compare_outputs` between the follow and override finals at `frame:0`, `frame:60`, `frame:123` measures
+  them identical or near it.
+- **control-24.** 960×544, **124 frames at 24 fps**, with the source's audio (5.167 s within a frame).
+  No `fps_mismatch` and no `video_fps_defaulted`.
 It is a **finding** if the follow arm isn't 30 fps or 124 frames, its audio is missing or a different
 length, it warns `fps_mismatch` (the declared-24 bug this stage exists to remove), the override arm
-isn't 24 fps or changes the count, or the arms' frames differ.
-cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both. Keep the fixture.
+isn't 24 fps or changes the count, or the follow and override arms' frames differ.
+It is a **finding**, on the control-24 arm, if the rate, frame count or audio differs from the source, or a
+frame-rate warning appears.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for all three jobs. Keep the fixture.
 metrics: none.
+
+absorbs: M-F284 (merged 2026-11-26, suite review)
+- M-F284: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F282 — `restore-long` on a 30 fps source longer than one window joins at 30 fps with the source's frame count and keeps the source's audio
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
@@ -7893,29 +7094,24 @@ frame count isn't 282, or the source's audio is dropped.
 cleanup: `delete_output(job_id=<id>)` for both jobs, then `delete_workflow("m-fps-join")`.
 metrics: none.
 
-### M-F284 — `face-repair` on a 24 fps source is unchanged: 24 fps, the source's frame count, its audio, no frame-rate warning
-source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/ltx2/face-repair`. Paid: one job at the defaults on lem. Workspace
-`regression-model-specific`, `"seed": 1090`. (`restore-long`'s 24 fps behaviour is covered by M-F283's
-control arm; a paid 24 fps run of it is not repeated here.)
-Steps: validate and run `{"source_video": "asset:qa-cast/ep6-shot1-priya.mp4", "seed": 1090}`
-(`wait_seconds=55`, `wait_for_job`); `get_gallery_metadata`, `get_job`.
-expected:
-- 960×544, **124 frames at 24 fps**, with the source's audio (5.167 s within a frame).
-- No `fps_mismatch` and no `video_fps_defaulted`.
-It is a **finding** if the rate, frame count or audio differs from the source, or a frame-rate
-warning appears.
-cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
-metrics: none.
-
-### M-F285 — `restore-deblur` and `restore-decompression` are `fit` → model → `final`, with `frame_rate` defaulting to `"source"`, the model held at 24, and descriptions promising the source's size and rate
+### M-F285 — `restore-deblur`, `restore-decompression`, `restore-colorize` and `alpha-matte` are `fit` → model → `final`, with `frame_rate` defaulting to `"source"`, the model held at 24, descriptions promising the source's size and rate, and the registry linking Colorization and Alpha-Gen by an `evidence` item with `workflow: null`
 source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/ltx2/restore-deblur`, `templates/ltx2/restore-decompression`. Free: discovery
-calls and a skill read only. The shape is `restore-colorize`'s (M-F254); where #1080's build settled a
-detail (letterbox or `crop` fit), these two follow it.
-Steps: `list_workflows(shape="shot", traits="needs-input-media")`; `get_workflow` (variables and full)
-for each; the `dw:ltx-2.5` skill's rows for both.
-expected, for each:
+Model/pipeline: `templates/ltx2/restore-deblur`, `templates/ltx2/restore-decompression` (arm A);
+`templates/ltx2/restore-colorize`, as M-F227 (arm B); `templates/ltx2/alpha-matte`, as M-F223 (arm C). Free:
+discovery calls and a skill read only, no GPU. The shape of arm A is `restore-colorize`'s (arm B); where
+#1080's build settled a detail (letterbox or `crop` fit), arm A's two templates follow it.
+Arm B is plan v4's amendment of M-F227 (Q5, Q7). Where the two differ, arm B is the plan's current wording:
+M-F227's `frame_rate` 24.0 default, its "same variable set as `restore-deblur`" where `frame_rate` is
+concerned, and its "`workflow` naming `templates/ltx2/restore-colorize`" bullet are replaced by arm B's
+checks. M-F227's other checks (cost, constraints as deblur's, `lora_scale` 1.0, the stored prompt's four
+phrases, the skill row) stand.
+Arm C is plan v3/v4's amendment of M-F223 (Q5, Q6). Where the two differ, arm C is the plan's current
+wording: M-F223's `frame_rate` 24.0 default and its "`workflow` naming `templates/ltx2/alpha-matte`" bullet
+are replaced by arm C's checks. M-F223's other checks stand.
+Steps: `list_workflows(shape="shot", traits="needs-input-media")`; `get_workflow` (variables, i.e.
+`variables_only=true`, and full) for each of the four templates; the `dw:ltx-2.5` skill's rows for all four;
+`get_task("restore_to_source")`; `list_loras(model="Lightricks/LTX-2.5-Diffusers")`.
+expected, **arm A**, for each of `restore-deblur` and `restore-decompression`:
 - **Catalog and variables.** `frame_rate` defaults to `"source"`; `width` 960, `height` 544,
   `num_frames` 121 and `lora_scale` 1.0 as today; the same `constraints` as today (32-px grid, 8n+1
   frames ≥ 9).
@@ -7931,30 +7127,94 @@ expected, for each:
 - **Description.** It says the output comes back at the source's size and frame rate and that
   `frame_rate` overrides the rate. It doesn't say 960×544 or 24 fps.
 - **Skill.** The rows give the source's size and rate, or none; not 960×544 or 24 fps.
-It is a **finding** if `frame_rate` defaults to a number, the fit or restore step is missing, the
+expected, **arm B**, `restore-colorize`:
+- **Catalog.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
+  `templates/ltx2/restore-colorize` entry has a non-null `cost`, a `lora_scale` default of 1.0 and a
+  `frame_rate` default of the string `"source"`.
+- **Variables.** `get_workflow(name="templates/ltx2/restore-colorize", variables_only=true)`: `width` 960,
+  `height` 544, `num_frames` 121, `lora_scale` 1.0, `frame_rate` `"source"`, a `prompt` that is a
+  `prompt:ltx2/…` reference, and a `seed`.
+- **Document.** In the full `get_workflow` document the steps are, in order:
+  1. a `fit_to_model` step reading `variable:source_video`, `mode` fixed at `letterbox` (not a
+     variable; see below for `crop`), `downscale` 1, not saved;
+  2. the `LTX2InContextPipeline` step:
+     - the Colorization weight from `Lightricks/LTX-2.5-22b-IC-LoRA-Colorization` at
+       `variable:lora_scale`;
+     - one reference condition reading the fit step's video at strength 1.0, with
+       `reference_downscale_factor` 1;
+     - its own `frame_rate` argument and its `result.fps` are a literal 24, not `variable:frame_rate`;
+     - its result is not saved (or is intermediate);
+  3. a `restore_to_source` step reading the pipeline's output and the fit record, with
+     `fps: variable:frame_rate`, whose `result` declares no `fps` and is final.
+  If the stage records that the build switched the fit to `crop` (the plan's letterbox-bleed risk),
+  the fit's mode reads `crop`, fixed, and the rest of this arm holds.
+- **Description.** It says:
+  - the template is for black-and-white or washed-out source footage;
+  - the output keeps the source's size and frame rate, and `frame_rate` overrides the rate;
+  - how a longer or shorter source is fitted (as `alpha-matte`'s does: trimmed or held to
+    `num_frames`);
+  - to lower `lora_scale` toward 0.8 if it oversaturates or bleeds.
+  It doesn't say the output is 960×544 or 24 fps.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is
+  `status: proven`, `workflow: null`, with an `evidence` item whose note names
+  `templates/ltx2/restore-colorize` (and a lem job). If no `evidence` field shows, record that the link
+  can't be checked over MCP; `proven` and `workflow: null` still can.
+- **Skill.** The `dw:ltx-2.5` skill's `restore-colorize` row doesn't say the output is 960×544 or 24
+  fps. If it gives a size or rate, it is the source's.
+expected, **arm C**, `alpha-matte`:
+- **Catalog.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
+  `templates/ltx2/alpha-matte` entry shows `frame_rate`'s default as the string `"source"`, not a number.
+- **Variables.** `get_workflow(name="templates/ltx2/alpha-matte", variables_only=true)`: `frame_rate`
+  defaults to `"source"`. `width` 960, `height` 544, the `num_frames` default and constraints, and `seed`
+  are as M-F223 records them.
+- **Document.** In the full `get_workflow` document:
+  - the pipeline (matte) step's own `frame_rate` argument is the literal number 24 (24.0), **not**
+    `variable:frame_rate`, and its `result.fps` is a literal 24, not a variable;
+  - the restore step is `restore_to_source` with an `fps` argument of `variable:frame_rate`;
+  - the restore step's `result` declares **no** `fps`.
+- **Task.** `get_task("restore_to_source")` lists an optional `fps` parameter. Its description says:
+  - omitted keeps the input video's rate;
+  - `"source"` takes the fit record's source rate, falling back to the input video's rate when the
+    record has none;
+  - a positive number sets that rate;
+  - it is for a fixed-edit route whose output has to line up frame for frame with its source.
+- **Description.** The full description says the matte is written at the source's frame rate and that
+  `frame_rate` overrides it. It no longer says "24 fps - set 'frame_rate' to the source's" or any
+  wording that the output is 24 fps by default.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`:
+  - `ltx-2.5/ic-alpha-gen` is `status: proven`, with `workflow: null`, and an `evidence` item whose note
+    names `templates/ltx2/alpha-matte` (a lem job id beside it, e.g. `7219cf6b4cf5`, is expected but its
+    exact value isn't checked);
+  - `ltx-2.5/ic-clean-plate` and `ltx-2.5/ic-day-to-night` are still `trial` with `workflow: null`, each
+    with an `evidence` item for issue 1064 whose note gives the card mismatch and the trigger that would
+    bring it back (a guided dev/full IC route or a `field-report`; Day-To-Night also fps resampling).
+    If `list_loras` shows no `evidence` field at all, that half can't be checked over MCP. Record that,
+    and leave it to docs-review.
+- **Skill.** The `dw:ltx-2.5` skill's `alpha-matte` row says, in a few words, that the matte keeps the
+  source's frame rate (or that `frame_rate` overrides it). It doesn't say it is written at 24 fps.
+It is a **finding**, on arm A, if `frame_rate` defaults to a number, the fit or restore step is missing, the
 pipeline reads the variable, the restore lacks the `fps` binding, a `result.fps` follows the restore,
 a `pair_audio` step appears, or the description or skill row still promises 960×544 or 24 fps.
-cleanup: none.
+It is a **finding**, on arm B, if any of the following holds:
+- `frame_rate` defaults to a number;
+- there is no fit step before the pipeline or no `restore_to_source` step after it;
+- the pipeline's `frame_rate` or `result.fps` reads the variable, or the restore step's `fps` doesn't;
+- the description says the output is the working size or 24 fps;
+- `ic-colorization` isn't `proven`, or has a non-null `workflow`.
+It is a **finding**, on arm C, if any of the following holds:
+- `frame_rate` defaults to a number;
+- the matte step's `frame_rate` or `result.fps` reads the variable, or the restore step doesn't;
+- the restore step's `result` declares an `fps`;
+- `restore_to_source` has no `fps` parameter, or its description misses one of the three modes;
+- the description or skill still says 24 fps by default;
+- `ic-alpha-gen` isn't `proven`, has a non-null `workflow`, or has no `evidence` item naming the
+  template.
+cleanup: none. Discovery only, writes nothing.
 metrics: none.
 
-### M-F286 — `restore-deblur` and `restore-decompression` validate 30 fps 16:9 and portrait sources clean, accept each legal `frame_rate`, hold a short source, and refuse a bad rate for free
-source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F285. Free: `validate_workflow` only. Workspace `regression-model-specific`.
-Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` and `SP30` = `asset:fps-1090/priya-30fps-384x544-97f.mp4`
-(Fixtures).
-expected, for each template:
-- `S30`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
-- `SP30` with `num_frames: 97` → `valid: true`, `warnings: []`: the non-16:9 source isn't refused or
-  warned about.
-- `SP30` with the default `num_frames` 121 (longer than its 97 frames) → `valid: true`: the short
-  source is held as the fit does, not refused.
-- `SP30`, `num_frames: 97`, `frame_rate` `24`, `12`, `"source"` → `valid: true`.
-- `SP30`, `frame_rate` `0`, `"fast"` → `valid: false`, with the error at `arguments.frame_rate` or the
-  restore step's `fps`, naming what it accepts. Nothing is downloaded or loaded.
-It is a **finding** if either source is refused or warned about, a legal `frame_rate` is refused, or a
-bad one passes.
-cleanup: none.
-metrics: none.
+absorbs: M-F250, M-F254 (merged 2026-11-26, suite review)
+- M-F250: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+- M-F254: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 
 ### M-F287 — `restore-deblur` on a 30 fps portrait source comes back at 384×544, 30 fps and 97 frames, with no letterbox band or edge bleed, and at 24 fps with the same frames when `frame_rate=24`
 source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
@@ -8089,56 +7349,6 @@ any bracket runs, the setup job). Keep `ic-alpha/priya-cutfree-145f.mp4`.
 metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-145f-cutfree` and
 `960x544-145f-ep13`, to `regression-perf/M-F290.jsonl`. The first run seeds the file.
 
-### M-F291 — `restore-colorize` tells the caller to write a clip-matched prompt, in its description, its stored prompt and the skill row; its traits are `needs-input-media` only and its registry note names the clip-matched run
-source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F227. Free: discovery calls, a skill read and `validate_workflow`, no GPU. This is
-plan v10's amendment (Q10 (a), Q11 (i)). It replaces M-F227's "it has the same traits as
-`templates/ltx2/restore-deblur`" bullet with the traits check below. M-F227's and M-F254's other checks
-stand.
-expected:
-- **Traits.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
-  `templates/ltx2/restore-colorize` entry's traits are exactly `["needs-input-media"]`. `has-audio` in
-  particular is absent: the output is silent (Q11 (i)). Any other trait is a finding, whatever
-  `restore-deblur`'s traits are.
-- **Template description** (the full `get_workflow(name="templates/ltx2/restore-colorize")` document,
-  or the `list_workflows` entry if it carries the full text). It says, in substance, all of:
-  - the `prompt` must describe this clip and name its colours;
-  - a prompt that doesn't (the default included) leaves the clip grey, and the default is a worked
-    example of the form, not a general-purpose prompt.
-  Wording may differ; a description that only says "edit the prompt" or "the prompt can be changed"
-  without saying an unmatched prompt leaves it grey is a finding.
-- **The default stays.** `get_workflow(..., variables_only=true)`: `prompt` still defaults to a
-  `prompt:ltx2/…` reference (the stored prompt is kept as the example, not removed or made required).
-- **Stored prompt.** `get_prompt(<that name, minus "prompt:">)`: its text still has M-F227's four
-  phrases ("Reference shows", "Edited shows the same scene with natural colors restored", `COLORIZE`,
-  "only color information differs"). Its **`description`** field says the same as the template's: the
-  prompt has to describe the caller's clip and name its colours, and this one is an example that leaves
-  an unlike clip grey.
-- **Skill.** The `dw:ltx-2.5` skill's `restore-colorize` row (or the text it links for that route):
-  - tells the composing agent to look at a frame of the source (it names `get_output_frames`, or says
-    "look at a frame" of the source clip) before writing the prompt;
-  - tells it to write both panels of the dual-panel prompt for that clip, naming the colours;
-  - doesn't present the stored default as enough on its own.
-  M-F227's skill points (the route row, "black-and-white or washed-out footage") still hold.
-- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is still
-  `proven` with `workflow: null`. Its `evidence` note says the colour holds **with a clip-matched
-  prompt** and names job `f80056a98e62`. If no `evidence` field shows over MCP, record that the note
-  can't be checked; `proven` and `workflow: null` still can.
-- **An inline caller prompt validates.** `validate_workflow(name="templates/ltx2/restore-colorize",
-  workspace="regression-model-specific", arguments={"source_video": "asset:ic-colorize/src-bw-124f.mp4",
-  "prompt": "Reference shows a woman talking to camera in an office, in black and white. Edited shows the same scene with natural colors restored: warm skin, dark brown hair, a blue shirt, beige walls. COLORIZE. Only color information differs."})`
-  → `valid: true`, `warnings: []`, a non-null `plan.estimate`. The caller-written prompt is the route
-  the plan relies on, so refusing or warning on inline text is a finding. (The colours named here are
-  only a shape check; nothing runs.)
-It is a **finding** if any of the following holds:
-- the traits include anything but `needs-input-media`;
-- the description, the stored prompt's description or the skill row misses its point above;
-- the default `prompt` is gone or no longer a stored-prompt reference;
-- the registry note doesn't mention a clip-matched prompt or doesn't name `f80056a98e62`;
-- the inline-prompt validate is refused or warns.
-cleanup: none. Discovery and validate only.
-metrics: none.
-
 ### M-F292 — `restore-colorize` on the black-and-white clip with a prompt written from a frame of it comes back in colour at the source's size, keeping the scene, and silent
 source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: one LTX-2.5 job at 960×544×121 on lem (RTX 3090). Workspace
@@ -8186,16 +7396,19 @@ oversaturation rerun at `lora_scale` 0.8, which passes `P_bw` too). Keep the fix
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-121f-matched-prompt`, to
 `regression-perf/M-F292.jsonl`. The first run seeds the file.
 
-### M-F293 — `restore-colorize`'s 8 fps and portrait arms pass a prompt written from a frame of their own fixture, and come back in colour with every other M-F256 and M-F257 expectation intact
-source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
-amended by M-F294 (plan v12, Q12 (a)): its colour, no-bleed-with-colour and fallback clauses are judged as M-F294 records them; grey is not a finding once #1114 has verified.
+### M-F294 — `restore-colorize`'s 8 fps and portrait arms, run with a prompt written from a frame of their own fixture, keep the source's rate, frame count and size with no band; whether each colours is recorded, and grey is the documented limit, not a finding
+source: tester, spec for #1114 from #1064's plan v12 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: three LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem.
-Workspace `regression-model-specific`, `"seed": 1080`. This is plan v10's amendment of the colour arms
-of M-F256 and M-F257 (Q10 (a)). Where both are due, run M-F256 and M-F257 exactly as written **with
-one change: every arm's `arguments` also carry the fixture's clip-matched `prompt`** (below). All their
-other expectations (rate, frame count, size, no band, no bleed, the follow/override comparison,
-cleanup and metrics) stand unchanged and are judged on these runs; their "in colour" clauses are judged
-as this case defines them.
+Workspace `regression-model-specific`, `"seed": 1080`. This case carries two amendments. The first is
+plan v10's amendment of the colour arms of M-F256 and M-F257 (Q10 (a)): where both are due, run M-F256 and
+M-F257 exactly as written **with one change: every arm's `arguments` also carry the fixture's clip-matched
+`prompt`** (below). All their other expectations (rate, frame count, size, no band, no bleed, the
+follow/override comparison, cleanup and metrics) stand unchanged, are judged on these runs and still fail
+the case; their "in colour" clauses are judged as this case defines them. The second is plan v12's
+amendment of the first (Q12 (a)): the plan v10 clauses "In colour, as named", "No bleed, with colour
+present" and "Fallback" (kept below under "Plan v10 clauses") are judged as the colour record below records
+them; grey is not a finding once #1114 has verified. M-F292 (the 24 fps 16:9 fixture) is untouched: grey
+there is still a finding, because the documented limit says colour is reliable on that kind of source.
 Setup: `B8` = `asset:ic-colorize/src-bw-960x544-97f-8fps.mp4` and `BP` =
 `asset:ic-colorize/src-bw-384x544-97f.mp4` (Fixtures). Make them if missing.
 **Writing the prompts**, one per fixture, each from that fixture's own frame, as M-F292 does:
@@ -8207,43 +7420,15 @@ Setup: `B8` = `asset:ic-colorize/src-bw-960x544-97f-8fps.mp4` and `BP` =
 - Each in M-F292's dual-panel form, with at least four named colours tied to objects visible in that
   fixture. Record both verbatim on the stage. Don't reuse `P_bw` unchanged for `BP`: a prompt naming
   objects outside the crop isn't written from this clip's frame.
+- Or reuse verbatim the `P_8` and `P_P` recorded on #1064 in the M-F293 bounce (2026-11-01; M-F293 is the
+  plan v10 amendment now carried by this case). Reusing them keeps the record comparable with
+  jobs `763968953985`, `3579d7d376b2` and `cf3ad9b05f4f`; say which you used.
 Runs:
 - M-F256 **follow** and **override**: both with `"prompt": P_8` (the same text on both, so their frames
   still compare as identical).
 - M-F257: with `"prompt": P_P`.
 expected:
-- Everything M-F256 and M-F257 expect, on these runs.
-- **In colour, as named.** On both M-F256 finals and the M-F257 final, at the frames those cases
-  sample: plainly non-grey, natural colour, with the named objects carrying roughly the named colours,
-  as M-F292 judges it.
-- **No bleed, with colour present.** In the M-F257 final the edge columns carry the scene's colours
-  continuous with the centre. This is only meaningful once the frame is in colour, which is why the
-  arm is re-run with `P_P`.
-- **Fallback.** A fixture still grey with its matched prompt is recorded on #1080 as "loadable,
-  prompt-sensitive; not good at 24 GB on <fixture>", with the prompt and job id, and is a finding
-  here.
-It is a **finding** if any M-F256 or M-F257 expectation fails on these runs, any final stays grey or
-takes colours unlike those named, or the two M-F256 arms didn't receive the same prompt.
-cleanup: as M-F256 and M-F257: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
-each job. Keep the fixtures.
-metrics: as M-F256 and M-F257, to their own `regression-perf/` files, with `-matched-prompt` appended to
-each condition (`960x544-97f-8fps-matched-prompt`, `portrait-384x544-97f-matched-prompt`).
-
-### M-F294 — `restore-colorize`'s 8 fps and portrait arms keep the source's rate, frame count and size with no band; whether each colours is recorded, and grey is the documented limit, not a finding
-source: tester, spec for #1114 from #1064's plan v12 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F227. Paid: three LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem
-(the same three as M-F293). Workspace `regression-model-specific`, `"seed": 1080`. This is plan v12's
-amendment of M-F293 (Q12 (a)). Where both are due, run M-F293 exactly as written (its setup, prompts
-and runs, so the M-F256 and M-F257 expectations it carries) and judge it by this case: M-F293's
-"In colour, as named" clause, its "No bleed, with colour present" clause and its "Fallback" clause are
-replaced by the colour record below. Everything else M-F293 expects (through M-F256 and M-F257: rate,
-frame count, size, no band, the follow/override comparison, cleanup, metrics) stands and still fails
-the case. M-F292 (the 24 fps 16:9 fixture) is untouched: grey there is still a finding, because the
-documented limit says colour is reliable on that kind of source.
-Prompts: write `P_8` and `P_P` from each fixture's frame as M-F293 says, or reuse verbatim the `P_8` and
-`P_P` recorded on #1064 in the M-F293 bounce (2026-11-01). Reusing them keeps the record comparable with
-jobs `763968953985`, `3579d7d376b2` and `cf3ad9b05f4f`; say which you used.
-expected:
+- Everything M-F256 and M-F257 expect, on these runs, with their colour clauses judged as below.
 - **Rate, count, geometry (still pass/fail).** M-F256 follow arm: 97 frames at **8 fps** (source rate,
   `frame_rate` omitted). M-F256 override arm (`frame_rate: 24`): 97 frames at **24 fps**, same frames as
   the follow arm (`compare_outputs` at frames 0 and 48 near-identical, `fps_differs`). M-F257: the
@@ -8251,77 +7436,142 @@ expected:
   run succeeds with empty `job.warnings`. Any of these failing is a finding, as before.
 - **Colour (record, don't fail).** For each of the three finals, at `frame:48`, record one of:
   `colours` (plainly non-grey natural colour on the subject: skin, hair, clothing) or `grey` (essentially
-  monochrome; a faint tint on one small object, such as M-F293's faint blue lanyard, still counts as
-  `grey`). Record the job id and the word for each arm on the run's report. `grey` on any of the three
-  is the documented limit (M-F295) and **not a finding**.
-- **If an arm colours.** Then judge M-F293's "as named" and no-bleed points on that arm: the named
-  objects roughly carry the named colours, and on the M-F257 final the edge columns carry colour
+  monochrome; a faint tint on one small object, such as the 2026-11-01 bounce's faint blue lanyard, still
+  counts as `grey`). Record the job id and the word for each arm on the run's report. `grey` on any of the
+  three is the documented limit (M-F295) and **not a finding**.
+- **If an arm colours.** Then judge the plan v10 "as named" and no-bleed points (below) on that arm: the
+  named objects roughly carry the named colours, and on the M-F257 final the edge columns carry colour
   continuous with the centre (no bleed in from the padding). A flat cast (sepia, all-blue), colours
   plainly unlike those named, or colour bleeding at the edges **is** a finding: the documented limit is
   "may stay grey", not "may take wrong colour". Also note on the report that this source now colours,
   so the documented limit may be broader than the behaviour (a note, not a finding).
 - **If the M-F257 arm is grey**, its no-bleed point can't be judged for colour; record "no-bleed: not
   judgeable (grey)". The no-band point is still judged and still fails the case.
+- **Plan v10 clauses**, judged as the colour record above records them; until #1114 has verified they
+  apply as written:
+  - **In colour, as named.** On both M-F256 finals and the M-F257 final, at the frames those cases
+    sample: plainly non-grey, natural colour, with the named objects carrying roughly the named colours,
+    as M-F292 judges it.
+  - **No bleed, with colour present.** In the M-F257 final the edge columns carry the scene's colours
+    continuous with the centre. This is only meaningful once the frame is in colour, which is why the
+    arm is re-run with `P_P`.
+  - **Fallback.** A fixture still grey with its matched prompt is recorded on #1080 as "loadable,
+    prompt-sensitive; not good at 24 GB on <fixture>", with the prompt and job id, and is a finding
+    here.
 It is a **finding** if any run fails or warns, any rate, frame count, size, band or follow/override
-expectation fails, or an arm that colours takes a cast, unlike colours or edge bleed. Grey alone is never
-a finding here.
-cleanup: as M-F293: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each job.
-Keep the fixtures.
-metrics: as M-F293 (its conditions and `regression-perf/` files). No new file.
+expectation fails (any M-F256 or M-F257 expectation other than its colour clause, on these runs), an arm
+that colours takes a cast, unlike colours or edge bleed, or the two M-F256 arms didn't receive the same
+prompt. Grey alone is never a finding here once #1114 has verified; until then a final that stays grey is
+a finding, as the plan v10 clauses say.
+cleanup: as M-F256 and M-F257: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
+each job. Keep the fixtures.
+metrics: as M-F256 and M-F257, to their own `regression-perf/` files, with `-matched-prompt` appended to
+each condition (`960x544-97f-8fps-matched-prompt`, `portrait-384x544-97f-matched-prompt`). No new file.
 
-### M-F295 — `restore-colorize` documents its colour limit: reliable on a 24 fps 16:9 source, a low-rate or portrait source may stay grey; the skill says to check a frame; the registry names the three grey runs
+absorbs: M-F293 (merged 2026-11-26, suite review)
+- M-F293: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
+
+### M-F295 — `restore-colorize` documents the clip-matched prompt and its colour limit: description, stored prompt, skill row, `needs-input-media`-only traits and registry say to write a clip-matched prompt; colour is reliable on a 24 fps 16:9 source, a low-rate or portrait source may stay grey; the skill says to check a frame; the registry names the clip-matched run and the three grey runs
 source: tester, spec for #1114 from #1064's plan v12 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F227. Free: discovery calls, a skill read and two `validate_workflow` calls, no
-GPU. This checks plan v12's stage C wording (Q12 (a)). M-F291's checks stand alongside it: the new
-wording is added, not swapped for the clip-matched-prompt wording.
-expected:
-- **Template description.** In the full `get_workflow(name="templates/ltx2/restore-colorize")` document
+Model/pipeline: as M-F227. Free: discovery calls, a skill read and three `validate_workflow` calls, no
+GPU. Two arms on the same template, skill row and registry entry. **Arm P (clip-matched prompt)** is
+plan v10's amendment (Q10 (a), Q11 (i)); it replaces M-F227's "it has the same traits as
+`templates/ltx2/restore-deblur`" bullet with the traits check below, and M-F227's and M-F254's other
+checks stand. **Arm L (colour limit)** checks plan v12's stage C wording (Q12 (a)). Arm P's checks stand
+alongside arm L's: the new wording is added, not swapped for the clip-matched-prompt wording.
+expected, arm P (clip-matched prompt):
+- **P: Traits.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
+  `templates/ltx2/restore-colorize` entry's traits are exactly `["needs-input-media"]`. `has-audio` in
+  particular is absent: the output is silent (Q11 (i)). Any other trait is a finding, whatever
+  `restore-deblur`'s traits are.
+- **P: Template description** (the full `get_workflow(name="templates/ltx2/restore-colorize")` document,
+  or the `list_workflows` entry if it carries the full text). It says, in substance, all of:
+  - the `prompt` must describe this clip and name its colours;
+  - a prompt that doesn't (the default included) leaves the clip grey, and the default is a worked
+    example of the form, not a general-purpose prompt.
+  Wording may differ; a description that only says "edit the prompt" or "the prompt can be changed"
+  without saying an unmatched prompt leaves it grey is a finding.
+- **P: The default stays.** `get_workflow(..., variables_only=true)`: `prompt` still defaults to a
+  `prompt:ltx2/…` reference (the stored prompt is kept as the example, not removed or made required).
+- **P: Stored prompt.** `get_prompt(<that name, minus "prompt:">)`: its text still has M-F227's four
+  phrases ("Reference shows", "Edited shows the same scene with natural colors restored", `COLORIZE`,
+  "only color information differs"). Its **`description`** field says the same as the template's: the
+  prompt has to describe the caller's clip and name its colours, and this one is an example that leaves
+  an unlike clip grey.
+- **P: Skill.** The `dw:ltx-2.5` skill's `restore-colorize` row (or the text it links for that route):
+  - tells the composing agent to look at a frame of the source (it names `get_output_frames`, or says
+    "look at a frame" of the source clip) before writing the prompt;
+  - tells it to write both panels of the dual-panel prompt for that clip, naming the colours;
+  - doesn't present the stored default as enough on its own.
+  M-F227's skill points (the route row, "black-and-white or washed-out footage") still hold.
+- **P: Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is still
+  `proven` with `workflow: null`. Its `evidence` note says the colour holds **with a clip-matched
+  prompt** and names job `f80056a98e62`. If no `evidence` field shows over MCP, record that the note
+  can't be checked; `proven` and `workflow: null` still can. (Arm L's Registry bullet reads the same
+  entry and does not allow "can't check".)
+- **P: An inline caller prompt validates.** `validate_workflow(name="templates/ltx2/restore-colorize",
+  workspace="regression-model-specific", arguments={"source_video": "asset:ic-colorize/src-bw-124f.mp4",
+  "prompt": "Reference shows a woman talking to camera in an office, in black and white. Edited shows the same scene with natural colors restored: warm skin, dark brown hair, a blue shirt, beige walls. COLORIZE. Only color information differs."})`
+  → `valid: true`, `warnings: []`, a non-null `plan.estimate`. The caller-written prompt is the route
+  the plan relies on, so refusing or warning on inline text is a finding. (The colours named here are
+  only a shape check; nothing runs.)
+In arm P it is a **finding** if any of the following holds:
+- the traits include anything but `needs-input-media`;
+- the description, the stored prompt's description or the skill row misses its point above;
+- the default `prompt` is gone or no longer a stored-prompt reference;
+- the registry note doesn't mention a clip-matched prompt or doesn't name `f80056a98e62`;
+- the inline-prompt validate is refused or warns.
+expected, arm L (colour limit):
+- **L: Template description.** In the full `get_workflow(name="templates/ltx2/restore-colorize")` document
   (the `list_workflows` compact entry may be shortened; read the full one), the description says, in
   substance, both of:
   - colour is reliable on a **24 fps 16:9** source;
   - a **low-frame-rate** or **portrait** source **may stay grey even with a matched prompt**.
   Wording may differ. Naming only one of the two source kinds, or saying the limit applies only to an
   unmatched prompt, is a finding.
-- **M-F291's description points still there.** The same description still says the prompt must describe
+- **L: Arm P's description points still there.** The same description still says the prompt must describe
   the clip and name its colours, and that an unmatched prompt (the default included) leaves it grey.
-- **No false cure.** Neither the description nor the skill row suggests that setting `frame_rate` (for
+- **L: No false cure.** Neither the description nor the skill row suggests that setting `frame_rate` (for
   example to 24), lowering `lora_scale`, or another argument of this template fixes the grey on a
   low-rate or portrait source. The plan names no fix (Q12 (b) is a non-goal), and the override arm
   `3579d7d376b2` at `frame_rate: 24` stayed grey. Suggesting one is a finding. Pointing the caller to
   another route or to a 24 fps 16:9 source is fine.
-- **Frame rate unchanged (Q7).** `get_workflow(name="templates/ltx2/restore-colorize",
+- **L: Frame rate unchanged (Q7).** `get_workflow(name="templates/ltx2/restore-colorize",
   variables_only=true)`: `frame_rate` still defaults to `"source"`; `lora_scale` still defaults to 1.0;
   `prompt` still defaults to a `prompt:ltx2/…` reference; no variable added or removed against M-F227
-  and M-F291 (stage C changes no variable).
-- **Skill row.** The `dw:ltx-2.5` skill's `restore-colorize` row (or the text it links for that route):
+  and arm P (stage C changes no variable).
+- **L: Skill row.** The `dw:ltx-2.5` skill's `restore-colorize` row (or the text it links for that route):
   - states the limit in a few words: reliable on 24 fps 16:9, low-rate or portrait may stay grey;
   - tells the composing agent to **check a frame of the result**, and that a grey result means this
     route doesn't take that source (in substance; wording may differ);
-  - still carries M-F291's skill points (look at a frame of the source, write both panels naming the
+  - still carries arm P's skill points (look at a frame of the source, write both panels naming the
     colours) and M-F227's ("black-and-white or washed-out footage").
   A row that says only "check the result" without saying what grey means, or that tells the agent to
   re-run with another prompt or seed as the remedy for grey on such a source, is a finding.
-- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers", status="proven")`: the
+- **L: Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers", status="proven")`: the
   `ltx-2.5/ic-colorization` entry is still `proven` with `workflow: null`, and its `evidence` (in any
   item, whether the existing note was extended or a new item added) names all three of
   `763968953985`, `3579d7d376b2` and `cf3ad9b05f4f` and says those runs stayed grey on an 8 fps / portrait
-  source. The existing evidence still names `f80056a98e62` (M-F291) and `b70c30a5e8e4`. Naming
+  source. The existing evidence still names `f80056a98e62` (arm P) and `b70c30a5e8e4`. Naming
   `718e232f76b0` as the coloured 24 fps 16:9 contrast is expected by the plan; its absence is a note,
   not a finding. (As of 2026-10-31 the entry's `evidence` is visible over MCP, as a list of
   `{job, issue, note}` items, so "can't check" is not an outcome here.)
-- **Still validates clean.** `validate_workflow(name="templates/ltx2/restore-colorize",
+- **L: Still validates clean.** `validate_workflow(name="templates/ltx2/restore-colorize",
   workspace="regression-model-specific", arguments={"source_video":
   "asset:ic-colorize/src-bw-960x544-97f-8fps.mp4", "num_frames": 97})` and the same with
   `"source_video": "asset:ic-colorize/src-bw-384x544-97f.mp4"`: each `valid: true` with a non-null
   `plan.estimate`, as M-F255 has them. The limit is documentation only; a new refusal of a low-rate or
   portrait source is a finding. (A new advisory warning on these sources is not promised by the plan:
   record it as a note if one appears.)
-It is a **finding** if any point above misses: the description or skill row lacks either half of the
+In arm L it is a **finding** if any point above misses: the description or skill row lacks either half of the
 limit, the skill row lacks "check a frame of the result" and what grey means, any wording offers a
 `frame_rate`/`lora_scale`/argument cure, a variable or default changed, the registry evidence lacks
 any of the three job ids or the earlier ones, or either validate is refused.
 cleanup: none. Discovery and validate only.
 metrics: none.
+
+absorbs: M-F291 (merged 2026-11-26, suite review)
+- M-F291: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
 
 ### M-F296 — `separate_stems` on a clip shorter than htdemucs' segment is repeatable and never louder than its input
 source: tester, verified in #1130 (claude-opus-5-5 via anthropic)
@@ -8417,38 +7667,6 @@ It is a **finding** if:
 cleanup: none. Never delete the `probe-1151` jobs: the entry cites them.
 metrics: none.
 
-### M-F299 — the anti-burn load check: one seed-42 `fl2va` clip, with and without the LoRA, both succeed, warn no key mismatch, and differ frame for frame
-source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` with the 4-step v1.2 fl2v turbo, alone and stacked with `minimax-h3/h3-antiburn`
-at 0.6. Free: it reads the recorded jobs and doesn't re-run them. Workspace `probe-1151`. Skip with a note if
-M-F298 shows the entry `rejected` (M-F300 covers that branch).
-Steps:
-1. From the entry's `evidence` or the comparison comment on #1151, take the two load-check job ids: turbo only
-   (`L0`) and turbo plus anti-burn (`L1`).
-2. `get_job`, `get_job_events` and `get_job_workflow` on each, `workspace="probe-1151"`.
-3. `validate_workflow(inline_workflow=<each workflow>, workspace="probe-1151")`.
-4. `compare_outputs` on the two final mp4s. If it doesn't take two videos, use `get_output_frames` at frames 0,
-   61 and 123 of each instead.
-expected:
-- Both jobs `succeeded`, each giving one 124-frame clip (`get_gallery_metadata`), and both re-validate
-  `valid: true`.
-- The workflows differ **only** in the `loras` list:
-  - `L0` has turbo, plus nothing or an anti-burn entry disabled with `model_name: null`;
-  - `L1` has turbo plus the anti-burn file at scale 0.6;
-  - both use `fl2va`, seed 42, 124 frames and the chained-segments template's other settings (960×544,
-    5 steps, `{int4}`, sparse attention).
-- No event and no `job.warnings` entry on `L1` mentions unmatched keys, unexpected keys, missing keys, "no LoRA
-  keys found", skipped modules, or a LoRA that didn't load.
-- The outputs differ: `compare_outputs` reports a non-identical result, or at least one of the three frame pairs
-  differs visibly. A frame-for-frame identical pair means the adapter attached nowhere.
-It is a **finding** if:
-- either job is missing or failed while the entry is `trial`;
-- the workflows differ in anything besides the anti-burn entry (seed, prompt, image, frames, steps);
-- a key-mismatch warning appears on `L1`;
-- the two outputs are identical.
-cleanup: none.
-metrics: none.
-
 ### M-F300 — a `rejected` anti-burn entry cites the failing job, and that job's events show the load error or the unmatched keys
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` with `minimax-h3/h3-antiburn`, whose model card says it uses ComfyUI
@@ -8470,76 +7688,6 @@ It is a **finding** if:
 - the entry is `rejected` without a cited job;
 - the cited job neither failed on the LoRA nor shows a key warning or an identical twin;
 - the reason is missing.
-cleanup: none.
-metrics: none.
-
-### M-F301 — the A/B arms: two hand-built 5-segment chains, seed 42 and `guide_frames` 39, joined, that differ only in anti-burn (off everywhere in A, 0.6 on segments 2–5 in B)
-source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` segments with the v1.2 fl2v turbo. Segments 2–5 are each guided by the previous
-clip's 39-frame tail, cut with `trim_video`. The guide heads are dropped and the clips joined with `concat_videos`.
-Free: it reads the recorded jobs. Workspace `probe-1151`. Skip with a note if the entry is `rejected`.
-Steps:
-1. From the comparison comment on #1151, take each arm's job id(s): arm A, arm B, and arm C if it was run. An arm
-   may be one job or one job per segment; read all of them.
-2. `get_job`, `get_job_workflow` and `get_job_events` on each, `workspace="probe-1151"`. Then
-   `validate_workflow(inline_workflow=<each>, workspace="probe-1151")`.
-3. `get_gallery_metadata` on each arm's final joined mp4.
-expected:
-- **Jobs.** Every arm job `succeeded`, and every workflow re-validates `valid: true`.
-- **Shape, both arms.**
-  - There are five H3 segment steps, every one `fl2va`. Segment 1 has no `guides`.
-  - Segment k (k = 2–5) has one `guides` entry at frame 0 with `audio: true`. It is a `trim_video` of segment k−1's
-    output, 39 frames long, ending on that output's last frame.
-  - Segment k's `image` is the first frame of that tail.
-  - Each segment's guide head is dropped before a `concat_videos` that joins all five in order.
-  - The `workflow` and the arm's description say `guide_frames` is 39, never 22.
-- **Same scene.** The prompt, seed (42), still image, size, steps and turbo entry are the same on every segment of
-  both arms.
-- **LoRA, arm A.** The anti-burn entry is absent or disabled (`model_name: null`) on every segment.
-- **LoRA, arm B.** The anti-burn entry is disabled on segment 1 and at scale 0.6 on segments 2–5.
-- **Only the LoRA differs.** Diffing A's workflow against B's, step by step, shows no change outside the anti-burn
-  entries.
-- **Arm C**, if present: it is identical to B except for scale 0.4 on segments 2–5. The comment says B looked
-  waxy. If C is absent, the comment either says B didn't look waxy or doesn't mention C. Neither is a finding.
-- **Output.** Each joined mp4 is 960×544 at 24 fps with one audio stream. Its frame count is
-  `N + 4 × (N − 39)` for the per-segment `num_frames` N in the workflow: 464 at N = 124. A difference of up to one
-  frame per seam is a note, not a finding, if the record states it.
-- No event on any B or C segment-2+ job carries a key-mismatch warning (M-F299's list).
-It is a **finding** if:
-- an arm is missing, failed, or has other than five segments;
-- a segment-2+ step is a stock `chain` block rather than a hand-built step;
-- the guide length isn't 39;
-- B has the anti-burn entry active on segment 1;
-- A has it active anywhere;
-- A and B differ in anything but the anti-burn entries;
-- a joined output's frame count, size or audio is wrong beyond the note above.
-cleanup: none. Never delete the arm jobs: the comparison and the catalog cite them.
-metrics: none.
-
-### M-F302 — the comparison comment on #1151 shows segments 1, 3 and 5 of each arm with job ids, and its cited frames reproduce
-source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: the record of the #1159 anti-burn A/B on MiniMax H3. Free: one issue read and a few frame reads.
-Workspace `probe-1151`. Skip with a note if the entry is `rejected`; M-F300 covers that branch.
-Steps:
-1. `gh issue view 1151 --repo dkackman/diffusers-workflow --comments`. Find the build session's comparison comment.
-2. For one arm-A and one arm-B segment reference the comment cites, call `get_output_frames` on the cited output at
-   the cited frame (`workspace="probe-1151"`).
-expected:
-- The comment names the job id(s) of arms A and B (and C if run), and the load-check pair.
-- For each arm, it gives a middle frame of segments 1, 3 and 5, as a frame reference or an image.
-- It covers skin, fabric and a flat background region: as crops, or named regions of those frames.
-- Where it gives a number (`compare_outputs` or `assess_output`), it names the call and the outputs it ran on.
-- It compares within each arm (segment 1 against segment 5) and across arms at the same segment, not segment 5
-  alone. The plan's over-smoothing risk rests on this.
-- It leaves Q4 to Don, and the catalog entry stays `trial`, not `proven`.
-- Step 2: each frame fetched is from a job of the arm the comment says, at a frame inside the segment it says. In
-  joined-output frame numbers, segment k's middle lies in `[N + (k−2)(N−39), N + (k−1)(N−39))` for k ≥ 2 and in
-  `[0, N)` for k = 1.
-It is a **finding** if:
-- there is no comparison comment;
-- an arm, or one of segments 1, 3 and 5 of an arm, is missing from it;
-- a cited job or frame doesn't resolve, or lands in a different segment or arm from the one the comment states;
-- the comment declares the entry `proven` itself.
 cleanup: none.
 metrics: none.
 
@@ -8569,38 +7717,6 @@ It is a **finding** if:
 - step 1 offers the entry for `ref2va`;
 - (a) is clean, or is refused while the entry is `trial`;
 - (b) warns about the partition.
-cleanup: none.
-metrics: none.
-
-### M-F304 — the anti-burn probe changes no shipped template and adds no skill line while the entry is `trial`
-source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/chained-segments` and the H3 chained templates, plus the `dw:minimax-h3`
-plugin skill. Free: discovery only. The baseline was pinned over MCP at develop on 2026-11-01, before #1159 was
-built.
-Steps:
-1. `get_workflow("templates/minimax/chained-segments", variables_only=true)`.
-2. `get_workflow("templates/minimax/chained-segments")`, plus each template from
-   `list_workflows(shape="shot", traits="chained")`, with `variables_only=true`.
-3. Read the loaded `dw:minimax-h3` skill (SKILL.md and its `references/checkpoints-and-loras.md`).
-expected:
-- Step 1: the variables are the 2026-11-01 set, with no additions or removals: `prompts`, `prompt`, `image`,
-  `num_frames`, `segments`, `continuity`, `guide_frames`, `width`, `height`, `num_inference_steps`, `video_shift`,
-  `audio_shift`, `weights_dtype`, `lora_scale`, `lora_alpha`, `lora_model_name`, `lora_weight_name`,
-  `lora_adapter_name`, `seed`, `attention_backend`, `sparse_tau`, `sparse_topk`, `cache`. The defaults that matter
-  here are unchanged:
-  - `continuity` `"last_frame"`, `guide_frames` 22, `segments` 3, `num_frames` 124;
-  - `lora_model_name` `lightx2v/Minimax-h3-Turbo` and `lora_weight_name`
-    `minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors`.
-  A later unrelated, verified change to these is a note, not a finding: cite its issue.
-- Step 2: no definition and no variable default names `Imagineer13`, `antiburn` or `anti-burn`, and none has a
-  `continuation_lora*` variable or a `chain.continuation_loras` key. That follow-up was cut from plan v1.
-- Step 3: while the entry is `trial` or `rejected`, the skill doesn't recommend the anti-burn LoRA. The plan adds a
-  skill line only with `proven`. A "don't try" or "rejected" mention is fine.
-It is a **finding** if:
-- the chained-segments template gained or lost a variable, or changed one of the defaults above, citing #1151 or
-  #1159;
-- any shipped template references the anti-burn LoRA;
-- the skill recommends it before `proven`.
 cleanup: none.
 metrics: none.
 
@@ -8802,115 +7918,44 @@ It is a **finding** if any later baseline differs from its first baseline on the
 cleanup: `delete_output(job_id=...)` for every run, including the cancelled one.
 metrics: none.
 
-### M-F316 — the six #1326 stage B probe jobs exist in `probe-1326`, succeeded, and each ran its arm: 8 segments, seed 42, 960×544, the stated lead-in
-source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3 turbo chains: `chained-segments` (5 steps, 4 evaluations) and `chain-video-continuity`
-(9 steps, 8 evaluations), with `turbo_lead_in`. Free: reads only. Run on lem (cuda).
-Find the record (arms, job ids, table) on #1326 or #1353 (`gh issue view <n> --repo dkackman/diffusers-workflow
---comments`).
-Steps:
-1. `list_jobs(workspace="probe-1326")`. For each of the six cited jobs: `get_job`, `get_job_workflow` and
-   `get_job_events` (log kind). Then `get_gallery_metadata` on its final mp4.
-expected:
-- Exactly six arms are cited, each with a job id: on the 4-evaluation chain lead-in 0, 1 and 2, and on the
-  8-evaluation chain 0, 2 and 3. Each job exists in `probe-1326` and is `succeeded`. Re-rolled or failed attempts are
-  allowed only if the record names them as such.
-- Each realized workflow: 8 segments, seed 42, width 960 and height 544, `turbo_lead_in` as the arm states (absent or
-  0 for the 0 arms), the turbo LoRA loaded as adapter `turbo`. No `torch.compile` (the plan runs B without compile),
-  and no template default changed (the 0 arm equals the template's own arguments plus the fixed scene).
-- All three arms of the same chain template have the same prompt or scene, the same input image, the same
-  `num_inference_steps` (5 for one chain, 9 for the other) and the same everything else, except `turbo_lead_in`.
-- Each lead-in arm's events carry one lead-in line per segment (8) with its N and M = 4 or 8. A 0 arm carries none.
-- Each final mp4 is 960×544 and 24 fps, with an audio stream. The arms of one chain have equal frame counts.
-It is a **finding** if an arm is missing, failed or mislabeled, if arms within a chain differ in anything but
-`turbo_lead_in`, if a lead-in line is missing or wrong, or if a seed, size or segment count differs from the plan.
-cleanup: none. Never delete the probe jobs: the record and Don's Q4 verdict cite them.
-metrics: none.
-
-### M-F317 — the stage B table's per-seam numbers reproduce from the probe jobs
-source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the M-F316 jobs. A few `analyze_seams` utility runs (CPU-light, seconds to minutes) plus reads. Run on
-lem (cuda).
-Steps:
-1. For each arm, take from the record the per-seam look step and texture drift. The plan names `chain_check`; it is
-   the chain's own `check` report, not a task, so read it where the record says it came from (job events, the
-   output record or `get_job`), and say which.
-2. For each arm, `run_workflow` an inline one-step `analyze_seams` workflow over the arm's final mp4 (an `output:`
-   reference, workspace `probe-1326`), with `wait_seconds` 55. Give the step `"result": {"content_type":
-   "application/json"}`. The video carries its shot records. Read the lightness step per cut from the job's JSON
-   output file with `get_output_text`.
-expected:
-- The table has one row or column per arm (six) and covers all 7 seams of each 8-segment chain, for each of the three
-  measures: look step, texture drift and the `analyze_seams` lightness step.
-- Every number in the table matches the job's own check report (step 1), and step 2's `analyze_seams` output, to the
-  precision the table prints. If #1324's measure was used instead, the record says so, and that measure is the one
-  that reproduces.
-- The record gives the lead's reading but no quality verdict. It leaves detail and motion to Don (Q4).
-It is a **finding** if a seam or an arm is missing from the table, or if any figure doesn't reproduce.
-cleanup: `delete_output(job_id=...)` for each step 2 `analyze_seams` job. Never delete the probe jobs.
-metrics: none.
-
-### M-F318 — the stage B comparison comment shows segments 1, 4 and 8 of each arm with job ids, the parent goes to Don for Q4, and no template or skill changed
-source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the M-F316 jobs and the H3 turbo chain templates. Free: issue reads, frame reads, catalog reads.
-Steps:
-1. Read #1326's comments for the comparison comment and its labels (`gh issue view 1326 --repo
-   dkackman/diffusers-workflow --json labels,comments`).
-2. For one cited frame per arm, `get_output_frames` on that arm's job output at the time the comment states.
-3. `get_workflow("templates/minimax/chained-segments", variables_only=true)`, the same for
-   `templates/minimax/chain-video-continuity` and `templates/minimax/chain-matched-and-aligned`. Then read the
-   `minimax-h3` and `long-form` skills for "lead-in" or `turbo_lead_in`.
-expected:
-- The comment shows frames from segments 1, 4 and 8 of every arm (six arms), each labeled with its arm and job id.
-  The frames read in step 2 match what the comment shows (same segment, same moment).
-- Once the record and the comment are posted, #1326 carries `owner:don` with a "Decision for Don" block asking Q4:
-  do the lead-in arms keep segment 1's detail and motion as well as the baseline?
-- No template has a `turbo_lead_in` variable or default, and no skill recommends a lead-in (plan v2 cut both until
-  plan v3).
-It is a **finding** if an arm or segment is missing from the comment, a cited frame doesn't match its job, Q4 isn't
-put to Don, or a template or skill changed in stage B.
-cleanup: none.
-metrics: none.
-
-### M-F319 — an inline MiniMax-H3 step with a literal `num_frames: 25` is refused at validate on ref2va, t2va and fl2va, at the step's own path
+### M-F320 — the H3 `num_frames` check refuses exactly what the pipeline refuses: a literal 25 out on ref2va, t2va and fl2va at the step's own path; 107, 346 and 360 out; 108, 120, 124, 130 and 345 in
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` modular pipeline (`MiniMaxH3ModularPipeline`), workflows ref2va, t2va, fl2va.
 **Free**: validate only, nothing loads. Workspace `regression-model-specific`. Needs the shared
 `asset:qa-cast/hal-portrait.jpg` and `asset:qa-cast/priya-portrait.jpg`.
+The pipeline rounds a count up to the next `17n+5` and accepts 5–15 s at 24 fps, so on today's diffusers 107 (4.46 s)
+and 346 or 360 (both round to 362, 15.08 s) are refused. 108 and 120 round to 124, and 130 to 141; those run.
+The 120..360 in diffusers' own message is the raw range, not the accepted one (plan v1, "Corrections").
 Before #1364 all three workflows below validated `valid: true` with `num_frames: 25` (pinned 2026-11-14 on lem),
 and the run then failed after the model load (#1361, job `445dc323ca8c`). These base workflows are reused by
-M-F320 to M-F326:
+M-F321 to M-F326:
 - **W_ref** (#1361's workflow, minus its quantization, which validate doesn't need):
   `{"id":"spec1364","seed":42,"steps":[{"name":"shot","pipeline":{"configuration":{"component_type":"ModularPipeline","load_components":{"dtype":"torch.bfloat16"}},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":"ref2va"},"arguments":{"prompt":"subject_definitions:\n<Subject 1> is the man in <Picture 1>.\n\nscene: <Subject 1> nods. Static medium shot.","references":[{"reference_type":"diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference","from_file":"asset:qa-cast/hal-portrait.jpg"}],"num_frames":25,"width":960,"height":544,"num_inference_steps":8,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":"video/mp4","fps":24}}]}`
 - **W_t2va**: W_ref with `workflow: "t2va"`, no `references`, and `prompt: "A man sits at a kitchen table and nods. Static medium shot."`.
 - **W_fl2va**: W_ref with `workflow: "fl2va"`, no `references`, `"image": "asset:qa-cast/priya-portrait.jpg"` and
   `prompt: "The woman turns toward the window. Static medium shot."`.
-Steps: `validate_workflow(workspace="regression-model-specific", workflow=W)` for each of W_ref, W_t2va, W_fl2va.
-expected, for each of the three:
+Steps:
+1. **Arm A (literal 25, three workflows).** `validate_workflow(workspace="regression-model-specific", workflow=W)`
+   for each of W_ref, W_t2va, W_fl2va, each with its `num_frames: 25` as written.
+2. **Arm B (the range's edges, ref2va).** `validate_workflow(workspace="regression-model-specific", workflow=W_ref)`
+   with `num_frames` set to each of 107, 346, 360, 108, 120, 124, 130, 345 in turn.
+expected, arm A, for each of the three:
 - `valid: false`, with an error whose `path` is `steps[0].pipeline.arguments.num_frames`, and no other error.
 - The message names the 5–15 s range (`5`/`5.0` and `15`/`15.0` seconds), 24 fps, the rounded count `39`, and the
   nearest accepted counts `124` and `345`.
-It is a **finding** if any of the three validates clean, if the error is at another path (an `arguments.num_frames`
+In arm A it is a **finding** if any of the three validates clean, if the error is at another path (an `arguments.num_frames`
 path means a variable rule, not this check), or if the message omits the range, the rounded count or the accepted counts.
-cleanup: none (nothing is queued or written).
-metrics: none.
-
-### M-F320 — the H3 `num_frames` check refuses exactly what the pipeline refuses: 107, 346 and 360 out; 108, 120, 124, 130 and 345 in
-source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3`, ref2va. **Free**: validate only. Workspace `regression-model-specific`.
-The pipeline rounds a count up to the next `17n+5` and accepts 5–15 s at 24 fps, so on today's diffusers 107 (4.46 s)
-and 346 or 360 (both round to 362, 15.08 s) are refused. 108 and 120 round to 124, and 130 to 141; those run.
-The 120..360 in diffusers' own message is the raw range, not the accepted one (plan v1, "Corrections").
-Steps: `validate_workflow(workspace="regression-model-specific", workflow=W_ref)` (W_ref from M-F319) with
-`num_frames` set to each of 107, 346, 360, 108, 120, 124, 130, 345 in turn.
-expected:
+expected, arm B:
 - 107, 346 and 360: `valid: false`, each with exactly one error, at `steps[0].pipeline.arguments.num_frames`. The
   message gives the count it rounds to (107, 362, 362).
 - 108, 120, 124, 130 and 345: `valid: true`, with no error at all. 130 is not refused for being off the grid (a
   warning that it becomes 141 is allowed, not required).
-It is a **finding** if an in-range count is refused or an out-of-range one validates clean.
-cleanup: none.
+In arm B it is a **finding** if an in-range count is refused or an out-of-range one validates clean.
+cleanup: none (nothing is queued or written).
 metrics: none.
+
+absorbs: M-F319 (merged 2026-11-26, suite review)
+- M-F319: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F321 — an inline H3 `width` or `height` that isn't a multiple of 32 is refused at its own path; each bad value gets its own error
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
@@ -9077,7 +8122,7 @@ segment has rendered, about 15 min on lem, as job `dd3e9db5f675` did), or if the
 cleanup: none.
 metrics: none.
 
-### M-F345 — `refine_windows` validates clean without the experimental flag: `{}`, the explicit defaults, and a `variable:`-bound value
+### M-F345 — `refine_windows` at validate without the experimental flag: clean for `{}`, the explicit defaults and a `variable:`-bound value; refused without `refine_strength`, beside `refine_tiles` or a conditioning input, for a bad `overlap`/`frames`, an unknown key or non-object value, an off-grid rebased `frames`, a `source_video` over 15 s, and under its old name
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` refine between `encode_h3_latents` and `decode_h3_latents`. **Free**: validate only.
 Workspace `regression-model-specific`; needs the `qa-1230/chain-26s.mp4` fixture (make it first if missing). The
@@ -9093,16 +8138,85 @@ Workflow W_win (inline, used by M-F345–M-F360), four steps in order:
    seed 1230, and `output` `["videos","audio","sampling_rate","latents"]`.
 3. `decode`: `decode_h3_latents(latents="previous_result:refine.latents", num_frames="previous_result:encode.source_frames")`.
 4. `final`: `pair_audio(video="previous_result:decode", audio="asset:qa-1230/chain-26s.mp4", fit="video")`, result `video/mp4`.
-Steps: `validate_workflow(workspace="regression-model-specific", inline_workflow=W_win)` with RW = (a) `{}`;
-(b) `{"frames": 42, "overlap": 12, "blend": "pyramid", "positions": "rebased"}`; (c) `"variable:windows"` with
-`variables: {"windows": {"frames": 42, "overlap": 12}}`; (d) `{"frames": 22, "overlap": 7}` (other legal values).
+Steps: every arm is `validate_workflow(workspace="regression-model-specific", inline_workflow=...)` on W_win or the
+variant the arm names, one call per lettered row. Report a failure by arm and row (for example "E(c)").
+- **Arm A (clean forms).** W_win with RW = (a) `{}`;
+  (b) `{"frames": 42, "overlap": 12, "blend": "pyramid", "positions": "rebased"}`; (c) `"variable:windows"` with
+  `variables: {"windows": {"frames": 42, "overlap": 12}}`; (d) `{"frames": 22, "overlap": 7}` (other legal values).
+- **Arm B (no `refine_strength`).** W_win with RW `{}` and the `refine_strength` argument removed. Then once more with
+  `refine_strength: null` in place of removing it.
+- **Arm C (`refine_tiles`).** W_win with RW `{}` and a `refine_tiles` argument added to `refine` (use the form
+  `get_schema`/`get_pipeline_signature` documents for it; any legal value). Then remove `refine_windows` and validate
+  again (the control).
+- **Arm D (conditioning inputs).** W_win with RW `{}`, and in turn one of these added to `refine` (each a separate
+  `validate_workflow` call; values in the shape `get_schema`/`get_pipeline_signature` documents, any media from the
+  Fixtures section, e.g. `asset:qa-cast/priya-portrait.jpg` for an image):
+  `image`, `keyframes`, `guides`, `last_image`, `references`, `latent_anchor`. Change the step's
+  `from_pretrained_arguments.workflow` to the one that takes the argument (`fl2va` for `image`/`last_image`, `ref2va`
+  for `references`) where `t2va` refuses it on its own.
+- **Arm E (`overlap` vs `frames`).** W_win with RW = (a) `{"frames": 42, "overlap": 42}`; (b)
+  `{"frames": 42, "overlap": 50}`; (c) `{"frames": 42, "overlap": 41}`; (d) `{"overlap": 42}` (against the default
+  `frames` 42); (e) `{"frames": 42, "overlap": 0}`; (f) `{"frames": 0}`; (g) `{"frames": 42, "overlap": -1}`;
+  (h) `{"frames": "42"}` (a string that is not a `variable:` reference).
+- **Arm F (unknown key, non-object value).** W_win with RW = (a) `{"frames": 42, "windw": 8}`; (b)
+  `{"blend": "linear-ish"}` (a value outside the `blend` choices `get_schema` lists); (c) `{"positions": "absolute-ish"}`;
+  (d) `42`; (e) `"yes"`; (f) `[42, 12]`.
+- **Arm G (rebased grid).** W_win with RW = (a) `{"frames": 40, "positions": "rebased"}`; (b)
+  `{"frames": 42, "positions": "rebased"}`; (c) `{"frames": 40}` (rebased by default); (d) `{"frames": 40,
+  "positions": <the other value get_schema lists>}`.
+- **Arm H (`source_video` over 15 s).** A two-step workflow: `refine` as in W_win but with
+  `source_video: "asset:qa-1230/chain-26s.mp4"` in place of `latents`/`num_frames` (and `num_frames` 624 if the step
+  needs one), RW `{}`; then `final` `pair_audio` as in W_win reading `previous_result:refine`.
+- **Arm I (the old name).** W_win with `refine_windows` replaced by
+  `experimental_refine_windows: {"frames": 42, "overlap": 12}`. Then with both arguments present.
 expected:
-- All four: `valid: true`, with no error and no warning naming `DW_EXPERIMENTAL_REFINE_WINDOWS`, "experimental" or
+- **Arm A.** All four: `valid: true`, with no error and no warning naming `DW_EXPERIMENTAL_REFINE_WINDOWS`, "experimental" or
   `refine_windows`; `plan` present with an `estimate`.
-It is a **finding** if any of them is refused, or if the refusal names the experimental flag (the stage's whole point
-is that the argument is out of the flag).
+  It is a **finding** if any of them is refused, or if the refusal names the experimental flag (the stage's whole point
+  is that the argument is out of the flag).
+- **Arm B.** Both: `valid: false`, an error at `steps[1].pipeline.arguments.refine_windows` (or whose message names
+  `refine_windows`) saying it needs `refine_strength`.
+  It is a **finding** if either validates clean, or the refusal only surfaces at run time.
+- **Arm C.** With both: `valid: false`, an error naming `refine_windows` and `refine_tiles` as not usable together.
+  The control (tiles alone): no error naming `refine_windows`.
+  It is a **finding** if the pair validates clean.
+- **Arm D.** Each: `valid: false`, an error naming `refine_windows` and the added argument (a window has no place to put a
+  whole-take condition). The refusal is about the pair, not merely that `t2va` doesn't take the argument.
+  It is a **finding** if any of the six validates clean beside `refine_windows`.
+- **Arm E.**
+  - (a), (b), (d): `valid: false`, an error naming `refine_windows` and saying `overlap` must be less than `frames`.
+  - (c): no error about `overlap` vs `frames` (it may be refused for another stated rule, e.g. the positions grid in
+    arm G; then the message names that rule, not the overlap one).
+  - (f), (g), (h): `valid: false`, each naming `refine_windows` and the offending key.
+  - (e): either clean or refused with a message naming `overlap`; record which.
+  It is a **finding** if (a), (b) or (d) validates clean, or (c) is refused for the overlap rule.
+- **Arm F.** Each: `valid: false`, an error naming `refine_windows`; (a) names the key `windw`; (b) and (c) name the key and
+  the allowed values.
+  `null` and `false` are not in this arm: whatever the schema says they mean (off, most likely) is fine.
+  It is a **finding** if an unknown key is accepted silently, or any of (b)–(f) validates clean.
+- **Arm G.**
+  - (a) and (c): `valid: false`, an error naming `refine_windows`, `frames` 40 and the grid it must sit on, ideally
+    naming the nearest legal values.
+  - (b): clean.
+  - (d): no grid refusal (record the result; the grid belongs to rebased positions).
+  It is a **finding** if (a) or (c) validates clean (the off-grid rebase renders at the wrong positions), or (b) is
+  refused.
+- **Arm H.** `valid: false`, an error at `refine` naming the 15 s ceiling and `encode_h3_latents` as the route for a longer take.
+  It is a **finding** if it validates clean, or the refusal says nothing about `encode_h3_latents`.
+- **Arm I.** Both: `valid: false`, an error naming `experimental_refine_windows` and telling the caller to use `refine_windows`.
+  It is a **finding** if the old name validates clean (two names for one thing), or is refused without naming the new one.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F347, M-F348, M-F349, M-F350, M-F351, M-F352, M-F353, M-F354 (merged 2026-11-26, suite review)
+- M-F347: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F348: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F349: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F350: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F351: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F352: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F353: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F354: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F346 — the workflows guide documents `refine_windows` as a supported argument with its defaults and "not a burn fix"
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
@@ -9119,118 +8233,6 @@ expected:
   favour of `encode_h3_latents`.
 It is a **finding** if the section is still the "Experimental" one, names the flag, or omits the defaults or the
 not-a-burn-fix line.
-cleanup: none.
-metrics: none.
-
-### M-F347 — `refine_windows` without `refine_strength` is refused at validate, naming `refine_windows`
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: W_win from M-F345 with RW `{}` and the `refine_strength` argument removed;
-`validate_workflow(workspace="regression-model-specific", inline_workflow=...)`. Then once more with
-`refine_strength: null` in place of removing it.
-expected:
-- Both: `valid: false`, an error at `steps[1].pipeline.arguments.refine_windows` (or whose message names
-  `refine_windows`) saying it needs `refine_strength`.
-It is a **finding** if either validates clean, or the refusal only surfaces at run time.
-cleanup: none.
-metrics: none.
-
-### M-F348 — `refine_windows` with `refine_tiles` is refused at validate, naming both
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: W_win from M-F345 with RW `{}` and a `refine_tiles` argument added to `refine` (use the form
-`get_schema`/`get_pipeline_signature` documents for it; any legal value). `validate_workflow` it. Then remove
-`refine_windows` and validate again (the control).
-expected:
-- With both: `valid: false`, an error naming `refine_windows` and `refine_tiles` as not usable together.
-- The control (tiles alone): no error naming `refine_windows`.
-It is a **finding** if the pair validates clean.
-cleanup: none.
-metrics: none.
-
-### M-F349 — `refine_windows` with a conditioning input (`image`, `keyframes`, `guides`, `last_image`, `references`, `latent_anchor`) is refused at validate
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: W_win from M-F345 with RW `{}`, and in turn one of these added to `refine` (each a separate
-`validate_workflow` call; values in the shape `get_schema`/`get_pipeline_signature` documents, any media from the
-Fixtures section, e.g. `asset:qa-cast/priya-portrait.jpg` for an image):
-`image`, `keyframes`, `guides`, `last_image`, `references`, `latent_anchor`. Change the step's
-`from_pretrained_arguments.workflow` to the one that takes the argument (`fl2va` for `image`/`last_image`, `ref2va`
-for `references`) where `t2va` refuses it on its own.
-expected:
-- Each: `valid: false`, an error naming `refine_windows` and the added argument (a window has no place to put a
-  whole-take condition). The refusal is about the pair, not merely that `t2va` doesn't take the argument.
-It is a **finding** if any of the six validates clean beside `refine_windows`.
-cleanup: none.
-metrics: none.
-
-### M-F350 — `refine_windows` refuses an `overlap` at or above `frames`, and the boundaries of the rule
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 42, "overlap": 42}`; (b)
-`{"frames": 42, "overlap": 50}`; (c) `{"frames": 42, "overlap": 41}`; (d) `{"overlap": 42}` (against the default
-`frames` 42); (e) `{"frames": 42, "overlap": 0}`; (f) `{"frames": 0}`; (g) `{"frames": 42, "overlap": -1}`;
-(h) `{"frames": "42"}` (a string that is not a `variable:` reference).
-expected:
-- (a), (b), (d): `valid: false`, an error naming `refine_windows` and saying `overlap` must be less than `frames`.
-- (c): no error about `overlap` vs `frames` (it may be refused for another stated rule, e.g. the positions grid in
-  M-F352; then the message names that rule, not the overlap one).
-- (f), (g), (h): `valid: false`, each naming `refine_windows` and the offending key.
-- (e): either clean or refused with a message naming `overlap`; record which.
-It is a **finding** if (a), (b) or (d) validates clean, or (c) is refused for the overlap rule.
-cleanup: none.
-metrics: none.
-
-### M-F351 — `refine_windows` refuses an unknown key and a non-object value, naming it
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 42, "windw": 8}`; (b)
-`{"blend": "linear-ish"}` (a value outside the `blend` choices `get_schema` lists); (c) `{"positions": "absolute-ish"}`;
-(d) `42`; (e) `"yes"`; (f) `[42, 12]`.
-expected:
-- Each: `valid: false`, an error naming `refine_windows`; (a) names the key `windw`; (b) and (c) name the key and
-  the allowed values.
-- `null` and `false` are not in this case: whatever the schema says they mean (off, most likely) is fine.
-It is a **finding** if an unknown key is accepted silently, or any of (b)–(f) validates clean.
-cleanup: none.
-metrics: none.
-
-### M-F352 — `positions: "rebased"` refuses an off-grid `frames` (40) and accepts the default 42
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 40, "positions": "rebased"}`; (b)
-`{"frames": 42, "positions": "rebased"}`; (c) `{"frames": 40}` (rebased by default); (d) `{"frames": 40,
-"positions": <the other value get_schema lists>}`.
-expected:
-- (a) and (c): `valid: false`, an error naming `refine_windows`, `frames` 40 and the grid it must sit on, ideally
-  naming the nearest legal values.
-- (b): clean.
-- (d): no grid refusal (record the result; the grid belongs to rebased positions).
-It is a **finding** if (a) or (c) validates clean (the off-grid rebase renders at the wrong positions), or (b) is
-refused.
-cleanup: none.
-metrics: none.
-
-### M-F353 — a windowed refine fed a `source_video` over 15 s is refused at validate, pointing at `encode_h3_latents`
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: a two-step workflow: `refine` as in W_win (M-F345) but with `source_video: "asset:qa-1230/chain-26s.mp4"` in
-place of `latents`/`num_frames` (and `num_frames` 624 if the step needs one), RW `{}`; then `final` `pair_audio` as in
-W_win reading `previous_result:refine`. `validate_workflow` it.
-expected:
-- `valid: false`, an error at `refine` naming the 15 s ceiling and `encode_h3_latents` as the route for a longer take.
-It is a **finding** if it validates clean, or the refusal says nothing about `encode_h3_latents`.
-cleanup: none.
-metrics: none.
-
-### M-F354 — the old name `experimental_refine_windows` is refused, and the refusal names `refine_windows`
-source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
-Steps: W_win from M-F345 with `refine_windows` replaced by `experimental_refine_windows: {"frames": 42, "overlap": 12}`;
-`validate_workflow` it. Then with both arguments present.
-expected:
-- Both: `valid: false`, an error naming `experimental_refine_windows` and telling the caller to use `refine_windows`.
-It is a **finding** if the old name validates clean (two names for one thing), or is refused without naming the new one.
 cleanup: none.
 metrics: none.
 
@@ -9335,44 +8337,38 @@ It is a **finding** if skipping the decode leaks into the plain refine (no video
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
-### M-F361 — `templates/minimax/h3-seam-pass` is in the shot catalog with its traits, cost and claims
+### M-F362 — `h3-seam-pass` is in the shot catalog with its traits, cost and claims, validates clean with only `source` quoting the flat cost row, and refuses a source that is not a video
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: catalog read.
-Steps: `list_workflows(shape="shot")` (summary form); `get_workflow("templates/minimax/h3-seam-pass")`.
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: catalog read and validate only.
+Steps:
+1. **Arm C (catalog).** `list_workflows(shape="shot")` (summary form); `get_workflow("templates/minimax/h3-seam-pass")`.
+2. **Arm V (validate).** `validate_workflow(workflow_path="templates/minimax/h3-seam-pass", workspace="regression-model-specific",
+   arguments={"source": "asset:qa-1230/chain-26s.mp4"})`. Then with no arguments at all.
+3. **Arm N (not a video).** `validate_workflow` as in step 2 with `source` = (a) `asset:qa-cast/priya-portrait.jpg` (a still); (b) an audio
+   file from the Fixtures section (e.g. `asset:bench/constitution-narration-retimed.wav`, copied with
+   `copy_to_workspace` if the workspace lacks it, or any `.wav` the file names in this workspace); (c)
+   `asset:qa-1230/no-such-take.mp4`.
 expected:
-- The catalog lists `templates/minimax/h3-seam-pass` with the `needs-input-media` trait, a summary and a cost.
-- Its description says about 36–40 GPU-min per minute of take, about 16 GiB peak, and that it smooths seams and is not
-  a burn fix.
-- Its one required variable is the source take (`source`); everything else has a default.
-It is a **finding** if it is missing from the shot catalog, lacks the trait or the cost, or drops the not-a-burn-fix line.
+- **Arm C.**
+  - The catalog lists `templates/minimax/h3-seam-pass` with the `needs-input-media` trait, a summary and a cost.
+  - Its description says about 36–40 GPU-min per minute of take, about 16 GiB peak, and that it smooths seams and is not
+    a burn fix.
+  - Its one required variable is the source take (`source`); everything else has a default.
+  It is a **finding** if it is missing from the shot catalog, lacks the trait or the cost, or drops the not-a-burn-fix line.
+- **Arm V.**
+  - With `source`: `valid: true`, no error, and `plan.estimate` equal to the template's catalog cost row (arm C).
+  - With nothing: refused (or a warning that a run would fail) naming `source` as required.
+  It is a **finding** if `source` alone does not validate, or the estimate differs from the catalog row.
+- **Arm N.**
+  - (a), (b): `valid: false`, an error naming `source` and saying it must be a video.
+  - (c): `valid: false`, naming the missing asset.
+  It is a **finding** if any of them validates clean and would fail only once the GPU is spent.
 cleanup: none.
 metrics: none.
 
-### M-F362 — `h3-seam-pass` validates clean with only `source`, and quotes the flat cost row
-source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: validate only.
-Steps: `validate_workflow(workflow_path="templates/minimax/h3-seam-pass", workspace="regression-model-specific",
-arguments={"source": "asset:qa-1230/chain-26s.mp4"})`. Then with no arguments at all.
-expected:
-- With `source`: `valid: true`, no error, and `plan.estimate` equal to the template's catalog cost row (M-F361).
-- With nothing: refused (or a warning that a run would fail) naming `source` as required.
-It is a **finding** if `source` alone does not validate, or the estimate differs from the catalog row.
-cleanup: none.
-metrics: none.
-
-### M-F363 — `h3-seam-pass` refuses a source that is not a video at validate
-source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: validate only.
-Steps: `validate_workflow` as in M-F362 with `source` = (a) `asset:qa-cast/priya-portrait.jpg` (a still); (b) an audio
-file from the Fixtures section (e.g. `asset:bench/constitution-narration-retimed.wav`, copied with
-`copy_to_workspace` if the workspace lacks it, or any `.wav` the file names in this workspace); (c)
-`asset:qa-1230/no-such-take.mp4`.
-expected:
-- (a), (b): `valid: false`, an error naming `source` and saying it must be a video.
-- (c): `valid: false`, naming the missing asset.
-It is a **finding** if any of them validates clean and would fail only once the GPU is spent.
-cleanup: none.
-metrics: none.
+absorbs: M-F361, M-F363 (merged 2026-11-26, suite review)
+- M-F361: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+- M-F363: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F364 — `h3-seam-pass` over the ≈26 s chain: same length, the source's soundtrack, seams no worse
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
@@ -9404,319 +8400,6 @@ expected:
 - Nothing in the skill still calls the windowed refine experimental or tells the reader to set
   `DW_EXPERIMENTAL_REFINE_WINDOWS`.
 It is a **finding** if the template is missing from the skill, or the skill promises it fixes burn.
-cleanup: none.
-metrics: none.
-
-### M-F366 — the #1325 v6 seam-restore workflow validates clean: 6 fl2va segments, 5 ref2va restores over 124-frame windows, guide = restore frames 102–123, key = restore frame 102, `release_pipeline: true` on all 11 pipeline steps
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F336 (plan v5: the same window, without `release_pipeline`; its early job `782ceef4f82e` was OOM-killed).
-Model/pipeline: MiniMax H3 `fl2va` segments and `ref2va` restores, raw H3 (int8, sparse attention, no turbo, 20
-steps, shifts 12/3), the narrated `dialogue` take's still and narration. Free: validates and reads only.
-The restore arm is `bench/workflows/seam-restore.json` in the dw repo, saved to workspace `bench` with `save_workflow`.
-It is built against control job `aed61997052a` (workspace `bench`, workflow `bench/seam-restore-control`,
-`arguments {"seed": 1}`), whose steps are `audNN`, `segNN`, `tailNN`, `keyNN` and `take`. The plan names the restore
-steps `rtailsrcNN`, `raudNN`, `restoreNN` and `rtailNN`. Other names are fine if the record maps them.
-Steps:
-1. `list_workflows(workspace="bench")` and find the saved restore workflow (expected name `bench/seam-restore`).
-   `get_workflow` on it.
-2. `validate_workflow(workspace="bench", workflow_path=<that name>, arguments={"seed": 1})`. If the saved name doesn't
-   resolve, take `get_job_workflow(<the v6 full or early job's id from the record>)` and validate it inline in
-   `bench`. Note which route you used. An unresolvable name is not a finding.
-expected:
-- `valid: true`, no errors. Warnings are allowed (the control carries `vram_projection_inherited`); list them.
-  `plan.estimate` is present (its basis may be `unknown`).
-- Exactly 6 H3 segment steps, all `fl2va`, and exactly 5 `ref2va` restore steps, one per seam k = 1..5. **No restore
-  follows segment 6**, and nothing consumes a restore of segment 6.
-- **`release_pipeline: true` on every pipeline step**: all 6 segments and all 5 restores, 11 steps. A pipeline step
-  with the key absent or `false` is a finding. Utility steps (`trim_video`, audio slices, `concat_videos`) may carry it
-  or not. No step uses `pipeline_reference`.
-- Each restore k:
-  - `num_frames` **124**. Its `source_video` (`rtailsrc k`, a `trim_video` with a literal `num_frames`) is **124**
-    frames: on H3's 17n+5 grid (17·7+5) and at least the 120-frame minimum. Do the 17n+5 arithmetic on the literal
-    yourself. `validate_workflow` passing is not enough to show the grid. 120, 107 and 22 are each a finding;
-  - `source_video` = segment k's output frames **68–191**, ending on its last frame (segments are 192 frames);
-  - `hold_audio` = a 124-frame narration slice from frame 170·(k−1)+68 to frame 170·k+22: k=1 → 68–191, k=2 →
-    238–361, k=3 → 408–531, k=4 → 578–701, k=5 → 748–871. In samples at 48 kHz (2000 a frame), k=1 starts at 136000
-    and runs 248000;
-  - `refine_strength` 0.3;
-  - `references` = the take's still, the one segment 1's `image` uses;
-  - the prompt is segment **k+1's**, not segment k's;
-  - seed **1000+k** (1001..1005);
-  - `num_inference_steps` 20, no turbo LoRA (absent or `model_name: null`), and the segments' quantization,
-    attention and shifts (12/3).
-- `rtail k` = restore k's frames **102–123** (22 frames, ending on its last frame). It is segment k+1's `guides`
-  video at frame 0, 22 frames, never 39.
-- `key k` = restore k's frame **102** (frame 0 of `rtail k`), and it is segment k+1's `image`. Segment 1's `image` is
-  the still, and segment 1 has no `guides`.
-- Every segment's prompt, seed, audio slice (`audNN`), size, `num_frames` 192 and schedule are the control's.
-- One join (`take`, `concat_videos`) over seg01–seg06 in order: trim 22 on segments 2–6, crossfade 80 ms, narration
-  kept.
-It is a **finding** if any of these holds:
-- the workflow doesn't validate clean;
-- a segment or restore step lacks `release_pipeline: true`;
-- there are other than 5 restores, or one follows segment 6;
-- a restore or its source isn't 124 frames, or the source isn't segment k's frames 68–191;
-- an audio slice is off its 170·(k−1)+68 start or isn't 124 frames;
-- a strength isn't 0.3;
-- a restore's prompt is segment k's own, or its seed isn't 1000+k;
-- a guide isn't restore frames 102–123, or a key isn't restore frame 102;
-- any step uses turbo or other than 20 steps.
-cleanup: none (validates only).
-metrics: none.
-
-### M-F367 — the #1325 v6 early workflow is the restore workflow cut after seg02's join, with `release_pipeline: true` on its 3 pipeline steps, and validates clean
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F337.
-Model/pipeline: as M-F366. Free: validates and reads only.
-Setup: M-F366's restore workflow definition (step 1 there).
-Steps:
-1. `list_workflows(workspace="bench")`, find the early workflow (`bench/workflows/seam-restore-early.json`, expected
-   saved name `bench/seam-restore-early`), and `get_workflow` on it.
-2. `validate_workflow(workspace="bench", workflow_path=<that name>, arguments={"seed": 1})`. If the name doesn't
-   resolve, validate `get_job_workflow(<the v6 early job>)` inline, as in M-F366.
-3. Diff its steps against the restore workflow's, step by step.
-expected:
-- `valid: true`, no errors, and `plan.estimate` present. The workflow declares a `seed` variable.
-- Its steps are the restore workflow's, identical in every argument, from the first step through seg02:
-  - aud01, seg01;
-  - `rtailsrc01` (seg01 frames 68–191, 124 frames) and `raud01` (frames 68–191);
-  - `restore01` (`num_frames` 124, seed 1001, seg02's prompt, strength 0.3);
-  - `rtail01` (restore frames 102–123) and key02 (restore frame 102);
-  - aud02, seg02.
-  Then one join over seg01 and seg02 only, with the same trim 22 and crossfade 80 ms.
-- Exactly 3 pipeline steps (seg01, `restore01`, seg02), each with `release_pipeline: true`.
-- No seg03, no `restore02`, and no step that consumes seg02's tail. The plan stops at seg02 to gate on it.
-It is a **finding** if any of these holds:
-- it doesn't validate clean;
-- any of its 3 pipeline steps lacks `release_pipeline: true`;
-- any shared step differs from the restore workflow's (seed, prompt, window, strength, audio slice, guide or key
-  source, `release_pipeline`);
-- `restore01` or its source is off 124 frames;
-- it runs past seg02's join.
-cleanup: none.
-metrics: none.
-
-### M-F368 — the #1325 v6 early job ran on the control's diffusers: `get_diffusers_state` was quoted before it, `0.44.0.dev0` @ `43e30028`
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F338.
-Model/pipeline: MiniMax H3 on lem (cuda). Free: issue reads and job reads.
-The **v6 early job** is the job of the early workflow created after `782ceef4f82e`, with `release_pipeline` in its
-realized workflow. It is neither v3's refused `dd3e9db5f675` nor v5's OOM-killed `782ceef4f82e`.
-Steps:
-1. Read the record as quoted on #1325 (`gh issue view 1325 --repo dkackman/diffusers-workflow --comments`) and the
-   build's comments on #1351. Find the `get_diffusers_state` quote and when it was taken.
-2. `get_job(<v6 early job>)`; note `created_at`. If `get_job` or `get_job_events` reports a diffusers version or
-   commit, note it.
-3. `get_diffusers_state()` now, for context only. It may have moved since; the check is about the state before the
-   early job.
-expected:
-- The record quotes a `get_diffusers_state` result naming version `0.44.0.dev0` and commit `43e30028` (a longer hash
-  that starts with it is fine). The quote was taken before the v6 early job's `created_at`, by its comment's timestamp
-  or the record's.
-- A quote taken only before `dd3e9db5f675` or `782ceef4f82e` doesn't count on its own. It counts only if nothing
-  changed diffusers between it and the v6 early job; a fresh quote is the clean form.
-- Any diffusers version the job or its events report matches the quote.
-- If the quote shows a different version or commit, **no v6 early job exists** (`list_jobs(workspace="bench")` shows
-  no early or full restore job created after `782ceef4f82e`), and #1351 has a stop-and-report comment.
-It is a **finding** if the quote is missing, was taken after the early job started, or doesn't match while a job ran
-anyway, or if the job's own reported diffusers differs from it.
-cleanup: none.
-metrics: none.
-
-### M-F369 — the #1325 v6 early job: one 362-frame take with audio, a 124-frame restore01, every pipeline step loaded fresh, a host-memory peak recorded, alone on lem; a second OOM kill stops the probe
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F339.
-Model/pipeline: MiniMax H3 `fl2va` + `ref2va`, the v6 early job (see M-F368). Free: reads only. Run on lem (cuda).
-Steps:
-1. `get_job(<v6 early job>)` and `get_job_events(<v6 early job>)`.
-2. `get_gallery_metadata` on its `final` mp4.
-3. `list_jobs(workspace="bench")`, then `list_jobs` in each workspace `list_workspaces` lists. Compare every MiniMax
-   H3 job's `started_at`–`finished_at` against the v6 early job's (and the full job's, if it exists; M-F371).
-4. For context: `get_job(dd3e9db5f675)` should read `failed` with the off-grid refusal in `restore01`, and
-   `get_job(782ceef4f82e)` should read `failed` (killed in `restore01`'s decode).
-expected:
-- `status: succeeded`, workspace `bench`, `arguments` with `seed` 1.
-- The manifest has seg01 and seg02 segment files and exactly one `final` video. Its shots: seg01 at start 0, 192
-  frames; seg02 at start 192, 170 frames, `crossfade_ms` 80.
-- `get_gallery_metadata`: `frame_count` **362** (192 + 170), `fps` 24, the control's width and height, and an audio
-  stream within one frame of the video's length (about 15.08 s).
-- The manifest has a `restore01` entry with `timing`. Its file, if it saves one, is **124** frames, never 120, 107 or
-  22. No 17n+5 refusal or padding warning appears in `job.warnings` or the events.
-- **The release took effect.** `restore01` and seg02 each show `load_cached: false` in their manifest `timing` (or
-  the events show a fresh load for each), and the events show seg01's and `restore01`'s pipelines released after
-  their steps (a `pipeline_released` event, or what the server reports in its place). A `load_cached: true` on a step
-  after a released one is a finding.
-- The events' memory readings, if they report host memory, peak well under lem's 128 GB. The plan expects about one
-  pipeline's worth, near the control's 71.1 GB. The record's host-memory peak for this job (M-F373) agrees with them.
-- No other H3 job ran on lem while the early or full job ran, on either card.
-- No job of `bench/seam-restore-control` was created after `aed61997052a`: the control was reused, not re-run.
-- **If instead the v6 early job was OOM-killed** (`failed` with a kill or OOM in its events), the plan's stop rule
-  applies. That is a probe outcome, not a finding by itself. In that case:
-  - no other early or full restore job was created after it;
-  - #1351 has a stop-and-report comment;
-  - the record names the kill with its memory peak and step.
-  If its events show a pipeline step loaded with `load_cached: true` after a `release_pipeline` step (the key not
-  freeing the pipeline), file that against dw (`owner:implementer`, `backend:cuda`).
-It is a **finding** if any of these holds:
-- the early job failed for any reason other than an OOM kill handled by the stop rule;
-- its take isn't 362 frames, or it has no audio;
-- `restore01` is off 124 frames, or a grid refusal or pad warning appears;
-- a pipeline step after the first was served from cache;
-- any H3 job overlaps it;
-- a second control job exists;
-- a job was queued after a second OOM kill.
-cleanup: none. Never delete the probe jobs, `dd3e9db5f675` or `782ceef4f82e`: the record and Don's viewing cite them.
-metrics: none.
-
-### M-F370 — the #1325 v6 gate: both arms' seg02 numbers are recorded, the outcome follows the approved thresholds, and the full job exists only if the gate passed
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F340.
-Model/pipeline: the v6 early job (M-F368) and control `aed61997052a`. Free: issue and job reads.
-Skip with a note if M-F369 found the v6 early job OOM-killed (the probe stopped before the gate).
-Steps:
-1. From the record on #1325, read these for **both arms**:
-   - seg02's face-sharpness rise, split into seam and in-segment parts (seg01's last 22 frames against seg02; the
-     control's seg02 is take frames 192–361);
-   - the same split for saturation;
-   - seam 1's score (frame-difference peak over the median in-segment frame difference).
-   Then read which way the record says the gate went.
-2. Apply the rule yourself. Let R_r and R_c be the restore and control rises (seam + in-segment), and S_r and S_c
-   the seam-1 scores. The gate **passes** iff R_r < R_c **and** S_r ≤ 1.5·S_c; otherwise it **stops**. At the
-   boundaries, R_r = R_c stops ("not below"), and S_r of exactly 1.5·S_c passes (only "above 1.5×" stops). If the
-   record says it read a boundary the other way, judge by its stated reading and note it.
-3. `list_jobs(workspace="bench")` and look for a job of the full restore workflow (`bench/seam-restore`) created after
-   the v6 early job.
-expected:
-- Every number in step 1 is present for both arms. Each rise's seam and in-segment parts add up to its total within
-  the record's rounding.
-- The restore arm's numbers come from the v6 early job, not `dd3e9db5f675` or `782ceef4f82e` (neither has a seg02).
-- The record's stated outcome equals step 2's.
-- **Pass:** a full job exists, created after the v6 early job's `finished_at`, and M-F371 applies.
-- **Stop:** no full job exists after the v6 early job, and the record says the gate fired, with the numbers that
-  fired it.
-It is a **finding** if any of these holds:
-- a gate number is missing for either arm;
-- the stated outcome contradicts the rule;
-- a full job exists after a stop, or was created before the early job finished;
-- a pass has no full job and no reason.
-cleanup: none.
-metrics: none.
-
-### M-F371 — if the #1325 v6 gate passed, the full restore job: exactly 1042 frames with audio at 24 fps, five 124-frame restores, 11 fresh pipeline loads, and seg01–seg02 repeating the early job step for step
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F341.
-Model/pipeline: MiniMax H3, the v6 full job. Free: reads only. Run on lem (cuda).
-Skip with a note if M-F370 found the gate stopped the run, or M-F369 found the probe stopped (no full job).
-Steps:
-1. `get_job(<full job>)` and `get_job_events(<full job>)`. `get_gallery_metadata` on its `final` mp4 and on control
-   `aed61997052a`'s
-   (`bench/seam-restore-control/20261114-181113-99c25c22/final/SeamRestoreControl-take.22-0.0.mp4`).
-2. `get_job_workflow` for the full job and the v6 early job.
-expected:
-- `status: succeeded`, workspace `bench`, `seed` 1. One `final` video, with the control's shots: seg01 at 0 (192),
-  then seg02–seg06 at 192, 362, 532, 702, 872 (170 each, `crossfade_ms` 80).
-- `frame_count` **1042**, exactly the control's. The width, height and `fps` 24 are the control's, and an audio stream
-  is within one frame of the video's length.
-- The manifest has `restore01`..`restore05` entries, each with `timing`, and none after seg06. Each restore, and its
-  source, is 124 frames.
-- Every one of the 11 pipeline steps after the first shows a fresh load (`load_cached: false` or a load event), and
-  the events show releases between them, as in M-F369. The events' host-memory readings, if reported, stay well under
-  128 GB.
-- The full job's realized steps through seg02 equal the v6 early job's, argument for argument and seed for seed,
-  `release_pipeline` included. Frame-identical output is not required: the plan promises the same construction.
-- It didn't overlap another H3 job (M-F369's check).
-- **If the full job was OOM-killed** (the probe's second kill), the stop rule applies, as in M-F369: no later restore
-  job exists, and the record and a #1351 stop report name it. That is a probe outcome, not a finding by itself.
-It is a **finding** if any of these holds:
-- the full job failed other than by an OOM kill handled by the stop rule;
-- its count isn't 1042, or differs from the control's;
-- it has no audio, or its shots differ from the control's;
-- a restore is missing, off 124 frames, or follows seg06;
-- a pipeline step after the first was served from cache;
-- its first two segments' steps differ from the early job's.
-cleanup: none.
-metrics: none.
-
-### M-F372 — the #1325 v6 restore job(s) differ from control `aed61997052a` only in the restore steps, each segment's guide and key source, and the `release_pipeline` key
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F342.
-Model/pipeline: MiniMax H3 `fl2va` and `ref2va`. Free: reads only.
-Steps:
-1. `get_job_workflow` for `aed61997052a`, for the v6 early job, and for the full job if it exists. If `realized` is
-   false for any, note "evidence pruned" and skip that pair; that isn't a finding.
-2. Normalize each restore workflow:
-   - strip `rtailsrcNN`, `raudNN`, `restoreNN` and `rtailNN`, and anything that only feeds them;
-   - remove the `release_pipeline` key from every step;
-   - point each segment k+1's `guides` and `image` back at the control's `tailNN` and `keyNN`.
-   Diff the result against the control. For the early job, diff against the control's steps through seg02 plus a join
-   of seg01–seg02.
-expected:
-- After normalizing, nothing differs. Per segment, these are the control's: seed, prompt, still, `audNN` slice,
-  width, height, `num_frames` 192, `num_inference_steps` 20, shifts, quantization, attention, LoRA state and guide
-  length 22. So are the join's trim and crossfade.
-- The only differences are:
-  - the four restore step kinds;
-  - the source of each segment k+1's guide (restore k's frames 102–123 instead of segment k's raw frames 170–191) and
-    key (restore frame 102);
-  - `release_pipeline`, which is `true` on every segment and restore step and absent or `false` in the control.
-- Seeds are pinned in every realized workflow.
-It is a **finding** if any segment's seed, prompt, still, audio slice, size or schedule differs, or if anything outside
-those three kinds of change differs. A key other than `release_pipeline` added to a segment step counts.
-cleanup: none.
-metrics: none.
-
-### M-F373 — the #1325 v6 record, quoted on #1325: job ids and take paths (`dd3e9db5f675` and `782ceef4f82e` named apart), window, diffusers state, 0.3 / s = 12 / d = 0.0345, gate numbers, both arms' tables with the seam-jump tables, wall time per restore pass and per load, host-memory peaks, verdict left to Don
-source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
-Supersedes M-F343.
-Model/pipeline: the #1351 probe record. Free: issue reads and job reads.
-The record is a section of `bench/records/narrated.md` in the dw repo, which a tester can't read. The hand-off
-comment on #1325 must quote it (`gh issue view 1325 --repo dkackman/diffusers-workflow --comments`). A link without
-a quote is a finding.
-Steps:
-1. Read the quoted record.
-2. `get_job` and `get_job_events` for each probe job it cites, to check status, wall times and memory.
-expected:
-- **Jobs and takes.** It names the control `aed61997052a`, the v6 early job and the full job, each with its take
-  path. If there is no full job, it says the gate stopped the run, or that a second OOM kill stopped the probe. Every
-  cited arm job exists in `bench` and is `succeeded` (or, under the stop rule, is the named killed job).
-- **Failed jobs, named apart.** It names both of these as **not** arm jobs, and none of their numbers feed a table
-  or the gate:
-  - `dd3e9db5f675`: v3's 120-frame early job, refused in `restore01` off the 17n+5 grid;
-  - `782ceef4f82e`: v5's early job, OOM-killed in `restore01`'s VAE decode at a **124 151.9 MB** host peak (about
-    124.2 GB), with its timing (seg01 done; `restore01` denoised, then killed about 41 s into decode).
-- **Window.** It states the 124-frame restore window: segment k's frames 68–191, guide = restore frames 102–123, key
-  = restore frame 102.
-- **Memory fix.** It states that every segment and restore step carries `release_pipeline: true`.
-- **Diffusers.** It quotes the pre-run `get_diffusers_state`: `0.44.0.dev0` @ `43e30028` (M-F368).
-- **Strength.** `refine_strength` 0.3, shift *s* = 12, ComfyUI *d* = 0.0345 (0.3 / (12 − 11·0.3) = 0.03448).
-- **Gate.** Both arms' gate numbers and the outcome (M-F370).
-- **Tables, both arms**, over every seam the restore arm reached (5 after a pass, 1 after a stop):
-  - the drift split for luma, saturation, face saturation and face sharpness, each as total / seams / in-segment;
-  - face-crop windows: median sharpness, mean saturation, SFace similarity;
-  - the seam peak against the median frame difference;
-  - still-mouth bins.
-- **Seam-jump tables.** Per seam, in both arms:
-  - the jump at the join: the frame difference from (seg k, frame 191) to (seg k+1, frame 22), as a ratio to the
-    median in-segment frame difference;
-  - the step in detail: face-crop median sharpness and mean saturation over seg k's last 6 output frames against
-    seg k+1's first 6 kept frames.
-  For the restore arm only, how far the redraw moved: `rtail k` against seg k's frames 170–191, as mean absolute
-  difference, face-sharpness change and SFace similarity. The control's seams are labeled as the baseline.
-- **Wall time.** Each restore pass's time, and the time of **each pipeline load** shown separately, with the restore
-  total and the load total per job. Each figure agrees within 10% with that step's manifest `timing` or its events.
-- **Host memory.** Each restore-arm job's host-memory peak. Where the events report memory, the peak agrees with
-  them within 5%.
-- **Verdict.** It doesn't call whether the restore helps on the measures; the one ruling it states is the gate's.
-  #1325 goes to `owner:don` with both take paths for the viewing (`taste`). After a gate stop or a second OOM kill,
-  #1325 is headed for `wontfix` with the record as the reason, per Don's 2026-11-15 ruling.
-It is a **finding** if any of these holds:
-- a job id, a take path, the diffusers quote, 0.3, *s*, *d*, or the gate numbers is missing;
-- any table for either arm, or the seam-jump or redraw tables, is missing;
-- the per-restore or per-load wall time, or any arm job's host-memory peak, is missing;
-- `dd3e9db5f675` or `782ceef4f82e` is unnamed or counted as an arm job;
-- *d* doesn't follow from *s*;
-- a cited arm job doesn't exist or didn't succeed (outside the stop rule);
-- the record declares a verdict beyond the gate.
 cleanup: none.
 metrics: none.
 
@@ -9753,49 +8436,47 @@ If step 2 is `valid: true`, this server has the flag set: record that, skip this
 cleanup: `delete_output(job_id=<setup G job>)` after the last of M-F374–M-F380 that runs this pass.
 metrics: none.
 
-### M-F375 — with the flag on, `experimental_keystone_attention: {}` validates clean and the plan shows its defaults; boundary values are accepted
+### M-F375 — with the flag on, `experimental_keystone_attention: {}` validates clean and the plan shows its defaults; boundary values are accepted; a bad `balance` or `blocks` is a named finding at validate
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free**: validate only.
 **Flag-on cases (M-F375–M-F380)** need lem serving with `DW_EXPERIMENTAL_REFINE_WINDOWS=1`. Tell by M-F374 step 2:
 if it is refused naming the flag, the server is flag-off, and these cases are recorded **not run (server
 flag-off)**, never as a pass.
 Steps: setup G and W_KA from M-F374. `validate_workflow(workspace="regression-model-specific",
-inline_workflow=W_KA)` once per KA:
-(a) `{}`; (b) `{"balance": 20, "blocks": "31-33,36-44,47"}`; (c) `{"balance": 1}`; (d) `{"balance": 0.5}`;
-(e) `{"blocks": "0"}`; (f) `{"blocks": "49"}`; (g) `{"blocks": "0-49"}`; (h) `{"blocks": "47,31-33"}` (out of order,
-no overlap); (i) `{"balance": 20}` alone and `{"blocks": "40"}` alone.
-expected:
+inline_workflow=W_KA)` once per KA. Report a failure by arm and row (for example "B(k)").
+- **Arm A (accepted values):**
+  (a) `{}`; (b) `{"balance": 20, "blocks": "31-33,36-44,47"}`; (c) `{"balance": 1}`; (d) `{"balance": 0.5}`;
+  (e) `{"blocks": "0"}`; (f) `{"blocks": "49"}`; (g) `{"blocks": "0-49"}`; (h) `{"blocks": "47,31-33"}` (out of order,
+  no overlap); (i) `{"balance": 20}` alone and `{"blocks": "40"}` alone.
+- **Arm B (refused values):**
+  balance — (a) `{"balance": 0}`; (b) `{"balance": -1}`; (c) `{"balance": "20"}` (a string); (d) `{"balance": 1e400}`
+  (JSON overflow to infinity; if the call layer refuses to send it, record that and skip (d));
+  blocks — (e) `{"blocks": "31-50"}`; (f) `{"blocks": "50"}`; (g) `{"blocks": "-1"}`; (h) `{"blocks": "a-b"}`;
+  (i) `{"blocks": ""}`; (j) `{"blocks": "31,31"}`; (k) `{"blocks": "31-33,33"}` (an overlap); (l) `{"blocks": "33-31"}`
+  (a reversed range, which lists no block); (m) `{"blocks": "31,,33"}`; (n) `{"blocks": 31}` (a number, not the
+  string).
+expected, arm A:
 - Every call: `valid: true`, no error, and no warning naming the argument as unknown or ignored.
 - (a): the validate reply's plan (the step's resolved arguments or the experimental note it carries) shows
   `balance` 20 and `blocks` `31-33,36-44,47` (as the string, or as the 13 indices 31, 32, 33, 36–44, 47). A plan
   that shows `{}` with no defaults is a **finding**: the plan owes the defaults.
 - (b) shows the same values as (a).
 - (e)–(g): 0 and 49 are in range on H3's 50 blocks (0..N-1, N read off the transformer); `0-49` is all 50.
-It is a **finding** if any of these is refused: (c) is the identity and (d) a weaker keystone, both legal
+In arm A it is a **finding** if any of these is refused: (c) is the identity and (d) a weaker keystone, both legal
 (`balance` > 0 and finite); (e)–(h) are well-formed in-range lists.
-cleanup: none (setup G's output is cleaned by M-F374).
-metrics: none.
-
-### M-F376 — with the flag on, a bad `balance` or `blocks` is a named finding at validate
-source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free**: validate only. Flag-on (see M-F375).
-Steps: W_KA from M-F374; `validate_workflow(workspace="regression-model-specific", inline_workflow=W_KA)` once per KA:
-balance — (a) `{"balance": 0}`; (b) `{"balance": -1}`; (c) `{"balance": "20"}` (a string); (d) `{"balance": 1e400}`
-(JSON overflow to infinity; if the call layer refuses to send it, record that and skip (d));
-blocks — (e) `{"blocks": "31-50"}`; (f) `{"blocks": "50"}`; (g) `{"blocks": "-1"}`; (h) `{"blocks": "a-b"}`;
-(i) `{"blocks": ""}`; (j) `{"blocks": "31,31"}`; (k) `{"blocks": "31-33,33"}` (an overlap); (l) `{"blocks": "33-31"}`
-(a reversed range, which lists no block); (m) `{"blocks": "31,,33"}`; (n) `{"blocks": 31}` (a number, not the
-string).
-expected:
+expected, arm B:
 - Every call: `valid: false`, with a finding naming `experimental_keystone_attention` and the field (`balance` or
   `blocks`). A blocks finding names the bad token or says what is wrong (out of range with the 0–49 bound,
   malformed, empty, or duplicate).
 - (e)–(g) name the range, read from the model's 50 blocks.
 - The refusal comes from validate, before any weights load: no job is queued.
-It is a **finding** if any call validates clean, or if a refusal is a generic schema error that names neither the
+In arm B it is a **finding** if any call validates clean, or if a refusal is a generic schema error that names neither the
 argument nor the field.
-cleanup: none.
+cleanup: none (setup G's output is cleaned by M-F374).
 metrics: none.
+
+absorbs: M-F376 (merged 2026-11-26, suite review)
+- M-F376: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F377 — with the flag on, `experimental_keystone_attention` is refused off H3 fl2va, without a keystone or carried guide, and beside TST, sparse attention or a capstone
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
@@ -9824,58 +8505,61 @@ It is a **finding** if any of (a)–(i) validates clean, or is refused only at r
 cleanup: none.
 metrics: none.
 
-### M-F378 — with the flag on, a one-segment, one-guide fl2va run with `experimental_keystone_attention: {}` completes with an output and no error event
+### M-F379 — with the flag on, keystone attention at one seed: the default-key fl2va run completes with an output and no error event; `balance: 1` gives the same take as no argument; `balance: 20` gives a visibly different take but keeps frame 0 (under the keyframe and guide) close to the no-key take's frame 0
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`, turbo LoRA, 5 steps, 124 frames at 960x544. **GPU**: a few minutes
-on lem (quote `plan.estimate`). Flag-on (see M-F375).
-Steps: setup G and W_KA from M-F374 with `KA = {}`. `validate_workflow`, bind `acknowledged_cost`, then
-`run_workflow(workspace="regression-model-specific", inline_workflow=W_KA, note="M-F378 KA default seed 1391",
-wait_seconds=55, acknowledged_cost=...)`, then `wait_for_job` until done. Then `get_job`, `get_job_events`, and
-`get_gallery_metadata` on the video.
-expected:
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`, turbo LoRA, 5 steps, 124 frames at 960x544. **GPU**: three runs, each a
+few minutes on lem (quote `plan.estimate`). Flag-on (see M-F375).
+Steps: setup G and W_KA from M-F374, run three times at the same seed 1391. Each run: `validate_workflow`, bind
+`acknowledged_cost`, then `run_workflow(workspace="regression-model-specific", inline_workflow=W_KA, note=<below>,
+wait_seconds=55, acknowledged_cost=...)`, then `wait_for_job` until done.
+1. Run (a): no KA, `note="M-F379 baseline seed 1391"`.
+2. Run (b): `KA = {"balance": 1}`, `note="M-F379 KA balance 1 seed 1391"`.
+3. Run (c): `KA = {}` (balance 20 on the default 13 blocks), `note="M-F378 KA default seed 1391"`. Then `get_job`,
+   `get_job_events`, and `get_gallery_metadata` on its video.
+4. **Arm I (identity, (b) vs (a)).** `compare_outputs` on the (a) and (b) videos (or `assess_output` on each plus
+   `get_output_frames` at `frame:0`, `frame:62`, `frame:123` of both), and `get_job_events` on (b).
+5. **Arm D (difference, (c) vs (a)).** `compare_outputs` on (c)'s video against (a)'s, and `get_output_frames` on both
+   at `frame:0`, `frame:62` and `frame:123`.
+6. **Arm F (frame 0, (c) vs (a)).** `compare_outputs` with (a)'s video as the baseline and (c)'s as the second,
+   `at=["frame:0", "frame:1"]`; and `get_output_frames` on (c)'s video at `frame:0`.
+expected, arm R (run (c), the default key):
 - The job succeeds with one `video/mp4` output: 960x544, 24 fps, 124 frames (within 1), with an audio stream.
 - No error event. `job.warnings` and the events hold nothing naming keystone attention as skipped, ignored or
   falling back.
 - The events or the job say which attention op the selected blocks ran (cuDNN or native flash): **record which**
-  (M-F379 needs it). If nothing says, record "not reported"; that is a note, not a finding.
-- Keep the job id for M-F379 and M-F380.
-It is a **finding** if the run fails, writes no video, or reports an error event.
-cleanup: kept until M-F380 has run, then `delete_output(job_id=<this job>)`.
-metrics: none.
-
-### M-F379 — with the flag on, `balance: 1` gives the same take as no argument at the same seed
-source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: two runs as M-F378. Flag-on (see M-F375).
-Steps: W_KA from M-F374 run twice, each validated and acknowledged as in M-F378:
-(a) no KA, `note="M-F379 baseline seed 1391"`; (b) `KA = {"balance": 1}`, `note="M-F379 KA balance 1 seed 1391"`.
-Then `compare_outputs` on the two videos (or `assess_output` on each plus `get_output_frames` at `frame:0`,
-`frame:62`, `frame:123` of both), and `get_job_events` on (b).
-expected:
-- Both succeed, with the same frame count, size and fps.
+  (arm I needs it). If nothing says, record "not reported"; that is a note, not a finding.
+In arm R it is a **finding** if the run fails, writes no video, or reports an error event.
+expected, arm I:
+- (a) and (b) both succeed, with the same frame count, size and fps.
 - With b = 1 the re-split is the identity (pK' = pK), so (b) equals (a): **bit-identical** video frames if the
   selected blocks ran the default backend's own op; otherwise **within float tolerance**: no frame differs by eye
   and `compare_outputs` reports a near-zero difference (a per-pixel mean absolute difference under 1 on 0–255, or
-  the tool's own "same" verdict). Record which applies, and the op M-F378 named.
+  the tool's own "same" verdict). Record which applies, and the op arm R named.
 - (a)'s events hold no keystone-attention line at all (no argument, no processor installed).
-It is a **finding** if (b) differs visibly from (a), or if (a) shows any trace of the processor.
-cleanup: `delete_output(job_id=...)` on (b); keep (a) for M-F380, then delete it.
-metrics: none.
-
-### M-F380 — with the flag on, `balance: 20` gives a visibly different take from no argument at the same seed
-source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: none beyond M-F378 and M-F379(a). Flag-on (see M-F375).
-Steps: `compare_outputs` on M-F378's video (`KA = {}`, balance 20 on the default 13 blocks) against M-F379(a)'s
-(no argument, same seed 1391), and `get_output_frames` on both at `frame:0`, `frame:62` and `frame:123`.
-expected:
+In arm I it is a **finding** if (b) differs visibly from (a), or if (a) shows any trace of the processor.
+expected, arm D:
 - The two takes differ visibly in at least one sampled frame (the subject's look, the framing or the background
   pulled toward the keystone still), and `compare_outputs` reports a non-trivial difference, well above
-  M-F379's (b)-vs-(a) reading.
+  arm I's (b)-vs-(a) reading.
 - Frames 0–21 (under the guide) may stay close in both: the guide rows are held, never denoised. The change is
   expected in the frames the guide leaves free.
-It is a **finding** if the takes are bit-identical or indistinguishable by eye in every sampled frame: the processor
+In arm D it is a **finding** if the takes are bit-identical or indistinguishable by eye in every sampled frame: the processor
 would then not be acting on the selected blocks.
-cleanup: `delete_output(job_id=...)` on M-F378's job and M-F379(a)'s, then setup G's (M-F374).
+expected, arm F:
+- (c)'s frame 0 shows the same subject and setting as the guide's first frame and (a)'s frame 0. With
+  `image` set to the guide's first frame, both should show the guide's woman in the office.
+- At `frame:0`, `compare_outputs` reads a close match: PSNR above 30 dB and SSIM above 0.9. #1494's fixed build read
+  PSNR 39.9, SSIM 0.984 and MAD 1.7. The broken build read PSNR 8.25 and MAD 76.6.
+- Frame 1 is not a crossfade or ghost of a second scene.
+In arm F it is a **finding** if frame 0 shows a scene that is in none of the image, the guide and the prompt (#1494 showed a
+man in a yellow vest in a sitcom living room), or if frame 1 is a double exposure.
+cleanup: once every arm has been read, `delete_output(job_id=...)` on (a), (b) and (c), then setup G's (M-F374).
 metrics: none.
+
+absorbs: M-F378, M-F380, M-F448 (merged 2026-11-26, suite review)
+- M-F378: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+- M-F380: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+- M-F448: tester, verified in #1494 (claude-opus-5-5 via anthropic)
 
 ### M-F381 — the workflows guide carries one experimental line for `experimental_keystone_attention`
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
@@ -9895,25 +8579,6 @@ expected:
   is docs review, not this case.
 It is a **finding** if the line is missing, presents the key as stable, or gives different defaults than M-F375
 found.
-cleanup: none.
-metrics: none.
-
-### M-F383 — the #1391 bench jobs completed on one quoted build, one H3 job at a time, after #1385 and #1382
-source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
-Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job (M-F425); `get_diffusers_state()`;
-`list_jobs(workspace="bench")` and the job lists of the workspaces #1385's and #1382's records name, around the
-arm jobs' times; `gh issue view 1385` and `gh issue view 1382` (`--repo dkackman/diffusers-workflow`) for their
-close times.
-expected:
-- Every arm job is `completed` (succeeded), not failed or cancelled. A re-run is named in the record with its
-  reason.
-- The record quotes the `get_diffusers_state` the runs used, taken before the first arm job, and every arm job ran
-  on that one build; any version a job reports matches it. Today's `get_diffusers_state` is context only.
-- No arm job's run overlaps another H3 job on lem (its `started_at`–`finished_at` against every other H3 job's),
-  and none started before #1385 and #1382 were closed (or the driver released B from them).
-It is a **finding** if any arm job failed without a named re-run, if the arm jobs did not all run on the one quoted
-build, or if two H3 jobs overlapped.
 cleanup: none.
 metrics: none.
 
@@ -9967,381 +8632,6 @@ expected:
 - (d): `downloads_required` holds exactly one entry, `repo: "lightx2v/Minimax-h3-Turbo"` with `filename` set to the 8-step name and a non-null `gb`. The check is per file: the cached sibling doesn't hide the uncached file, and the entry doesn't fall back to the whole repo.
 - Before (d), confirm the 8-step v1.2 file is still uncached: no job on this box has loaded it (`list_downloads` and the H3 jobs' `get_job_events`). If one has, use another `Minimax-h3-Turbo` file name that is not cached. A cached name makes (d) pass with `[]` and proves nothing.
 It is a **finding** if (a)–(c) list the cached file, or if (d) reports `[]` for a file that is not cached.
-cleanup: none.
-metrics: none.
-
-### M-F388 — the #1317 H3-Image probe's four bench workflows validate clean, with the plan's recipe, one-based `<Picture N>` references, and a Klein control that differs only in model
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageModularPipeline`, diffusers ≥ 0.43),
-FLUX 3 Klein (`templates/flux3/multi-reference`), MiniMax H3 `templates/minimax/image-to-video`. Workspace `bench` on lem
-(cuda). **Free**: validates and reads only.
-The probe's workflows are `bench/workflows/h3-image-t2i.json`, `h3-image-edit3.json`, `klein-edit3.json` and
-`h3-image-to-h3.json` in the dw repo, saved to workspace `bench` (expected names `bench/h3-image-t2i` and so on). Other
-names are fine if #1345's hand-off maps them.
-Steps:
-1. `list_workflows(workspace="bench")` (or the hand-off's names) and `get_workflow` on each of the four.
-2. `validate_workflow(workspace="bench", workflow_path=<each>)` at its stored defaults. If a name doesn't resolve, validate
-   `get_job_workflow(<that workflow's probe job>)` inline in `bench` and note the route. An unresolvable name is not a finding.
-expected:
-- All four: `valid: true`, no errors. Warnings are allowed; list them. `plan.estimate` is present (its basis may be `unknown`).
-- `h3-image-t2i`: one MiniMax-H3-Image step, `width` and `height` **2048**, a pinned `seed`. Its transformer and text
-  encoder are SDNQ-quantized with group offload and `remove_modules: lm_head` (the `minimax/image-to-video` recipe), and
-  `load_components` points `text_encoder` at **`MiniMaxAI/MiniMax-H3`**, not at the H3-Image repo. It passes no
-  `num_inference_steps`, `guidance_scale` or `negative_prompt` (the pipeline is six fixed steps, guidance-distilled).
-- `h3-image-edit3`: the same recipe at 2048x2048, `image` a list of **exactly 3** references, and a prompt that names
-  `<Picture 1>`, `<Picture 2>` and `<Picture 3>` (one-based). `<Picture 1>` is a cast portrait. A `<Picture 0>`, a
-  `<Picture 4>`, or Klein's `<ref_image_N>` in this prompt is a finding.
-- `klein-edit3`: `templates/flux3/multi-reference` (composed, or run with its `images` variable) over the **same 3 files in
-  the same order** and the same edit intent, in Klein's own reference syntax, with a pinned `seed`.
-- `h3-image-to-h3`: two arms, the H3-Image edit still and the Klein still, each followed by `minimax/image-to-video` at
-  **544p, int4** (the h3-quality TV path). Each still's pipeline step carries `release_pipeline: true` (or the still is
-  released before the H3 step loads). The two H3 steps share prompt, seed, size, `num_frames` and schedule; only the
-  `image` differs.
-- No step loads `MiniMaxAI/MiniMax-H3-Image-PE`, none sets `trust_remote_code` or `custom_pipeline`, and none loads `PrunaAI/P-H3-Image` (Q3, Q6).
-It is a **finding** if any workflow fails to validate, the text encoder isn't redirected to `MiniMaxAI/MiniMax-H3`, a
-reference count or `<Picture N>` index is off, the Klein control uses different files or order, the two video arms
-differ in anything but `image`, or a PE or P-H3 load appears.
-cleanup: none (validates only; the saved workflows are the bench record).
-metrics: none.
-
-### M-F389 — the #1317 probe checked its download before any GPU run: the run fetches about 65 GB, not the 190 GB repo, or it stopped and reported
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image, workspace `bench` on lem (cuda). **Free**: issue reads, job reads, validate.
-Steps:
-1. `gh issue view 1345 --repo dkackman/diffusers-workflow --comments` and `gh issue view 1317 --repo
-   dkackman/diffusers-workflow --comments`: find the first-action comment (the repo's `modular_model_index.json`, its
-   file list, the planned download, and whether `dw`'s H3 block inserts touch the H3-Image graph).
-2. `list_jobs(workspace="bench")`: find the first MiniMax-H3-Image job and its `created_at`.
-3. `get_job_events` on that job, and `list_downloads()`.
-4. `validate_workflow(workspace="bench", workflow_path=<M-F388's t2i>)`: read `plan.downloads_required` (now likely `[]`;
-   that is fine after the first run).
-expected:
-- The first-action comment exists and is timestamped **before** the first H3-Image job's `created_at`. It quotes a
-  planned download for the transformer and VAE of roughly 65 GB (anything under ~100 GB passes), states that the text
-  encoder comes from `MiniMaxAI/MiniMax-H3`, and says whether the H3 inserts match the H3-Image graph (they should not).
-- The first job's events (or the record's "bytes downloaded" figure) show what was fetched: no file from the H3-Image
-  repo's `text_encoder/` folder, and a total well under 190 GB. `list_downloads` shows no whole-repo `download_model` of
-  `MiniMaxAI/MiniMax-H3-Image`.
-- **Stop branch** (Q1 default): if the comment found the run would fetch the whole repo, or that the encoder override is
-  not honoured, then **no** H3-Image job exists in any workspace, and the comment gives the measured size. That is a
-  probe outcome, not a finding.
-It is a **finding** if an H3-Image job ran before the first-action comment, if the run fetched the H3-Image text encoder
-or the whole repo, or if a job ran after a stop.
-cleanup: none.
-metrics: none.
-
-### M-F390 — the #1317 t2i run: completed at 2048x2048 and coherent, or an OOM recorded with its recipe; cold and warm times, peak VRAM and bytes downloaded
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image t2i (M-F388), workspace `bench` on lem (one 24 GB card). **Free**: reads only.
-Skip with a note if M-F389 found the stop branch.
-Steps:
-1. `list_jobs(workspace="bench")`: the t2i jobs, cold (first) and warm (a second run of the same workflow and seed).
-2. `get_job` and `get_job_events` on each.
-3. If completed: `get_output_image` on the cold job's image.
-4. Read the record as quoted on #1345 or #1317.
-expected:
-- Each t2i job is `succeeded`, or `failed` with an out-of-memory error in its events. Nothing else (a load error, a
-  missing class, a refused argument) counts as a result.
-- **Completed:** the image is **2048x2048**, one picture, recognisably the prompt's subject with no tiling seams, banding
-  or noise field. A warm run exists. The record gives cold and warm wall time, each within 10% of the job's own
-  `started_at`–`finished_at` (or manifest timing), and warm is below cold.
-- The record gives peak VRAM from `get_memory` (in GB, under 24) and bytes downloaded on the first run.
-- **OOM:** the record names the recipe that failed (quantizer and bits, offload mode, which step OOMed) and the VRAM
-  reading at failure. The stage still closes with that finding (plan v1: an OOM is a result).
-It is a **finding** if a job failed for any reason other than OOM, the image isn't 2048x2048 or is incoherent, a number
-is missing from the record, or a time disagrees with the job by more than 10%.
-cleanup: none. Never delete the probe jobs; the record cites them.
-metrics: none.
-
-### M-F391 — the #1317 small-area run: 1024x1024 rendered at its own size, with time and look recorded beside the 4 MP default
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image t2i with `min_generation_area` lowered, workspace `bench` on lem. **Free**: reads only.
-Skip with a note if M-F389 found the stop branch, or M-F390 found the 4 MP run OOMed and the record says the small run
-was not tried (the record must say which).
-Steps: `get_job_workflow` and `get_job` on the small-area job; `get_output_image` on its image and on M-F390's;
-read the record.
-expected:
-- The job's realized workflow is the t2i's with `width`/`height` **1024** and `min_generation_area` set at or below
-  1024x1024 (the plan writes `1024`; any value ≤ 1,048,576 meets it), same prompt and seed. Nothing else differs.
-- `succeeded` (or OOM, recorded as in M-F390); the image is **1024x1024**.
-- The override is honoured: the image is a native 1024x1024 render, not the 4 MP canvas resized back. The default path
-  renders a small request on a 4 MP canvas, so with the same prompt and seed a resize-back looks like M-F390's image
-  shrunk; a native render has its own composition. Plan v1 sets no speed bar: either run may be the faster.
-- The record gives its time beside the 4 MP run's and a one-line look comparison (detail, coherence) against it.
-It is a **finding** if the argument isn't in the realized workflow, the output isn't 1024x1024 or is M-F390's image
-resized, or the time is missing.
-cleanup: none.
-metrics: none.
-
-### M-F392 — the #1317 three-reference edit: H3-Image and Klein arms over the same references, the `<Picture 1>` face held, side-by-sides posted
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image edit3 and FLUX 3 Klein `templates/flux3/multi-reference` (M-F388), workspace `bench` on
-lem. **Free**: reads, plus `compare_outputs` (no GPU run).
-Skip the H3-Image arm with a note if M-F389 found the stop branch; the Klein arm is still owed.
-Steps:
-1. `get_job`, `get_job_events` and `get_job_workflow` on the H3-Image edit job and the Klein control job.
-2. `get_output_image` on both stills and on the `<Picture 1>` portrait.
-3. `compare_outputs` between the two arms' stills, and between each still and the portrait, for every pair of the same size.
-4. Read #1317's comments for the side-by-side post.
-expected:
-- Both jobs ran with the same 3 files in the same order and pinned seeds. The H3-Image job is `succeeded` (a
-  2048x2048 still) or OOM recorded with its recipe and VRAM, as in M-F390. Its record row has cold time, peak VRAM and
-  bytes downloaded.
-- The Klein job is `succeeded`, one still.
-- In the H3-Image still, the person is recognisably the `<Picture 1>` portrait (face shape, hair, age), and the other two
-  references show up in the scene. A face that has aged, swapped, or merged with another reference's is recorded as such.
-- The record gives `compare_outputs` numbers for each same-size pair and matches step 3 within 0.02 (or the tool's stated
-  rounding). For any pair that differs in size, it says "not measurable" with the tool's message. Identity is judged by
-  eye here and by SFace in M-F393.
-- #1317 carries a comment with the two stills side by side (or links to both), plus the portrait.
-It is a **finding** if the arms used different references or order, an arm failed for a reason other than OOM, a
-given `compare_outputs` number disagrees, or a pair is neither scored nor marked not measurable, or the side-by-side post
-is missing.
-cleanup: delete nothing; `compare_outputs` writes no job.
-metrics: none.
-
-### M-F393 — the #1317 into-video arm: both stills through the same 544p int4 H3 chain, SFace scored for both against the same portrait, frame grabs posted
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `h3-image-to-h3` (M-F388): MiniMax-H3-Image and Klein stills into `minimax/image-to-video` at 544p,
-int4; SFace face-check via the bench `t26-face-check` route. Workspace `bench` on lem. **Free**: reads, plus at most
-one face-check re-run per arm (CPU/SFace; price it with `validate_workflow` first).
-Skip the H3-Image arm with a note if M-F389 found the stop branch, or if the H3-Image edit OOMed (M-F392); then the record
-says the into-video comparison did not run, and the Klein arm alone is not owed.
-Steps:
-1. `get_job`, `get_job_events` and `get_job_workflow` on each arm's video job (one job with both arms, or two).
-2. `get_gallery_metadata` on each clip.
-3. Read the record's SFace numbers and the face-check jobs it cites; `get_job` on them.
-4. Re-run the face-check workflow on each clip against the same portrait, in `bench`, with a `note` naming M-F393.
-expected:
-- Each arm's H3 clip is `succeeded`, 544p (the template's 544-row canvas), with the template's fps, frame count and an
-  audio stream. Both clips have the same frame count and duration.
-- The events show the still's pipeline released before the H3 pipeline loaded (a release event, or the H3 step with
-  `load_cached: false` and the still's memory freed). No OOM in the H3 step.
-- Both arms were scored against **the same** portrait, the `<Picture 1>` file. The record gives one SFace number per
-  arm (mean similarity, or drift, named as which) with the face-check job ids.
-- The re-run matches the record within 0.02 per arm.
-- #1317 carries frame grabs of both clips (e.g. first, middle and last frame per arm) beside the stills.
-- The record calls no verdict on onboarding: Q2 is Don's.
-It is a **finding** if the arms' H3 calls differ in anything but the still, a clip lacks audio or the 544p canvas, the
-release didn't happen, the arms used different portraits, a re-run disagrees beyond 0.02, or the grabs are missing.
-cleanup: `delete_output(job_id=...)` on the face-check re-runs this case made. Never delete the probe jobs.
-metrics: none.
-
-### M-F394 — the #1317 record: one row per H3-Image run with every owed number, the method, the inserts check, and no onboarding verdict
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: the #1345 probe (M-F388–M-F393). **Free**: issue reads and job reads.
-The record is `bench/records/h3-image.md` in the dw repo; the tester reads it **as quoted on #1345 or #1317**, never from
-the checkout.
-Steps: read the quote; `list_jobs(workspace="bench")` for every MiniMax-H3-Image job; compare.
-expected:
-- Every H3-Image job in `bench` has a row: job id, workflow, size (and `min_generation_area` where set), outcome
-  (completed or OOM), cold time, warm time where a warm run exists, peak VRAM from `get_memory`, bytes downloaded on the
-  first run. No job is missing and no row lacks a job.
-- The method states the recipe (quantizer and bits for transformer and text encoder, offload mode, `modules_to_not_convert`
-  as re-read from the H3-Image transformer) and the text-encoder redirect.
-- It states the result of the first-action checks (M-F389): the measured download and whether `dw`'s H3 inserts touched
-  the H3-Image graph.
-- An OOM row names the failing recipe and the step.
-- It gives the SFace numbers for both video arms (M-F393) and the stills' `compare_outputs` numbers, or why each pair wasn't measurable (M-F392).
-- It leaves "holds a face better" and onboarding to Don (Q2): no recommendation phrased as a decision, and #1317 goes to
-  Don or the lead for the verdict, not to onboarding.
-- It names nothing out of scope as run: no PE, no P-H3-Image arm, no bf16 or two-card run.
-It is a **finding** if a run lacks a row or a row lacks an owed number, the method or inserts check is missing, or the
-record decides onboarding.
-cleanup: none.
-metrics: none.
-
-### M-F395 — the #1317 probe adds no catalog surface, leaves H3 video's templates as they were, and the H3-Image prompt enhancer stays refused
-source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image, MiniMax H3 `templates/minimax/image-to-video`. Workspace `default` and `bench`.
-**Free**: catalog reads and validate only.
-Steps:
-1. `list_workflows(shape="image")`, `list_workflows(shape="image-edit")` and `list_workflows(include_models=true)`.
-2. `validate_workflow("templates/minimax/image-to-video", workspace="default")` at its defaults.
-3. (pending: dkackman/diffusers-workflow#1410; validate gains this check there, and until then the step is not counted.)
-   In `bench`, `validate_workflow` (validate only, **never `run_workflow`**) an inline one-step workflow whose pipeline
-   step has `from_pretrained_arguments: {"model_name": "MiniMaxAI/MiniMax-H3-Image", "trust_remote_code": true}`, plus a
-   second variant with `custom_pipeline`.
-expected:
-- No catalog entry names MiniMax-H3-Image or P-H3-Image: no `templates/minimax-h3-image/...`, no `models/` entry. The
-  probe is bench-only; a template here belongs to an unapproved onboarding stage.
-- Step 2: `valid: true`, no new error, and `plan.downloads_required` names nothing from `MiniMaxAI/MiniMax-H3-Image`.
-- Step 3: both variants return an error naming the remote-code key and `--trust-workflows`. Neither validates clean,
-  and neither queues anything. A refusal that the repo isn't found doesn't test the gate: re-check the id rather than
-  count it as a pass.
-It is a **finding** if an H3-Image catalog entry appears before an onboarding plan is approved, H3 video's template
-starts failing or pulling H3-Image files, or the PE validates clean. A PE that validates clean is also a boundary
-escape: file it privately with `./scripts/file-advisory.sh`, not as an issue.
-cleanup: none.
-metrics: none.
-
-### M-F396 — the #1400 face-once probe's two arms are inline copies of `generated-subject-reference` that differ only in the draw prompt, the draw size and `subject_definitions`
-source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: Z-Image Turbo draw + MiniMax H3 `ref2va` (`templates/minimax/generated-subject-reference`). Workspace
-`probe-1400` on lem. **Free**: job reads and validate only.
-**The probe, shared by M-F396–M-F402.** Four jobs in `probe-1400`, arm **P** (portrait, today) and arm **S** (face-once
-sheet) on the same two seeds. As of the spec, the template's `draw_subject` step is Z-Image at **768x768** from
-`prompt:zimage/deep_sea_diver_portrait`, feeding `reference_to_video_audio` (ref2va, one `MiniMaxH3ImageReference`
-`from_previous_result: draw_subject`) at defaults `width 960`, `height 544`, `num_frames 124`, `num_inference_steps 9`, turbo
-LoRA `lightx2v/Minimax-h3-Turbo`. A job that draws separately and references the draw by `output:` is also acceptable, if
-its H3 call is otherwise the template's.
-Steps:
-1. `list_jobs(workspace="probe-1400")`; pick the four H3 jobs by their `note`s.
-2. `get_job_workflow` on each.
-3. `validate_workflow(workspace="probe-1400", inline_workflow=<each>)`.
-expected:
-- Exactly four H3 jobs (failed retries are allowed if the audit names them). Each has a `note` naming its arm (P or S, or
-  "portrait"/"sheet") and its seed. Two are P and two are S, and the two seed values are **the same pair** in both arms.
-- P's draw is **768x768** and S's draw is **1344x768**. Both draw prompts carry **the same** subject description, and
-  it names no headwear (no helmet, hat, hood or headscarf: Q2's bare-headed subject, not the template's diver).
-  S's draw prompt asks for the issue's layout: a 16:9 ivory sheet, one head-only close-up (no shoulders or clothing) in
-  the left two of six columns, and four neck-down views (front, 90° profile, back, relaxed standing) in the right four.
-- The H3 steps of all four jobs are equal (template defaults as above, the same `prompt` body) **except** for the seed
-  and S's `subject_definitions`. S's `subject_definitions` calls <Picture 1> a reference sheet, says its left panel is the
-  face and its right panels are the body and clothes, and says the sheet's layout, background and panels are not reused.
-- Both arms keep the template's `release_pipeline: true` on the draw.
-- Each validate: `valid: true`, no error.
-It is a **finding** if an arm's workflows differ from the other's in anything else (a step count, schedule, LoRA, size or
-frame count, or prompt text outside `subject_definitions`), the seeds don't pair, a subject wears headwear, or a
-workflow no longer validates. The audit may name a difference the plan allowed; a difference the audit doesn't name is a
-finding.
-cleanup: none. Never delete the probe jobs; the audit cites them.
-metrics: none.
-
-### M-F397 — the #1400 probe checked `downloads_required` before any job, and ran one H3 job at a time
-source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe (M-F396). **Free**: issue reads, job reads, validate.
-Steps:
-1. `gh issue view 1400 --repo dkackman/diffusers-workflow --comments` and the same for 1406: find the comment that
-   reports `validate_workflow`'s `plan.downloads_required` for each probe workflow.
-2. `list_jobs(workspace="probe-1400")`: each job's `created_at`, `started_at`, `finished_at`.
-3. `validate_workflow` on one P and one S workflow now (M-F396 step 3 suffices): read `plan.downloads_required`.
-expected:
-- If the check found a non-empty `downloads_required`, a comment on #1400 or #1406 names it, timestamped **before** the first `probe-1400` job's `created_at`. If it found `[]` for both workflows (P and S), the plan requires no comment; the hand-off may report it after the run.
-- **Stop branch (Don's ruling):** if that comment found a non-empty list, it names the download and **no** job exists in
-  `probe-1400` (and no probe job elsewhere). That is a probe outcome, not a finding; skip M-F398–M-F401 with a note.
-- Step 3: `downloads_required` is `[]` for both now.
-- No two H3 jobs in `probe-1400` overlap: each one's `started_at` is at or after the previous one's `finished_at`.
-It is a **finding** if a probe job exists after a non-empty list was reported, or alongside
-another probe H3 job.
-cleanup: none.
-metrics: none.
-
-### M-F398 — the #1400 probe's jobs: four succeeded H3 clips at the template's shape, a 768x768 portrait and a face-once 1344x768 sheet per seed
-source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe (M-F396). **Free**: reads only.
-Skip with a note if M-F397 found the stop branch.
-Steps:
-1. `get_job` on each of the four probe jobs: the draw (intermediate) and the clip (final) outputs.
-2. `get_output_image` on each draw.
-3. `get_gallery_metadata` on each clip.
-expected:
-- All four jobs `succeeded`, each with one draw image and one `video/mp4` clip.
-- The draws: P's are 768x768, one bare-headed person; S's are 1344x768.
-- Each S draw is **face-once**: exactly one visible face (in the head panel), and the body views show no face (neck
-  down, or a back view). An S draw with a second face, or no face, is not a finding here: the plan records it as a
-  loss for S (M-F401), and the audit must say so.
-- Each clip: 960x544, 24 fps, 124 frames (about 5.17 s), with an audio stream.
-It is a **finding** if a job failed and the audit doesn't name it as a retry with the replacement, a clip's shape differs
-from the template's defaults, or a draw size is not the arm's.
-cleanup: none.
-metrics: none.
-
-### M-F399 — the #1400 face drift: one `analyze_face_drift` per clip against its own arm's draw, and the audit's median and minimum SFace match it
-source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `analyze_face_drift` task (SFace cosine similarity; `video`, `reference` required, `threshold` default
-0.363, `samples_per_shot` default 8; the largest face in `reference` is used). Workspace `probe-1400`. **Cheap**: reads,
-plus one CPU re-measure per clip (price it with `validate_workflow` first; if its plan shows a GPU model load or a
-download, skip the re-measure and note it).
-Skip with a note if M-F397 found the stop branch.
-Steps:
-1. Find each clip's face-drift result: an `analyze_face_drift` step in the probe job, or a separate job (`list_jobs`,
-   `get_job`, `get_job_workflow`).
-2. Read the audit as quoted on #1406 or #1400 (`docs/proposals/audits/2026-11-face-once-sheet.md` in the dw repo;
-   never read from the checkout).
-3. Re-measure: `run_workflow(workspace="probe-1400", note="M-F399 re-measure <arm> seed <n>", wait_seconds=55,
-   inline_workflow=...)`, with one `analyze_face_drift` step, `video` = the clip's `output:` reference, `reference` =
-   **the same job's draw** `output:` reference, and the `samples_per_shot` and `threshold` the original used.
-expected:
-- Exactly one face-drift result per clip (four), each with `reference` set to **that clip's own job's draw** (P's
-  portrait for a P clip, S's sheet for an S clip, same seed). A reference from the other arm, the other seed, or the
-  template's default portrait is a finding.
-- Each S result measured the sheet's head panel as the largest face. If `analyze_face_drift` refused an S sheet for
-  having no face, the audit records that clip as a loss for S, with no number.
-- The audit gives, per clip, the job id, the median and the minimum SFace, and each equals the result's own values
-  (to the precision the audit prints; at least 2 decimals).
-- The re-measure matches the original within 0.01 on median and minimum.
-It is a **finding** if a clip lacks a result or has two that disagree, a reference is not the clip's own draw, an
-audit number differs from its result, or a re-measure disagrees by more than 0.01.
-cleanup: `delete_output(job_id=...)` on each re-measure job this case made. Never delete the probe jobs.
-metrics: none.
-
-### M-F400 — the #1400 leak verdicts match each clip's first frames
-source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe's H3 clips (M-F398). **Free**: reads, plus `assess_output` (free).
-Skip with a note if M-F397 found the stop branch.
-Steps:
-1. `get_output_frames` on each clip's first frames (frames 0 to about 12; one call per clip).
-2. `assess_output` on each clip.
-3. Read the audit's per-clip leak verdict.
-expected:
-- The audit gives a leak verdict for **all four** clips, P included.
-- A clip counts as **leaked** when its first frames show the sheet's layout: panels or column divisions, the ivory sheet
-  background, or more than one figure of the subject. A clip that opens on the single subject in a scene is not leaked.
-- Each verdict agrees with what the first frames show. Where `assess_output` flags a cut or a composition change near the
-  start, the verdict accounts for it.
-It is a **finding** if a verdict is missing, or calls an S clip clean when its first frames show panels, the ivory
-ground or a repeated figure (or calls a clean clip leaked).
-cleanup: none.
-metrics: none.
-
-### M-F401 — the #1400 audit's outcome follows mechanically from the fixed criterion, with its known limits named
-source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe (M-F396–M-F400). **Free**: issue reads.
-Skip with a note if M-F397 found the stop branch (then the audit, if any, says the probe did not run and calls no
-outcome).
-The criterion (plan v2, Q3 ruled as written): **S wins** only if, on **both** seeds, S's median SFace is **at least
-0.05** above P's for that seed, **and no** S clip is leaked (M-F400). Anything else is **"no gain"**.
-Steps: read the audit (as quoted on #1406 or #1400); compute the outcome from M-F399's medians and M-F400's verdicts.
-expected:
-- The audit states one outcome, "S wins" or "no gain", and it equals the computed one. Check the edges:
-  - a margin of exactly 0.05 on a seed meets that seed's condition;
-  - a win on one seed and not the other is "no gain";
-  - margins met on both seeds with one leaked S clip is "no gain";
-  - an S draw that isn't face-once (M-F398) or an S sheet with no face found (M-F399) is a loss for S on that seed, so
-    "no gain", with no re-drawn or re-prompted S job counted;
-  - S's medians below P's are "no gain", not a loss for P.
-- The audit adds no criterion after the run (no mean, minimum, third seed, threshold or different margin used to decide),
-  and it doesn't reverse the outcome by argument. Minimums may be reported; they don't decide.
-- It names its known limits: each arm draws a different person (so it measures each clip's hold on its own reference,
-  not a common identity), and #1193's numbers swung more than 0.1 between seeds.
-- It recommends nothing as adopted: stage B goes back to Don (Q1 "no"), whatever the outcome.
-It is a **finding** if the stated outcome differs from the computed one, a post-run criterion decides it, a limit is
-missing, or the audit treats S as adopted.
-cleanup: none.
-metrics: none.
-
-### M-F402 — the #1400 probe changes only docs: one "Probed and not a rule" bullet in the minimax-h3 skill, and the template and prompts as they were
-source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/generated-subject-reference`, the `dw:minimax-h3` skill. **Free**: catalog reads.
-Steps:
-1. Load the `dw:minimax-h3` skill (loaded from `develop`) and read its `references/per-character.md`, as it ships with the
-   skill.
-2. `get_workflow("templates/minimax/generated-subject-reference")`.
-3. `list_prompts` and search for a cast-sheet prompt (e.g. `zimage/*cast_sheet*`).
-4. Read #1406's hand-off for the `tests/test_plugin_skills.py` run.
-expected:
-- `per-character.md`, under its "Probed and not a rule" heading, has **exactly one** bullet about the #1400 probe. It
-  names the face-once sheet against the portrait, gives the outcome M-F401 checked (the same words, "S wins" or
-  "no gain", or the plain meaning), and points at the audit or #1400. No other bullet or section names the probe, and
-  nothing in the skill states the sheet as a rule.
-- Step 2: the template is unchanged from the spec: `draw_subject` 768x768 from `prompt:zimage/deep_sea_diver_portrait`,
-  and the brass-helmet diver in `subject_definitions` (stage B is not approved).
-- Step 3: no cast-sheet prompt is stored in the library.
-- The hand-off quotes a passing `tests/test_plugin_skills.py` run. The tester cannot run it; if it isn't quoted, ask on
-  #1406 rather than counting it a pass.
-It is a **finding** if the bullet is missing, appears twice, or states a rule; if the template or the stored prompts
-changed; or if the skill's cast steps (`dw:script-to-video` step 3, `dw:series-episodes` step 0) now name a sheet.
 cleanup: none.
 metrics: none.
 
@@ -10522,38 +8812,19 @@ rule, or a download happens.
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: wall minutes → `regression-perf/M-F409.jsonl` (seed it on the first passing run).
 
-### M-F410 — adding MiniMax-H3-Image leaves Klein's and H3 video's templates as they were, and B adds no skill
-source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: FLUX 3 Klein (`templates/flux3/*`), MiniMax H3 `templates/minimax/image-to-video`. lem, workspace
-`default`. **Free**: catalog reads and validate.
-Steps:
-1. `list_workflows()` (all shapes) and keep every `templates/flux3/` name; `validate_workflow(name=<each>,
-   workspace="default")` at defaults.
-2. `list_workflows(shape="shot")` (or the shape `image-to-video` lists under today) and
-   `validate_workflow(name="templates/minimax/image-to-video", workspace="default")` at defaults.
-3. While #1425 is still open: the loaded `dw` plugin skills.
-expected:
-- Every `templates/flux3/` template is still listed with the same shape and traits, and validates `valid: true` with no
-  new error. `templates/flux3/multi-reference` and `image-edit` are still `image-edit` + `composes-workflows` +
-  `needs-input-media`.
-- `templates/minimax/image-to-video` validates `valid: true`, `downloads_required: []`, and its listing is unchanged.
-  Nothing in its plan names `MiniMaxAI/MiniMax-H3-Image`.
-- Step 3: no `dw:minimax-h3-image` skill yet, and the `minimax-h3`, `storyboard` and `cinematography` skill descriptions
-  still name FLUX 3 Klein for stills (rule 5: Klein stays the default until C ships). Skip this bullet once #1425 has merged.
-It is a **finding** if a Klein or H3 video template's listing or validation changes, or a skill routes to H3-Image
-before #1425.
-cleanup: none.
-metrics: none.
-
-### M-F411 — the `dw:minimax-h3-image` skill exists and carries the trigger, the host check, the hard rules, the vendor prompt pointer and the two-job route into H3 video
+### M-F411 — the `dw:minimax-h3-image` skill exists and carries the trigger, the host check, the hard rules, the vendor prompt pointer and the two-job route into H3 video; it quotes the cost as priced on the slower card and says why; a plain stills request still routes to FLUX 3 Klein
 source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image skill in the `dw` plugin (loaded from `develop`), plus the catalog it names. **Free**:
-skill reads and catalog reads.
+Model/pipeline: MiniMax-H3-Image skill in the `dw` plugin (loaded from `develop`), plus the catalog it names, and the
+`flux3-klein` and `minimax-h3-image` skill triggers. **Free**: skill reads and catalog reads; a drill read if one was run.
 Steps:
-1. The loaded skill list: read `dw:minimax-h3-image`'s description. Invoke the skill (`Skill`) and read its text.
+1. The loaded skill list: read `dw:minimax-h3-image`'s description. Invoke the skill (`Skill`) and read its text,
+   including where it quotes cost.
 2. `list_workflows(shape="image")`, `list_workflows(shape="image-edit")` and `list_workflows(shape="shot")`; check every
-   template name the skill cites resolves.
-expected:
+   template name the skill cites resolves, and read the two H3-Image templates' `cost.minutes` (from the `image` and
+   `image-edit` listings).
+3. Compare the loaded descriptions of `dw:flux3-klein` and `dw:minimax-h3-image`.
+4. If #1425's hand-off includes a plain-stills drill (e.g. "a picture of a red fox in snow"), read it as in M-F413.
+expected, arm S (the skill's content):
 - The description triggers on a cast still or keyframe that will feed MiniMax-H3 video, and on a multi-reference edit
   at high resolution. It does **not** claim plain stills or storyboards.
 - The text says: call `get_server_info` first; use H3-Image only on CUDA with ≥ ~70 GB host RAM (the gate refuses
@@ -10566,10 +8837,25 @@ expected:
   `templates/minimax/first-and-last-frame`) with `image: output:<still>`. No chained template is offered.
 - Failure modes: the ~38-minute first run, and host RAM. It warns not to run H3-Image beside another host-heavy job.
 - Every template the skill names is listed in step 2.
-It is a **finding** if the skill is missing, its trigger covers plain stills or storyboards, a hard rule or the host
+In arm S it is a **finding** if the skill is missing, its trigger covers plain stills or storyboards, a hard rule or the host
 check is missing, a number contradicts M-F404–M-F407, or it names a template that doesn't resolve.
-cleanup: none.
+expected, arm C (the cost note):
+- The skill tells the agent to quote the catalog cost (or `observed_minutes`, saying which) and says that cost is priced on
+  the slower card, with the one-line reason: the offload is bus-bound, so a card on an x16 link runs it in about half the time.
+- Any minutes figure the skill states matches the catalog's `cost.minutes` (no stale 1.3 for the edit).
+- It doesn't tell the agent to pick a card (MCP can't choose one) or promise the faster time.
+In arm C it is a **finding** if the slower-card note or its reason is missing, or a figure contradicts the catalog.
+expected, arm T (plain stills go to FLUX 3 Klein):
+- Step 3: a request for a still with no H3 video and no high-resolution multi-reference edit matches `flux3-klein`'s
+  description and not `minimax-h3-image`'s.
+- Step 4 (when run): the session loads `dw:flux3-klein` and runs a `templates/flux3/` template; no H3-Image job.
+In arm T it is a **finding** if `minimax-h3-image`'s trigger covers plain stills, or a plain-stills drill runs on H3-Image.
+cleanup: as M-F413 if a drill ran; else none.
 metrics: none.
+
+absorbs: M-F415, M-F422 (merged 2026-11-26, suite review)
+- M-F415: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+- M-F422: tester, spec for #1425 from #1317's plan v5 (claude-opus-5-5 via anthropic)
 
 ### M-F412 — routing text: H3 keyframes and cast stills for H3 go to H3-Image on a qualifying host, board sheets and everything else stay on Klein
 source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
@@ -10617,34 +8903,6 @@ expected:
 It is a **finding** if the still goes to Klein, the cost or host floor isn't quoted before the run, the video is queued
 before the still was looked at, the video's `image` isn't an `output:` of the still, or anything ran or downloaded off lem.
 cleanup: the drill's jobs are the record; leave them until #1425 closes, then `delete_output(job_id=...)` on both.
-metrics: none.
-
-### M-F414 — cold drill control: the same character asked as "a storyboard of six boards" stays on FLUX 3 Klein
-source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: the `storyboard` route on FLUX 3 Klein. lem only. Read as in M-F413.
-Steps: as M-F413 steps 1–2, for the control drill (a fresh session, same character, asking for a storyboard of six boards).
-expected:
-- Every image job the session ran is a `templates/flux3/` template (or a Klein inline workflow); none runs
-  `templates/minimax-h3-image/…`.
-- Six boards come out (one image-set of six, or six stills).
-- If the session made a cast still that it says will become an H3 keyframe, that one still may go to H3-Image. The board
-  sheets themselves may not.
-It is a **finding** if a board sheet runs on H3-Image, or the control wasn't run in a fresh session.
-cleanup: as M-F413.
-metrics: none.
-
-### M-F415 — a plain stills request with no H3 video in it still routes to FLUX 3 Klein
-source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: `flux3-klein` and `minimax-h3-image` skill triggers. **Free** for the static read; a drill if one was run.
-Steps:
-1. Compare the loaded descriptions of `dw:flux3-klein` and `dw:minimax-h3-image`.
-2. If #1425's hand-off includes a plain-stills drill (e.g. "a picture of a red fox in snow"), read it as in M-F413.
-expected:
-- Step 1: a request for a still with no H3 video and no high-resolution multi-reference edit matches `flux3-klein`'s
-  description and not `minimax-h3-image`'s.
-- Step 2 (when run): the session loads `dw:flux3-klein` and runs a `templates/flux3/` template; no H3-Image job.
-It is a **finding** if `minimax-h3-image`'s trigger covers plain stills, or a plain-stills drill runs on H3-Image.
-cleanup: as M-F413 if a drill ran; else none.
 metrics: none.
 
 ### M-F416 — an H3 ref2va copy with a `guides` clip is quoted for the guide
@@ -10773,48 +9031,6 @@ templates' `cost`.
 cleanup: none.
 metrics: none.
 
-### M-F422 — the `dw:minimax-h3-image` skill quotes the cost as priced on the slower card, and says why
-source: tester, spec for #1425 from #1317's plan v5 (claude-opus-5-5 via anthropic)
-Model/pipeline: the `dw:minimax-h3-image` skill (plugin loaded from `develop`). **Free**: skill read and catalog read.
-Steps: invoke `dw:minimax-h3-image` and read where it quotes cost; `list_workflows(shape="image")` and
-`list_workflows(shape="image-edit")` for the two templates' `cost.minutes`.
-expected:
-- The skill tells the agent to quote the catalog cost (or `observed_minutes`, saying which) and says that cost is priced on
-  the slower card, with the one-line reason: the offload is bus-bound, so a card on an x16 link runs it in about half the time.
-- Any minutes figure the skill states matches the catalog's `cost.minutes` (no stale 1.3 for the edit).
-- It doesn't tell the agent to pick a card (MCP can't choose one) or promise the faster time.
-It is a **finding** if the slower-card note or its reason is missing, or a figure contradicts the catalog.
-cleanup: none.
-metrics: none.
-
-### M-F423 — the #1391 numbering check: three one-segment runs on a brightened keystone differ only in `blocks`, and the record states whether our indices match ComfyUI's
-source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 fl2va on lem (cuda), bench workspace. **Free**: issue reads, job reads, validate; any
-re-measure task run is CPU and priced first.
-The **step 1 jobs** are the ones #1394's hand-off names for the numbering check (else find them by note in
-`list_jobs(workspace="bench")`): a no-argument run, a `blocks: "0-29"` run and a `blocks: "30-39"` run, each
-rendering segment 2 only, plus the normal-keystone segment 2 render the record measures them against.
-Steps: `get_job_workflow(workspace="bench")` and `get_job(workspace="bench")` on each step 1 job;
-`validate_workflow` on the step 1 probe workflow the hand-off names, `workspace="bench"`, with the flag-on
-arguments it ran with; `gh issue view 1394 --repo dkackman/diffusers-workflow --comments` for the record.
-expected:
-- The three runs share segment 1, seed, prompt, size, steps, LoRA and dense attention on the segment 2 transformer
-  (`attention_backend` null or absent, no `sparse_tau`/`sparse_topk`). Their `image` is the brightened keystone:
-  segment 1's frame 0 brightened ×1.3 (the record says how it was made; it is still a copy of the scene, not a
-  flat or black/white frame). The only difference between them is `experimental_keystone_attention`: absent on
-  the first, `{"balance": 20, "blocks": "0-29"}` and `{"balance": 20, "blocks": "30-39"}` on the others.
-- The baseline render differs from the no-argument run only in `image` (the normal keystone, segment 1's frame 0).
-- Every step 1 job is `completed`. The probe workflow validates clean with no refusal finding.
-- The record gives each run's mean brightness of segment 2's new frames as a % against the baseline, with job ids,
-  and roycho87's reference figures (+4.4% / +4.1% / +13.8%).
-- It states the numbering result in words. "Match" needs `0-29` near no-argument and `30-39` clearly above both;
-  any other pattern is "no match". The stated result follows from the numbers given.
-- "No match": no step 2 or arm job was created after it, and #1394 has a stop-and-report comment with the numbers.
-It is a **finding** if any other argument differs, a number or job id is missing, the stated result contradicts
-the numbers, or any later job exists after "no match".
-cleanup: none (the jobs are the bench record).
-metrics: none.
-
 ### M-F425 — the #1391 arm pair runs dense and differs only in the argument
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
@@ -10830,23 +9046,6 @@ expected:
 - An early job is its arm's full workflow cut after seg02, with nothing else changed.
 - The record states the arm diff in words.
 It is a **finding** if any other argument differs, any arm segment is sparse, or the record omits the diff.
-cleanup: none.
-metrics: none.
-
-### M-F426 — every #1391 stage B job (steps 1–2 and the arms) completed on one quoted build, one H3 job at a time, in step order
-source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
-Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every job in M-F423–M-F425; `get_diffusers_state()`;
-`list_jobs` across the workspaces that held H3 jobs in the stage's time window.
-expected:
-- Every job is `completed`. A re-run is named in the record with its reason.
-- The record quotes the `get_diffusers_state` the runs used, taken before the first stage B job, and every stage B
-  job ran on that one build. Today's state is context only.
-- No stage B job's `started_at`–`finished_at` overlaps another H3 job on lem.
-- Order: every step 1 job finished before the first step 2 job was created, and every step 2 job finished before
-  the first gate job was created.
-It is a **finding** if a job failed without a named re-run, the build differs, two H3 jobs overlapped, or a step
-started before the one it depends on finished.
 cleanup: none.
 metrics: none.
 
@@ -10869,38 +9068,6 @@ expected:
 It is a **finding** if any item is missing, the cost is measured against the sparse column, or the verdict is
 missing or differs from Don's.
 cleanup: none.
-metrics: none.
-
-### M-F428 — the #1438 arms rebuild `MiniMaxH3Scheduler` through `configuration` + `from_config_args`, differ only in the flag (and the form where needed), and leave `audio_scheduler` shift-only
-source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 video (`templates/minimax/video-with-audio`, lightx2v 4-step turbo LoRA; chained-segments)
-and MiniMax-H3-Image t2i, on lem (cuda), workspace `bench`. **Free**: issue reads, job reads, validate.
-The record is `bench/records/h3-stochastic-sampling.md` in the dw repo; read it **as quoted on #1459 or #1438**, never
-from the checkout. Its job/arm table names each arm's job id; else find the jobs by note in `list_jobs(workspace="bench")`.
-Steps: `get_job_workflow(workspace="bench")` and `get_job(workspace="bench")` on every arm job in the table;
-`validate_workflow(workspace="bench")` on each saved bench workflow the record names (`bench/probe-1438-video-with-audio`,
-`bench/probe-1438-chained-segments`, `bench/probe-1438-h3-image` or the names the record gives) with each arm's arguments.
-expected:
-- Every arm the record lists has a job in `bench` whose `note` names that arm (V0, V1, V1b, and V0b / C0 / C1 / I0 /
-  I0-16 / I1 / I2 / I2b where they ran). No arm in the table lacks a job; no `1438` bench job lacks a row.
-- Every arm's video (or image) `scheduler` block has `configuration.scheduler_type` `"MiniMaxH3Scheduler"` and a
-  `from_config_args` equal to what the record states for that arm. **The control arms (V0, C0, I0, I0-16) are rebuilt
-  too**, with `stochastic_sampling` `false` (or absent from a fixed per-arm copy, if the record says substitution did not
-  reach `from_config_args` and fixed copies were used; the record must say which). A bare top-level
-  `"stochastic_sampling"` key in `scheduler` (the issue's ignored form) on any arm is a finding.
-- Video arms keep `shift` as the template has it (`variable:video_shift` or its resolved value). The H3-Image arms have
-  no `shift`.
-- `audio_scheduler` on every video arm (and every chain segment) is shift-only: no `configuration`, no `from_config_args`,
-  identical to the template's.
-- Pairwise diffs, by `get_job_workflow`: V0↔V1 and V1↔V1b differ only in `from_config_args` (V1↔V1b not at all, bar the
-  note); V0b, if present, differs from V0 only in `euler_update_form` `"blend"`; I1↔I2 only in `stochastic_sampling`;
-  I2↔I2b not at all. Seed 42 on every video arm, prompt/size/frames/LoRA as the template's defaults (960x544, 124
-  frames). Seed 1317 and 2048x2048 on I0/I1/I2/I2b (or the 16 MP preset for I1–I2b if the record says that is where the
-  speckle showed). C0/C1: three segments, `seed` 42 pinned, otherwise identical bar the flag.
-- Every bench workflow validates clean with no refusal finding.
-It is a **finding** if any arm runs the template's plain scheduler, any other argument differs between a pair, any
-`audio_scheduler` is changed, or a note does not name its arm.
-cleanup: none (the jobs are the bench record).
 metrics: none.
 
 ### M-F429 — the #1438 flag is proven to reach the scheduler: the blend-only refusal, a flag-only reload and the realized scheduler block, lem's diffusers build, and each checkpoint's `euler_update_form`
@@ -10926,288 +9093,6 @@ expected:
   `"velocity"` and I2 ran, I1 (blend only) ran too.
 It is a **finding** if the refusal is missing or for the wrong reason, the flag-only run is `load_cached: true` or its realized scheduler block lacks the flag, the build is not
 quoted, or the arm split contradicts the stated forms.
-cleanup: none.
-metrics: none.
-
-### M-F430 — no #1438 arm is `reused`, the conditional arms fire only on their conditions, and the stage stays within its 60-minute GPU cap
-source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 video and MiniMax-H3-Image on lem (cuda), workspace `bench`. **Free**: reads only.
-Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job and the fail-fast job; the record.
-expected:
-- No step of any arm is marked `reused` (by step cache) in `get_job` or its events. In particular V1 does not reuse
-  V0, and V1b does not reuse V1.
-- Every arm job is `completed`, except I0-16, which may be `failed` with an OOM or refusal that the record names as
-  such. A re-run is named in the record with its reason.
-- C0 and C1 exist only if the record judges V1 clean or better than V0; if it judges V1 soft or broken, no `C` job
-  exists. At most one I0-16 attempt exists. I1/I2/I2b exist only if the record says I0 or I0-16 shows speckle at 1:1;
-  if it says no speckle, none exist.
-- At most one extra flagged draw beyond V1b (or I2b), and only if the record says V1↔V1b spread was as large as V0↔V1.
-- The sum of the arms' and fail-fast job's run times (from `get_job` timestamps) is ≤ 60 min. If the cap was reached,
-  the record says so and lists what did not run; no arm job was created after the cap was hit.
-It is a **finding** if any step is `reused`, a conditional arm ran without its condition, or the total exceeds the cap
-without the record saying so.
-cleanup: none.
-metrics: none.
-
-### M-F431 — the #1438 record's frames, crops and texture-band numbers reproduce over MCP
-source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 video and MiniMax-H3-Image outputs on lem, workspace `bench`. **Free**: `compare_outputs`,
-`get_output_frames`, `get_output_image` and `assess_output` on existing outputs; nothing is queued.
-Steps: for each comparison the record tables, `compare_outputs(texture_bands=true, workspace="bench")` with the output
-names, moments and crop box the record states (video at frames 0, 62 and 123; stills on the full image unless the
-record names a crop). `get_output_frames` at those frames for each video arm, and `get_output_image` for each still arm,
-cropped to the record's 1:1 boxes where the tool allows.
-expected:
-- Every comparison the record tables names its outputs, moments and crop precisely enough to rerun; one that can't
-  be rerun from the record's text is a finding.
-- The fine (2-8 px), mid (8-32 px) and coarse (32-128 px) band numbers match the record's to its stated precision (the
-  measure is deterministic on the same files). The comparisons cover at least V0↔V1, V1↔V1b, and, where they ran,
-  V0↔V0b, I0↔I1, I1↔I2, I2↔I2b.
-- The frames and crops look as the record describes them (fur, skin; soft, grainy, clean, broken). A clip the record
-  calls clean is not visibly broken, noisy or blank at those frames; a clip it calls broken is.
-- If C0/C1 ran: the record gives creep, seam L step and mean |L| for each, with #1399's tolerances (creep ±15%, seam L
-  ±0.3, mean |L| ±0.1), and its call (inside or outside tolerance) follows from those numbers. `assess_output` on each
-  chain's final shows no seam the record doesn't mention.
-It is a **finding** if a band number does not reproduce, a description contradicts the frame, or a chain call does not
-follow from its numbers.
-cleanup: none (no output is kept or deleted).
-metrics: none.
-
-### M-F432 — the #1438 record states the seeding result, and each arm's verdict (adopt / keep as option / drop) is consistent with it and with the bands
-source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 video and MiniMax-H3-Image, lem, workspace `bench`. **Free**: reads, plus the
-`compare_outputs` calls M-F431 already made.
-Steps: the record as quoted on #1459/#1438; the V0↔V1 and V1↔V1b (and I1↔I2, I2↔I2b) band results from M-F431.
-expected:
-- The record says in words whether V1 and V1b differ (and I2 and I2b, if they ran). That statement matches
-  `compare_outputs`: a nonzero difference at any band is "differ"; it is a finding to call them identical when the
-  bands disagree, or different when they match.
-- If V1↔V1b differ by about as much as V0↔V1 (the record says what "about" meant), the verdict for the flag says the
-  pair cannot separate the flag from noise; it does not call the flag a win or a loss on that pair alone.
-- Every arm the record lists (the flagged video arm, the chain pair if it ran, the image arms if they ran) gets exactly
-  one verdict from: adopt as a template variable, keep as a documented option, or drop.
-- Any "adopt" (or "keep") states that shipping the flag needs a seeded re-noise path first, because the re-noise does
-  not follow the workflow seed.
-- A soft or broken V1 is recorded as an answer (verdict drop or keep), with the chain pair skipped (M-F430), not as a
-  failed stage.
-- The record says no per-step mixed plan (`SSRRRS`) and no base-H3 12-step arm was run (non-goals); if it mentions
-  either, it is as a follow-up idea only.
-It is a **finding** if the seeding statement is missing or wrong, an arm has no verdict or two, or "adopt" omits the
-seeded-path requirement.
-cleanup: none.
-metrics: none.
-
-### M-F433 — the #1438 bench leaves the engine and templates unchanged: both H3 templates validate at defaults and neither has gained `from_config_args`
-source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/video-with-audio` (MiniMax H3) and `templates/minimax-h3-image/text-to-image`
-(MiniMax-H3-Image), lem. **Free**: validate and workflow reads only; nothing is queued.
-Steps: `validate_workflow` on each template with no arguments (`workspace="bench"`); `get_workflow` on each template,
-and on `templates/minimax/chained-segments`.
-expected:
-- Both validate with no refusal finding.
-- `video-with-audio` and `chained-segments`: the video `scheduler` block is as before the stage, shift-only
-  (`"shift": "variable:video_shift"` or the template's existing form), with no `configuration` and no
-  `from_config_args`; `audio_scheduler` unchanged. Neither declares a `stochastic_sampling` or `euler_update_form`
-  variable.
-- `text-to-image` still has no `scheduler` block and no such variable.
-- Neither `list_workflows(shape="shot")` nor `list_workflows(shape="image")` lists a `probe-1438` workflow outside
-  workspace `bench`.
-It is a **finding** if either template has gained a scheduler rebuild or flag variable, a template fails to validate,
-or a bench copy shows up in the shipped catalog.
-cleanup: none.
-metrics: none.
-
-### M-F434 — the #1439 ref-prep record cites every job, each completed with its stated seed and references, and the three arms differ only in the prepared portrait
-source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 Ref2VA on lem (cuda): `templates/minimax/reference-to-video` (one picture through
-`variable:subject`; defaults 960x544, 124 frames, 9 steps, int4, turbo LoRA, `seed` null) or, on the primary path, the
-#484/#487 field-report shot's own workflow (three references). Workspace: the one the record names (`bench` if it names
-none). **Free**: issue reads and job reads only.
-Inputs: `bench/records/ref-prep-blur.md`/`.json` in the dw repo, read **only** as quoted in the hand-off on #1460 or
-#1439 (never from the checkout). If the hand-off doesn't quote the job ids, arms, seeds and arm-1 path, ask on #1460;
-that is not a pass.
-Steps:
-1. From the quoted record: every job id, its arm (1 as-is / 2 crop / 3 crop + blur), seed, and the arm-1 path taken
-   (primary re-run of #484/#487, or fallback).
-2. `get_job(<id>, workspace=...)` and `get_job_workflow(<id>)` on every clip job the record names.
-3. Primary path only: `get_job_workflow` on the named source job (the #484/#487 field-report job).
-expected:
-- Every job id the record names resolves on lem, is `succeeded`/completed, and its workflow carries the seed the record
-  states (a pinned integer, not null) and the references it states: `subject` on the template, or the re-run shot's
-  reference arguments.
-- The record states which arm-1 path ran and why. On the primary path it names the source job, and arm 1's workflow
-  equals the source job's (same workflow, prompt, seed, settings, every reference). A re-run that changed anything is
-  not "that exact shot" and is a finding unless the record names the change and why.
-- Within one seed, arms 1, 2 and 3 have the same workflow, prompt, seed and settings, and differ **only** in the
-  prepared portrait's argument. On a three-reference shot the other references are byte-for-byte the same `asset:`/
-  `output:` references in all three arms; only the portrait(s) the record says it prepared change (it may prepare only
-  the one whose backdrop leaked).
-- Arm 2's portrait argument names the arm-2 asset and arm 3's names the arm-3 asset (M-F435), never the original.
-- Fallback path: every arm uses `templates/minimax/reference-to-video` at its defaults except `subject`, `prompt` and
-  `seed`; two fixed seeds, the same two in every arm; the prompt puts the subject somewhere visibly different from the
-  reference's backdrop.
-- Ordering: every arm-2/arm-3 job was created after the arm-1 job(s) it compares against had finished (the gate ran
-  first).
-- No two-character pair job exists for this stage (Q2: no); the record lists it as a follow-up.
-It is a **finding** if a cited job is missing, failed without the record naming it as a retry with its replacement,
-carries a different seed or reference than the record states, or the arms differ in anything but the prepared portrait.
-cleanup: none. Never delete a probe job or asset.
-metrics: none.
-
-### M-F435 — the #1439 arm-2 and arm-3 pictures exist and were made as the record says: `segment` mask, square `recenter_crop` at about 1.75x, head and shoulders kept, backdrop blurred outside the subject
-source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `segment` (Grounding-DINO + SAM2), `recenter_crop` (square cut of `crop` x the shorter side around
-normalised `center_x`/`center_y`), and the bench-only `bench/blur_outside_mask.py` result uploaded with `upload_asset`.
-Workspace as M-F434. **Free**: reads only.
-Skip with a note if M-F438 finds the gate failed (no arm 2/3 exists by design).
-Steps:
-1. From the quoted record: the segmenter, the mask job, the mask's bounding box, `center_x`, `center_y`, `crop`, the
-   blur settings (grow px, feather sigma, blur sigma) and the two asset names.
-2. `list_assets(workspace=..., detail=true)`: find the arm-2 and arm-3 assets.
-3. `get_job_workflow` on the mask job and the crop job.
-4. `get_output_frames` (it takes `asset:`) on the arm-2 asset, the arm-3 asset and the original portrait, one frame each.
-expected:
-- Both assets exist in the listing under the names the record gives.
-- The mask job ran `segment` with prompt `person` on the original portrait (not SAM 3; the record names the
-  still-image SAM 3 gap).
-- The crop job ran `recenter_crop` on the original portrait with exactly the record's `center_x`, `center_y` and `crop`.
-  `center_x`/`center_y` are the mask box's centre normalised to the picture (check against the record's box to 0.01),
-  and the crop side (`crop` x the picture's shorter side) is about 1.75x the box's longer side, or the full picture
-  when that is smaller; the record states which. The arm-2 asset is square.
-- Arm 2 keeps head and shoulders (#1193's bound): it is not a face crop. A crop that cuts at the chin or shows only
-  the face is a finding.
-- Arm 3 has arm 2's size and framing; the subject (face and hair) is as sharp as in arm 2, and everything outside the
-  subject is visibly blurred. No hard cut-out edge; a visible halo is not a finding by itself but the record must
-  mention it (it shows arm 3's frame 0, per the plan's halo risk).
-- The record states the blur settings; the plan's defaults are grow 12 px, feather sigma 6, blur sigma 20, and a
-  difference from them is stated, not silent.
-- The record states that the square crop changes aspect between arm 1 and arms 2-3.
-It is a **finding** if an asset is missing, the crop arguments differ from the record, the crop is not square or is a
-face crop, or arm 3's subject is blurred or its backdrop is not.
-cleanup: none.
-metrics: none.
-
-### M-F436 — every #1439 clip's bleed label (none / framing / backdrop / both) agrees with its frames 0 and 24
-source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe's MiniMax H3 Ref2VA clips (M-F434). **Free**: `get_output_frames` and `assess_output` on
-existing outputs; nothing is queued.
-Steps:
-1. For every clip the record lists: `get_output_frames(..., workspace=...)` at frames 0, 12, 24 and 48 (frames 0 and 24
-   at the least).
-2. `get_output_frames` (or `get_output_image` on the job's own output) on the reference portrait(s) the clip used.
-3. `assess_output` on each clip.
-expected:
-- Every clip has exactly one label from none / framing / backdrop / both.
-- **Backdrop**: the reference's backdrop (its street, shop, shelves or the field-report portrait's own background)
-  appears in the clip, including as a morph out of it over the first ~3 s (#487). **Framing**: the clip opens on the
-  portrait's composition (the subject posed and framed as in the reference) before the prompted shot. **None**: the
-  clip opens on the prompted scene.
-- Each label agrees with frames 0 and 24. A clip labelled none whose frame 0 shows the reference backdrop, or a clip
-  labelled backdrop whose first frames show only the prompted scene, is a finding.
-- An arm-3 clip that opens on a blurred version of the backdrop counts as backdrop bleed, not none.
-- Primary path: the record says whether arm 1 reproduced the field report's bleed at the same seed, and that statement
-  matches arm 1's label (reproduced ⇔ label is not none).
-- `assess_output` flags nothing near the start that the record's label ignores.
-It is a **finding** if a label is missing, two labels are given, or a label contradicts frames 0 and 24.
-cleanup: none.
-metrics: none.
-
-### M-F437 — every #1439 clip's SFace was scored against the original, unprepared portrait at `samples_per_shot: 16`, and a re-score of one clip reproduces its median within 0.01
-source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `analyze_face_drift` (YuNet + SFace cosine; `video`, `reference` required; `threshold` default 0.363;
-`samples_per_shot` default 8; largest face in `reference` used), as in `bench/workflows/t26-face-check.json` for #1317.
-Workspace as M-F434. **Cheap**: reads, plus one scoring re-run (price it with `validate_workflow` first and bind its
-`acknowledged_cost`; if the plan shows a download, skip the re-run and note it).
-Skip the re-run with a note if no clip has a score (gate failed with no clip scored).
-Steps:
-1. Find each clip's scoring run (a step in the clip's job or a separate job; `get_job`, `get_job_workflow`).
-2. Pick one arm-3 clip (or, if none exists, one arm-1 clip) and re-run its scoring: `validate_workflow` then
-   `run_workflow(workspace=..., note="M-F437 re-score <arm> seed <n>", wait_seconds=55, ...)` with the same `video`,
-   `reference`, `samples_per_shot` and `threshold` the original used (the record's scoring workflow if it names one, or
-   an inline one-step `analyze_face_drift`).
-expected:
-- Every clip in the record has exactly one score, with median and minimum SFace stated per clip, equal to its scoring
-  run's own result at the record's printed precision.
-- Every scoring run has `samples_per_shot: 16` and `reference` = the **original unprepared** portrait (the same asset
-  arm 1 used), for all three arms. A scoring run with the arm-2 or arm-3 asset as `reference` is a finding. On a
-  three-reference shot, the scored character is the one whose portrait was prepared, against their original portrait.
-- The re-run's median matches the record within 0.01 (and its minimum within 0.01).
-- The record compares arms with the 0.03 encode floor: a difference below 0.03 is called a tie, not a gain or a loss.
-It is a **finding** if a clip lacks a score or has two that disagree, a reference is a prepared picture, `samples_per_shot`
-isn't 16, or the re-score is off by more than 0.01.
-cleanup: `delete_output(job_id=...)` on the re-score job this case made. Never delete the probe jobs.
-metrics: none.
-
-### M-F438 — the #1439 gate and cap: arms 2-3 ran only after arm 1 bled, a failed gate leaves two no-bleed pictures and no arm-2/3 jobs, and GPU time stays within about 1.5 h
-source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe's H3 jobs (M-F434) and their labels (M-F436). **Free**: reads only.
-Steps: `list_jobs(workspace=..., limit=50)`, `get_job` on every probe job; the quoted record.
-expected:
-- **Primary path, reproduced**: arm 1 is labelled framing/backdrop/both, then arms 2-3 exist for that seed.
-- **Primary path, not reproduced** (or inputs gone): the record says which, and that the non-reproduction at the same
-  seed is itself a finding about the current build; then the fallback ran. No arm-2/3 job prepared the field-report
-  portrait unless its arm 1 bled.
-- **Fallback, gate passed**: arm 1 ran on both seeds before any arm 2/3, and at least one arm-1 clip is labelled with
-  bleed. Arms 2-3 ran on the same picture and both seeds.
-- **Fallback, gate failed**: exactly two subject pictures (different backdrops) appear as arm-1 runs on the same two
-  seeds (at most four arm-1 clips), all labelled none; **no** arm-2 or arm-3 job exists; the record's verdict is
-  "not reproduced at one reference; drop". A third picture or seed is a finding.
-- A one-of-two against zero-of-two bleed result is reported as a signal, not a finding (two seeds can't measure a rate).
-- The record states the GPU time spent against the 1.5 h cap. The sum of the probe's job run times (from `get_job`
-  start/finish, clips plus mask, crop and scoring jobs) is at most about 1.5 h (allow 10% over), or the record says the
-  cap was reached and lists what did not run, and no probe job started after the cap was hit.
-It is a **finding** if arms 2-3 ran without a bled arm 1, a failed gate left arm-2/3 jobs, or the time exceeds the cap
-without the record saying so.
-cleanup: none.
-metrics: none.
-
-### M-F439 — the #1439 verdict follows the plan's Design 7 rule, and the record names the segmenter, crop numbers, blur settings and the five missing tasks
-source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe (M-F434–M-F438). **Free**: issue reads, plus `list_tasks`.
-Steps: the record as quoted on #1460/#1439; compute the verdict from M-F436's labels and M-F437's scores; `list_tasks`.
-The rule (plan v2, Design 7):
-- **Line in `per-character.md`**: arm 3 removes bleed that arm 1 (and arm 2) show, at an SFace cost within the 0.03
-  floor.
-- **Crop is enough**: arm 2 matches arm 3 (arm 2 already removes the bleed). Skill unchanged.
-- **Drop**: no bleed in arm 1, or the blur costs likeness (arm 3's median below arm 1's by 0.03 or more).
-expected:
-- The record states one verdict, and it equals the computed one. Edges: an SFace drop of 0.029 is within the floor; 0.03
-  or more is a likeness cost and "drop" even if the bleed went; arm 3 removing bleed on one seed only is reported as a
-  signal; a failed gate (M-F438) is "drop".
-- A "template preparation step" is at most **proposed**, naming that it needs the missing tasks and comes back as its
-  own feature; it is not a verdict that ships anything.
-- The record names: the segmenter (`segment`, Grounding-DINO + SAM2) and the still-image SAM 3 gap; the crop numbers
-  (box, centre, `crop`); the blur settings; and the five missing tasks: a still-image SAM 3 mask, mask grow/feather,
-  gaussian blur, composite through a mask, and a margin crop to a mask box.
-- `list_tasks` shows no new blur, composite-through-mask, mask-grow/feather or mask-box-crop task added by this stage
-  (the plan adds no task).
-It is a **finding** if the stated verdict differs from the computed one, a missing task or the segmenter is unnamed, or a
-task was added.
-cleanup: none.
-metrics: none.
-
-### M-F440 — the #1439 probe changes at most one `per-character.md` line, matching the verdict, and leaves `reference-to-video` and the catalog as they were
-source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the `dw:minimax-h3` skill and `templates/minimax/reference-to-video`. **Free**: skill and catalog
-reads.
-Steps:
-1. Load `dw:minimax-h3` (from `develop`) and read `references/per-character.md` and `references/staging.md`.
-2. `get_workflow("templates/minimax/reference-to-video", variables_only=true)`.
-3. `list_workflows(shape="shot")`.
-4. Read #1460's hand-off for a `tests/test_plugin_skills.py` run and the plugin version bump.
-expected:
-- Verdict "line": `per-character.md` has **exactly one** new line about preparing the reference by cropping and
-  blurring its backdrop, citing #1439 or the record; it states what the record measured (bleed removed, SFace within
-  the floor), not more. The hand-off quotes a passing `tests/test_plugin_skills.py` and a plugin version bump.
-- Verdict "crop is enough" or "drop": no new rule in `per-character.md` or `staging.md` (a "probed and not a rule"
-  mention is allowed, not required).
-- `reference-to-video` is unchanged: one picture through `subject`, defaults 960x544, 124 frames, 9 steps, `{int4}`,
-  `seed` null, no new preparation variable or step.
-- No `probe-1439` bench workflow is listed in the shipped catalog outside the bench workspace.
-- The tester cannot run pytest; if the line changed and no passing run is quoted, ask on #1460 rather than counting it
-  a pass.
-It is a **finding** if a line lands that the verdict didn't earn, two lines land, the line overstates the record, or the
-template changed.
 cleanup: none.
 metrics: none.
 
@@ -11246,109 +9131,6 @@ path ran.
 cleanup: none. Never delete a probe job.
 metrics: none.
 
-### M-F442 — the #1441 hybrid run and the stock ref2va baseline are both in `list_jobs`, completed, and differ only in `transformer_ref`'s source: same pinned seed, references, prompt and settings
-source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F441. **Free**: job reads only.
-Steps:
-1. `list_jobs(workspace=..., limit=50)`: find both job ids the record quotes.
-2. `get_job(<id>, workspace=...)` on each; `get_job_workflow(<id>)` on each.
-3. Compare the two workflows key by key (every step, every argument, every variable's resolved value).
-expected:
-- Both jobs appear in the listing and are `succeeded`/completed. The stock baseline may be an existing earlier job
-  only if the record names it and its workflow passes every bullet below; otherwise it was run for this stage.
-- Both carry the same **pinned integer** seed (not null; a null seed draws a different take and voids the comparison),
-  the same `prompt`, the same references (`subject` picture and `voice` audio, as the same `asset:`/URL/`output:`
-  reference in both), and the same `num_frames`, `width`, `height`, `num_inference_steps`, `video_shift`,
-  `audio_shift`, LoRA (name, weight, scale, alpha), `weights_dtype`, `attention_backend` and its parameters, and
-  `cache`.
-- The **only** difference is `transformer_ref`'s entry in `pretrained_model_name_or_path`: a local graft path in the
-  hybrid, the stock repo in the baseline. Any other difference is a finding unless the record names it and why (e.g. a
-  per-step `release_pipeline` needed for host RAM), and even then the record must say it may affect the comparison.
-- The hybrid's LoRA is a ref2va entry (the template's ref2va turbo), never an fl2va file (M-F446).
-- Fallback path (M-F441): the hybrid render is not a dw job; the record must then name an `asset:` holding the hybrid
-  clip (uploaded with `upload_asset`) and the exact arguments the script used, equal to the stock job's. No asset named
-  means the clip can't be checked over MCP: ask on #1463, not a pass.
-- No variant other than b20-49 was run, unless the record says b20-49 gained quality but lost identity and a b25-49 run
-  followed (the plan's one allowed second run); a b15-49 or b30-49 run is a finding.
-It is a **finding** if either job is missing or failed, the seed is null or differs, or the two workflows differ in
-anything but `transformer_ref`'s source without the record saying so.
-cleanup: none.
-metrics: none.
-
-### M-F443 — both #1441 renders are real video with sound at the template's shape, and the hybrid is not noise, black or frozen
-source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: the two renders of M-F442. **Free**: reads and `assess_output` on existing outputs; nothing queued.
-Steps:
-1. `get_job(<id>, workspace=...)` on each job: its video output path (on the fallback, the named `asset:`).
-2. `get_gallery_metadata` on each video.
-3. `get_output_frames` on each at frames 0, 62 and the last frame (123 at the defaults).
-4. `assess_output` on each.
-expected:
-- Each job has a video output, and both have the same `width`x`height` (960x544 at the defaults), the same
-  `frame_count` (124 at the defaults), `fps` 24 and a soundtrack (the template's `voice` reference makes speech).
-- Frames from both clips show the referenced subject in a coherent scene. A grafted transformer that came out wrong
-  shows up as pure noise, a flat or black frame, colour-channel garbage or a frozen clip; any of those in the hybrid is
-  a finding (the graft is broken, not "lower quality"), and the record must say so.
-- Frames 0, 62 and the last differ in each clip (it moves).
-- `assess_output` reports no hard problem (dead air, black or frozen run) on either clip that the record omits.
-It is a **finding** if either output is missing, the two clips differ in size, frame count or rate, either lacks audio,
-or the hybrid is broken as above.
-cleanup: none.
-metrics: none.
-
-### M-F444 — the #1441 record gives SFace per reference for both runs, a re-score reproduces one within 0.01, and the floor call follows Don's rule (hybrid within 0.02 of stock, or better)
-source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `analyze_face_drift` (YuNet + SFace cosine; `video`, `reference` required; `samples_per_shot`
-default 8; `threshold` default 0.363), as #1317 stage A scored with it. Workspace as M-F441. **Cheap**: reads, plus one
-scoring run (price it with `validate_workflow` first and bind its `acknowledged_cost`; if the plan shows a download,
-skip the re-score and note it).
-Steps:
-1. From the quoted record: for each run (hybrid, stock), the SFace median and minimum per reference picture, and the
-   scoring job id(s).
-2. `get_job_workflow` on each scoring job.
-3. Re-score the hybrid clip: `validate_workflow` then `run_workflow(workspace=..., note="M-F444 re-score hybrid",
-   wait_seconds=55, ...)` with a one-step `analyze_face_drift` using exactly the original's `video`, `reference`,
-   `samples_per_shot` and `threshold`.
-expected:
-- Each run has one score per reference picture with a face (the template has one `subject` picture, so at least one
-  score per run), with median and minimum stated, equal to its scoring job's own result at the record's precision.
-- Both runs were scored against the **same** reference picture(s) the renders used, with the same `samples_per_shot`
-  and `threshold`. Different settings between the arms is a finding.
-- The re-score's median and minimum match the record's hybrid numbers within 0.01.
-- The floor call: the record states whether the hybrid's median is within 0.02 of the stock median or better (Q2).
-  Edges: hybrid 0.019 below stock passes the floor; 0.02 below passes ("within 0.02"); 0.021 below fails. A stated
-  pass or fail that contradicts the numbers is a finding.
-- The record leaves the quality verdict to Don (Q2: his look decides). A record that declares the hybrid better on
-  quality, or ships anything on SFace alone, is a finding.
-It is a **finding** if a run lacks a score, the arms were scored differently, the re-score is off by more than 0.01,
-or the floor call contradicts the numbers.
-cleanup: `delete_output(job_id=...)` on the re-score job this case made. Never delete the probe jobs.
-metrics: none.
-
-### M-F445 — the #1441 record states the disk check, the graft's tensor report, the job ids, the wall time, the render path and a verdict line left for Don
-source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: the probe (M-F441–M-F444). **Free**: issue reads and `get_job` only.
-Steps: the record as quoted on #1463/#1441; `get_job` on both renders for start/finish times.
-expected:
-- **Disk check first**: the record quotes a `df` reading of lem's model disk taken before the graft was written, the
-  parents' measured size, and the graft's size (the plan estimates ~40 GB). If free space was under 2x the parents'
-  measured size, the stage stopped there: no graft, no hybrid job, and a filed issue named in the record. A hybrid job
-  that exists after a reading under that bar is a finding.
-- **Tensor report**: whether the two parents' tensor names and shapes matched; if not, which tensors exist only in
-  ref2va and were taken from it. Which tensors came from ref2va for the graft: the `adaln_proj` of blocks 20–49, i.e.
-  30 blocks, no fewer and no more; block 19 and below are fl2va's. A report naming another block range, or silent on
-  the shape check, is a finding.
-- The `config.json` the graft carries is `transformer_ref`'s (the plan's design); the record says so.
-- The two job ids (or job id plus asset on the fallback), the render path and the wall time of each render. The wall
-  times agree with `get_job` start/finish within a minute. The hybrid's time includes the uncached quantize; the record
-  says so rather than calling the hybrid slower to render.
-- One verdict line left for Don: no "adopt", "ship" or catalog recommendation stated as decided.
-- Scratch: the record says whether the ~40 GB graft was deleted after the record (Q1 default) or kept at Don's word.
-It is a **finding** if the disk reading, the tensor report, a job id or the verdict line is missing, or the stated block
-range is not 20–49.
-cleanup: none.
-metrics: none.
-
 ### M-F446 — an FL2V LoRA on the hybrid step is still refused at validate by the partition rule, and the ref2va turbo is still clean there
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the hybrid workflow from `get_job_workflow(<hybrid job>)` (M-F441); if the stage took the fallback and
@@ -11381,361 +9163,6 @@ the stock one, or the control is refused.
 cleanup: none.
 metrics: none.
 
-### M-F447 — the #1441 probe adds no catalog surface: no hybrid entry in `list_workflows(include_models=true)`, `reference-to-video` as it was, and no smhfacct download
-source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: the catalog and `templates/minimax/reference-to-video`. **Free**: catalog reads only.
-Steps:
-1. `list_workflows(include_models=true)`; also `list_workflows(shape="shot")`.
-2. `get_workflow("templates/minimax/reference-to-video", variables_only=true)`.
-3. `list_downloads()`.
-expected:
-- No catalog workflow or `models/` entry names the hybrid, the graft, `probe-1441`, `smhfacct`, `fl2va-ref2va` or a
-  local `transformer_ref` path. A `bench/` workflow listed only under the bench workspace is not a catalog entry.
-- `reference-to-video`'s variables are as pinned in M-F441 (960x544, 124 frames, 9 steps, shifts 12/3, ref2va 8-step
-  turbo `minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors` at scale 1.0, `{int4}`, sparse 0.5/0.15, `seed`
-  null, `cache` null), with no new variable for a transformer override and no `pretrained_model_name_or_path`
-  override pointing at a graft.
-- No download, finished or in progress, of any `smhfacct/*` repo or `minimax_h3_hybrid_*` file (Q3).
-It is a **finding** if a hybrid catalog entry or template change lands, or a smhfacct download appears.
-cleanup: none.
-metrics: none.
-
-### M-F448 — with the flag on, `balance: 20` keeps frame 0 (under the keyframe and guide) close to the no-key take's frame 0
-source: tester, verified in #1494 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: none beyond M-F378 and M-F379(a); run it beside M-F380, on
-the same two videos. Flag-on (see M-F375).
-Steps: `compare_outputs` with M-F379(a)'s video (no argument, seed 1391) as the baseline and M-F378's (`KA = {}`,
-balance 20 on the default blocks) as the second, `at=["frame:0", "frame:1"]`; and `get_output_frames` on M-F378's
-video at `frame:0`.
-expected:
-- M-F378's frame 0 shows the same subject and setting as the guide's first frame and M-F379(a)'s frame 0. With
-  `image` set to the guide's first frame, both should show the guide's woman in the office.
-- At `frame:0`, `compare_outputs` reads a close match: PSNR above 30 dB and SSIM above 0.9. #1494's fixed build read
-  PSNR 39.9, SSIM 0.984 and MAD 1.7. The broken build read PSNR 8.25 and MAD 76.6.
-- Frame 1 is not a crossfade or ghost of a second scene.
-It is a **finding** if frame 0 shows a scene that is in none of the image, the guide and the prompt (#1494 showed a
-man in a yellow vest in a sitcom living room), or if frame 1 is a double exposure.
-cleanup: as M-F380.
-metrics: none.
-
-### M-F449 — the #1505 masked-keystone gate's jobs: step 1 ran, step 2 only if step 1 passed, all succeeded in `bench` on one quoted build, and no full-length run
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
-The record is the *Masked keystone: early gate* section of `bench/records/narrated.md` in the dw repo, which a tester
-can't read: use the record as the stage's hand-off comment on #1506 quotes it (job ids, frames held, per-pass times,
-measures, outcome). A number the hand-off doesn't quote is missing.
-Steps: `list_jobs(workspace="bench")` around the stage's run window; `get_job` and `get_job_events`
-(`workspace="bench"`) on every job the record names; `get_diffusers_state()`; `list_jobs` of every other workspace
-(`list_workspaces`) over the same window for other H3 jobs.
-expected:
-- The record names one step-1 job and either (pass) two step-2 jobs, control M and arm MA, plus the baseline (reused
-  `2817a04202ae`, or a re-run, M-F453), or (fail) no step-2 job. Every job it names is in `bench` and `completed`
-  (succeeded), not failed or cancelled; a re-run is named with its reason.
-- Step 1 failed: `list_jobs(workspace="bench")` holds no job created after the step-1 job that renders a masked seg02
-  with the real keystone or carries `experimental_keystone_attention`, and the record says the run stopped at step 1.
-  Step 1 passed: both step-2 jobs were created after the step-1 job finished.
-- No full-length run: no job the stage queued renders more than seg02 (no seg03+ step, no 12-segment chain), in
-  `bench` or any other workspace.
-- The record quotes a `get_diffusers_state` build taken before the first job, and every job ran on it (any version a
-  job reports matches). Today's `get_diffusers_state` is context only.
-- No stage job's `started_at`–`finished_at` overlaps another H3 job on lem.
-It is a **finding** if a named job failed without a named re-run, if step-2 jobs exist after a failed step 1 (or are
-missing after a pass with no reason given), if any longer-than-seg02 job exists, if the jobs did not all run on the
-one quoted build, or if two H3 jobs overlapped.
-cleanup: none.
-metrics: none.
-
-### M-F450 — the #1505 step-1 job's seg02 is a masked regional edit with the tail guide and the bright keystone as both `image` and source frame 0, and nothing else
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
-Steps: `get_job_workflow(job_id=<step-1 job>)` (M-F449); `get_job_workflow(job_id="2817a04202ae")` (the #1394 gate
-control) for the seed and the tail guide; `get_job_workflow(job_id="f835a2292345")` (the shared seg01 job);
-`get_gallery_metadata` on the step's `source_video` and `mask_video` inputs (`output:` or `asset:` references, as
-the workflow names them).
-expected:
-- seg02's H3 step is `fl2va`, with `source_video`, `mask_video`, `refine_strength` (1.0, as the #1322 probe; another
-  value is quoted in the record with a reason), `guides` equal to the #1394 tail guide (`[{video: <tail01>, frame: 0}]`,
-  one entry), and `image`.
-- `image` is #1394 step 1's *bright* probe keystone, and `source_video` is that same keystone frame followed by
-  seg01's tail (from `f835a2292345`'s outputs), then padding to the step's `num_frames`: its frame count equals
-  `num_frames`, frame 0 is the keystone, and every padding frame lies under the mask's white (regenerated) frames.
-- `mask_video` is black over the held frames then white, the same frame count as `source_video`; the held count is a
-  whole number of latent cells, and the record states the count actually held.
-- No `latents`, no chaining (the step isn't a chain or chained segment), no `experimental_keystone_attention`, no
-  sparse attention (dense), no capstone, no `keystone_slot`.
-- The seed is the #1394 gate's seed (as in `2817a04202ae`).
-It is a **finding** if any listed input is missing or different, if `source_video` doesn't start with the keystone
-`image` uses, if the mask's held count isn't on the latent grid or isn't the count the record states, or if a
-`latents`, chaining, attention or sparse argument is present.
-cleanup: none.
-metrics: none.
-
-### M-F451 — the #1505 step-1 gate: the luma move toward the bright keystone is recorded, and the outcome follows the +0.5% line
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only, plus `get_output_frames`.
-Steps: read the record's step-1 lines (M-F449); `get_job(workspace="bench")` on the step-1 job for its output;
-`get_output_frames` on that output at the first new frame (frame 22, or the record's first-new-frame index) and one
-second later; the same frames of the matching guides-only take the record compares against.
-expected:
-- The record gives the new frames' (22 onward, or the index it states with the held count) luma change toward the
-  bright keystone as a signed percentage, names `bench/keystone_luma.py` as the measure, and names what it is measured
-  against (the same-seed take without the bright keystone).
-- Pass is a move of **at least +0.5%** toward the keystone (exactly +0.5% passes). A move below that, zero, or away
-  from the keystone (negative) fails.
-- Fail: the record says the run stopped at step 1, with the wording's substance "a keystone doesn't pull under a
-  masked carry on a narrated face either", and M-F449's no-step-2 clause holds. Pass: step 2 ran (M-F449).
-- The frames look like the record's direction: a pass shows brighter new frames than the comparison take.
-It is a **finding** if the number, its sign or its comparison take is missing, if the stated outcome doesn't follow
-from the number and the +0.5% line, or if the frames plainly contradict the stated direction.
-cleanup: none.
-metrics: none.
-
-### M-F452 — the #1505 step-2 arms: M and MA differ only in `experimental_keystone_attention` with test 21's saturation blocks, and no sharpness-block arm ran
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` on lem (cuda), flag-on for MA (see M-F375). **Free**: reads only.
-Only if step 1 passed (M-F451); after a failed step 1 record "not applicable: step 1 failed" and skip.
-Steps: `get_job_workflow` on the M and MA jobs (M-F449); `get_job_workflow` on the step-1 job; diff M against MA.
-expected:
-- Both seg02 steps have the M-F450 shape (`source_video` = keystone frame + tail, `mask_video` with the same held
-  count, `refine_strength`, the one tail guide, `image`; no `latents`, no chaining, dense), with the **real** seg01
-  keystone (from `f835a2292345`'s outputs, not the bright probe) as `image` and as `source_video` frame 0.
-- M carries no `experimental_keystone_attention`. MA carries exactly
-  `experimental_keystone_attention: {"balance": 20, "blocks": "30-32,34-37,39,42,44"}`.
-- Everything else matches between M and MA: seed (the #1394 gate's), prompt, sizes, frame counts, steps, guidance,
-  `hold_audio` and every other argument. The only diff line is the attention argument.
-- No job in `bench` from this stage carries the sharpness set `32-35,37,39-40,42,44` (plan non-goal, Q3 default) or
-  any third step-2 arm.
-It is a **finding** if M and MA differ in anything but the attention argument, if MA's blocks or balance differ from
-the plan's, if either arm uses the bright probe keystone or sparse attention, or if a sharpness-block arm exists.
-cleanup: none.
-metrics: none.
-
-### M-F453 — the #1505 baseline is the #1394 control `2817a04202ae`, reused only if the build still matched `e84bda1c`, else re-run unchanged
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
-Only if step 1 passed (M-F451); otherwise "not applicable" and skip.
-Steps: read the record's baseline line and its quoted `get_diffusers_state` (M-F449); `get_job_workflow` and
-`get_job(workspace="bench")` on `2817a04202ae`; if the record names a re-run baseline, the same two calls on it.
-expected:
-- The record names the baseline job and says whether it was reused or re-run, with the build it checked.
-- Reused: the quoted build is `e84bda1c` (the diffusers commit), and the record's baseline numbers come from
-  `2817a04202ae`.
-- Re-run: the quoted build is not `e84bda1c`, and the re-run's `get_job_workflow` equals `2817a04202ae`'s (guides-only,
-  no `source_video`/`mask_video`, the same seed, prompt and arguments), apart from fields a run fills in (ids, times).
-It is a **finding** if `2817a04202ae` was reused on a build other than `e84bda1c`, if a re-run differs from it in any
-argument, or if the record doesn't say which happened.
-cleanup: none.
-metrics: none.
-
-### M-F454 — the #1505 step-2 record: MA, M and the baseline each have the five fixed measures, and the verdict is the one the pass rules give
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
-Only if step 1 passed (M-F451); otherwise "not applicable" and skip.
-Steps: read the record's step-2 table (M-F449) and the face crops it posts.
-expected:
-- Three columns (baseline, M, MA), each with, on seg02's new frames: the in-segment saturation rise (seg02's last
-  second against seg01's last second); face sharpness as the **absolute distance** from seg01's last-second face
-  sharpness (Laplacian variance on the YuNet crop, 1 s means), not a signed rise; the luma rise; SFace to the keystone
-  at seg02's end; and the seg01/02 seam `jump_ratio` from `analyze_seams`. Face crops are posted for each arm.
-- MA passes only if all five hold, applied as written:
-  - saturation rise ≤ 0.75 × the baseline's (exactly 25% smaller passes) **and** ≤ M's (equal passes);
-  - sharpness distance ≤ the baseline's (equal passes);
-  - luma rise ≤ the baseline's (equal passes);
-  - SFace ≥ the baseline's − 0.02 (exactly −0.02 passes);
-  - `jump_ratio` **under** 1.5 × the baseline's (exactly 1.5x fails).
-  If the baseline's saturation rise is zero or negative, the record says how the 25% clause was read; that reading
-  must not let a rise larger than the baseline's pass.
-- The verdict follows: MA passes → the record says so and names a full run as a new question for Don (no full run
-  exists, M-F449). M passes the same rules (against the baseline, the "no larger than M's" clause dropped) and MA
-  doesn't → the record says "the masked keystone helps, the attention doesn't". Neither passes → it says so.
-It is a **finding** if a measure is missing from any column, if sharpness is given as a signed rise, if the verdict
-doesn't follow from the numbers under the rules above, or if a pass is presented as more than a reason for a full run.
-cleanup: none.
-metrics: none.
-
-### M-F455 — the #1505 takes re-measure: `analyze_seams` jump_ratios and frame counts match the record, and no still keystone frame shows at the cut
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: `assess_output` and reads only.
-Steps: for every take the record measures (step 1; and baseline, M, MA if step 2 ran): `get_job(workspace="bench")`
-for the output path; `get_gallery_metadata` on it; `assess_output(name=<output>, probe="analyze_seams",
-workspace="bench")`; `get_output_frames` at the seg01/02 seam frame the record names and the two frames either side.
-expected:
-- Each take's frame count, duration and fps in the record match `get_gallery_metadata`. The joined take's frame count
-  is the record's `head_frames` plus seg02's frames minus the held count the record states, matching
-  `get_gallery_metadata`'s shot list (head, then seg02 less its held frames), and the record says why `head_frames`
-  is less than seg01's frame count if it is.
-- Each seam-1 `jump_ratio` from `assess_output` agrees with the record within 5% (0.02 absolute where the value is
-  under 0.4).
-- The frames at the seam show motion continuing across it: no frozen still keystone frame, no repeated frame, no pop
-  to a different exposure at the cut.
-It is a **finding** if a frame count disagrees, a `jump_ratio` falls outside the tolerance, or a still keystone or
-duplicated frame shows at the seam.
-cleanup: none.
-metrics: none.
-
-### M-F456 — the #1505 probe adds no surface: no masked-keystone catalog entry, no new tool or argument, and the workflows guide unchanged on keystone attention
-source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 (catalog read). **Free**: reads only.
-Steps: `list_workflows()` (summary) and `list_workflows(shape="shot")`; `get_schema("pipelines")` searched for
-`experimental_keystone_attention`; `get_guide("workflows", section="Pipeline Configuration")`.
-expected:
-- No catalog workflow is named `masked-keystone-*` (the probe's files are bench files, not templates).
-- `experimental_keystone_attention` keeps its M-F375 fields and defaults, no new field; the guide line M-F381 checks is
-  as M-F381 expects (still experimental, flag-gated).
-It is a **finding** if a masked-keystone template appears, if the attention argument gained or changed a field, or if
-the guide line changed (the plan owes no guide change).
-cleanup: none.
-metrics: none.
-
-### M-F457 — the #1518 env-swap probe's jobs: gate arms A and B at seed 1001 succeeded, the rest of the matrix ran only on a gate pass, and nothing else ran
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
-The record is `bench/records/env-swap-ref2va.md` in the dw repo, which a tester can't read: use the record as the
-stage's hand-off comment on #1545 (or #1518) quotes it: the source job and output, every job and run id, the prompts,
-the per-frame verdicts, the timings and the gate outcome. A fact the hand-off doesn't quote is missing.
-Steps: `list_jobs(workspace=<the probe's workspace, as the record names it>, limit=50)` over the stage's run window;
-`get_job` and `get_job_events` (`workspace=` the same) on every job the record names; `list_workspaces`, then
-`list_jobs` of each other workspace over the same window, for any other H3 `ref2va` job whose only reference is the
-source clip.
-expected:
-- The record names exactly two gate jobs, arm A and arm B, both at seed 1001, both `succeeded` (not failed or
-  cancelled). A re-run is allowed only if the record names it and the reason; the failed attempt is then also named.
-- Gate failed: no arm C job and no seed-2002 job exist anywhere, and the record says no further arms ran.
-  Gate passed: four more jobs exist, all `succeeded`: C at seed 1001, then A, B and C at seed 2002, each created
-  after both gate jobs finished.
-- No other env-swap job: no regional-edit arm (no `mask_video`/`hold_audio` job over the source, plan Q3), no third
-  seed, no 1344x768 run, and no job in any workspace using the source clip as a reference besides those named.
-- Out of memory (plan risk): if a gate job failed for memory, the record quotes the error verbatim, `list_jobs`'s
-  `reason` matches it, no job at another size follows, and the stage stopped there; that is an outcome, not a finding,
-  as long as it is recorded so.
-It is a **finding** if a named job is missing, failed with no named re-run, or ran at another seed; if any post-gate
-job exists after a failed gate, or one is missing after a pass with no reason; or if any unnamed env-swap job exists.
-cleanup: none (the jobs are the bench record).
-metrics: none.
-
-### M-F458 — every #1518 env-swap arm is `ref2va` at 124 frames and 960x544 with exactly one reference, the recorded source video, and no image, guide or source video
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
-Steps: `get_job_workflow(job_id=...)` on every job M-F457 names; `get_gallery_metadata` (`workspace=` the probe's) on
-the source the record names (its `asset:` or `output:` name) and, for comparison, on the source job's own output.
-expected:
-- Each H3 step is `ref2va`: `num_frames` 124, `width` 960, `height` 544, `num_inference_steps` 9, the turbo ref2v LoRA,
-  int4, other settings as `templates/minimax/composable-references` sets them (`get_workflow` on it for comparison).
-- Each step has exactly **one** reference, and it is a video: the source the record names (same `asset:`/`output:`
-  name). No image reference of any kind (`subject` absent or null), no `guides`, no `source_video`, no `mask_video`,
-  no `image`/first-frame input.
-- The source is 124 frames at 960x544, has an audio track, and is 5.2 s at its fps (`get_gallery_metadata`). If the
-  record says it was trimmed, the trim job is named, `succeeded`, ran a utility task (no generation), and its input is
-  the named original; otherwise the source is the original output, kept as an asset.
-- The record says why the source qualifies: a visible person in clear body motion and a camera move.
-It is a **finding** if any arm has another mode, size, frame count or step count, more than one reference, an image
-reference, a guide, a `source_video`, or a video reference other than the recorded source; or if the source is not 124
-frames, not 960x544, or silent.
-cleanup: none.
-metrics: none.
-
-### M-F459 — the #1518 env-swap arms differ only in prompt (and seed across seeds), the prompts are byte-equal to the record's, and C is A less its `retention_analysis` lines
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
-Steps: `get_job_workflow` on every job M-F457 names (realized form); compare their H3 steps pairwise; compare each
-`prompt` with the text the hand-off quotes for that arm.
-expected:
-- Each job's realized `prompt` is byte-equal to the record's quoted prompt for its arm (no trimming, no reflow, no
-  smart quotes); the record states the prompts were written before any job ran.
-- Arm A holds the post's structure: `subject_definitions` naming `<Video 1>` as the source of motion and camera, a
-  summary starting `[reference generation] Edit <Video 1>`, the `retention_analysis` lines (environment and weather
-  `fully_replaced`, motion and camera `fully_preserved`), the CHANGE, PRESERVE and consistency blocks, and the
-  soundscape lines.
-- Arm B is one plain paragraph describing the shot after the change (same person, moves and camera, in active
-  snowfall): no `retention_analysis`, no CHANGE/PRESERVE block, no `<Video 1>` edit instruction.
-- Arm C (if run) equals A with only the `retention_analysis` block removed: every other line of A, in order, unchanged.
-- Two jobs at one seed differ in nothing but `prompt`; the same arm at seeds 1001 and 2002 differs in nothing but
-  `seed`. Fields a run fills in (ids, times, output paths) are ignored.
-It is a **finding** if a prompt differs from the record by one byte, if any two arms differ in anything else (size,
-steps, LoRA, reference, guidance), if C keeps any `retention_analysis` line or loses any other line of A, or if B
-carries A's structure.
-cleanup: none.
-metrics: none.
-
-### M-F460 — the #1518 gate verdict: the five-frame judgments re-check against the source, and the outcome follows the 4-of-5 rule
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
-Steps: `get_job(workspace=<probe's>)` on gate arms A and B for their outputs; `get_output_frames(name=<output>,
-at=["frame:0","frame:31","frame:62","frame:93","frame:123"], workspace=...)` (or the record's own five indices for
-0/25/50/75/100%) on A, on B and on the source; judge each matched pair yourself, before reading the record's verdicts.
-expected:
-- The record gives, per arm and per timestamp, a verdict on motion (pose, position in frame, camera position/angle
-  against the source), environment (original background gone, snow visible) and identity (face and clothing the
-  source's), with the frames posted.
-- The tester's own judgment of arm A agrees with the record frame by frame; any disagreement is stated on the issue
-  with the frame index.
-- Gate pass needs all three: A's pose and position match on **at least 4 of 5** frames (exactly 4 passes, 3 fails);
-  the environment is replaced on **all 5** with snow visible on each (one frame with the original background or no
-  snow fails); identity holds. Anything less is a fail.
-- Fail: the record carries the plan's sentence in substance, "Ref2VA with a whole video reference does not keep motion
-  through an environment swap at 960x544/9 steps (seed 1001)", with the frames and arm B as the comparison.
-- B's per-frame verdicts are recorded whichever way A went; if B passes the rule and A doesn't, the record states that
-  the structured prompt is not what does the work.
-- A source with little motion makes the case void: if the source's five frames show no clear pose change or camera
-  move, that is a finding against the source choice, not a pass.
-It is a **finding** if any verdict is missing, if the tester's judgment contradicts the record on a frame that decides
-the 4-of-5 count, or if the stated outcome doesn't follow from the per-frame verdicts under the rule above.
-cleanup: none.
-metrics: none.
-
-### M-F461 — the #1518 full matrix (only after a gate pass): a claim holds only when both seeds agree, and A against C settles `retention_analysis`
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
-Only if the gate passed (M-F460); after a failed gate record "not applicable: gate failed" and skip.
-Steps: as M-F460 for arm C at seed 1001 and arms A, B, C at seed 2002; spot-check at least A and C at seed 2002 by eye.
-expected:
-- Every one of the six jobs has the M-F460 per-frame verdicts and a pass or fail under the same rule.
-- Each claim (A keeps motion; A beats B; `retention_analysis` is operative) is stated as holding only if seeds 1001
-  and 2002 agree on it; a split between seeds is recorded as "not established", never as a pass.
-- The record states whether `retention_analysis` is the operative part from A against C on **both** seeds: operative
-  only if A passes and C fails on both. If A and C come out near-identical (plan sweep item 10) the record says so.
-It is a **finding** if a verdict is missing, if a claim is made from one seed or over a seed split, or if the tester's
-spot-check contradicts a verdict that decides a claim.
-cleanup: none.
-metrics: none.
-
-### M-F462 — the #1518 soundtrack: the record states that a reference can't copy audio, and each judged output has a mux of the source audio checked for sync
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` plus a video/audio utility mux on lem (cuda). **Free**: reads only.
-Steps: the record's soundtrack note and its mux job ids; `get_job_workflow` and `get_job` on each mux job;
-`get_gallery_metadata` on each muxed file; `get_output_frames(name=<muxed>, at=[<two moments the record names as an
-action, e.g. a step>], hear=1)` on gate arm A's mux.
-expected:
-- The record states the mechanism: a reference conditions the output and never copies its audio; the arms' own audio
-  is regenerated; only `hold_audio` or a guide's `audio: true` copies a track. It does not score the arms' own audio as
-  an outcome (plan Q2).
-- Each judged arm has one mux job, built only from existing tasks (no generation step), whose inputs are that arm's
-  output video and the source's audio. Each is `succeeded`; its output's frame count equals the arm's (124) and its
-  audio duration matches the source's within one frame.
-- The record says, per arm, whether the visible actions land on the source's sound at the same moments; the tester's
-  listen at the named moments on arm A agrees, or the disagreement is stated.
-It is a **finding** if the mechanism note is missing or claims the reference keeps the soundtrack, if a mux used a
-generation step or the wrong audio, if a muxed file is a different length, or if the sync verdict is missing.
-cleanup: none.
-metrics: none.
-
-### M-F463 — the #1518 record's build and timings: one quoted `get_diffusers_state`, and per-pass and wall times that match `get_job_events`
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
-Steps: `get_diffusers_state()`; `get_job_events` and `get_job` (`workspace=` the probe's) on every generation job.
-expected:
-- The record names the host (lem), the dw commit and a `get_diffusers_state` build. Today's `get_diffusers_state`
-  matches it, or, if lem has moved on since, every job's own reported version/build matches the quoted one.
-- Each job's wall time in the record matches `finished_at` − `started_at` within 5 s; each per-pass (per-step) time
-  matches the denoise phase in `get_job_events` within 5% (or the record's stated rounding).
-- The record sets these times against the measured image-only Ref2VA figures (~22 s/pass) and the whole-clip figure
-  (~97 s/pass at 960x544, 9 steps), and states the ratio; it answers the plain-T2VA cost question from those figures,
-  without a T2VA run of its own (M-F457).
-It is a **finding** if the build is missing or the jobs ran on another, if any timing falls outside the tolerance, or
-if the cost comparison is missing.
-cleanup: none.
-metrics: none.
-
 ### M-F464 — the H3 skill's video-reference line states the #1518 outcome and cites `bench/records/env-swap-ref2va.md`, without `retention_analysis:`
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
@@ -11759,68 +9186,6 @@ not checked here.)
 cleanup: none.
 metrics: none.
 
-### M-F465 — the #1518 probe adds no surface: no env-swap catalog entry, and `composable-references` unchanged by this stage
-source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 (catalog read). **Free**: reads only.
-Steps: `list_workflows()` (summary) and `list_workflows(shape="shot")`; `get_workflow("templates/minimax/composable-references")`.
-expected:
-- No catalog workflow is named `env-swap-*` (the arms are bench files, not templates).
-- `composable-references` keeps its variables and steps; the only change allowed is #1537's
-  `video_reference_exponent` (a separate issue), not anything this stage made.
-It is a **finding** if an env-swap template appears or `composable-references` changed for this stage.
-cleanup: none.
-metrics: none.
-
-### M-F466 — the #1528 band probes' jobs: exactly 16 Ref2VA turbo clips in `probe-1528`, four probes × two arms × two seeds, all succeeded, nothing unnamed
-source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` (turbo LoRA) on lem (cuda). **Free**: reads only.
-The record is `docs/proposals/audits/2026-11-vrgdg-band-probes.md` in the dw repo, which a tester can't read: use the
-record as the stage's hand-off comment on #1561 (or #1528) quotes it: one row per arm with its job ids, seeds, prompt
-(or the arm's differing words), references and verdict. A fact the hand-off doesn't quote is missing.
-Steps: `list_jobs(workspace="probe-1528", limit=50)`; `get_job(job_id=..., workspace="probe-1528")` and
-`get_job_workflow(job_id=...)` on every job the record names.
-expected:
-- The record names 16 generation jobs: probes P1 (missing-reference stranger), P2 (wet words near a face), P3 (late
-  exit) and P4 (silent drummer under a held sung slice), each with two arms, each arm at two seeds; the two seeds are
-  the same pair in both arms of a probe.
-- Every named job is in `probe-1528` and `succeeded` (not failed or cancelled). A re-run is allowed only if the record
-  names it and why; the failed attempt is then also named. Any other job in `probe-1528` is named in the record as setup
-  (a cast portrait, a song or its slice) and ran no H3 generation step.
-- Each H3 step is `ref2va` at `width` 960, `height` 544, `num_frames` 124, with the turbo ref2v LoRA and the
-  `num_inference_steps` the record states (the turbo default the `reference-to-video` template sets, `get_workflow` on it
-  for comparison), and `seed` the record's for that row.
-It is a **finding** if a named job is missing, outside `probe-1528`, not `succeeded` with no named re-run, at another
-size, frame count, step count or seed; if fewer than 16 ran (Don's Q1 ruled all four probes); or if an unnamed H3 job
-exists in `probe-1528`.
-cleanup: none (the jobs are the bench record).
-metrics: none.
-
-### M-F467 — each #1528 probe's two arms differ only in the claimed variable
-source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
-Steps: `get_job_workflow` on every M-F466 job; compare, per probe and per seed, arm one's H3 step with arm two's; compare
-each `prompt` with the text the hand-off quotes for that arm.
-expected:
-- Fields a run fills in (ids, times, output paths) are ignored; the same arm at its two seeds differs only in `seed`.
-- **P1:** one three-person group shot, all three placed by position in both arms. Arm one carries three image
-  references, one per person; arm two carries two of those same files, and its prompt describes the third person
-  in words where arm one labels that person's reference. No other prompt change, no other reference change.
-- **P2:** one face close-up, the same reference(s) in both arms. Arm one's prompt has wet wording near the face (rain,
-  rain-soaked, wet, streaked or the like, named in the record); arm two's is the same prompt with that wording made
-  neutral. Nothing else differs.
-- **P3:** one person. Arm one writes the exit as the shot's last action; arm two puts the same exit in the first half.
-  The rest of the prompt (person, setting, camera) is the same.
-- **P4:** a drummer-only shot on the music-video path: a sung slice of a song held with `hold_audio` (and, as the
-  template does, the slice as an audio reference), the singer not in frame and not described as present. Arm one has no
-  lips wording; arm two adds a closed-lips statement. Same slice, same references, same everything else.
-- Each prompt is byte-equal to the record's quoted prompt for its arm.
-It is a **finding** if any arm pair differs in anything other than its claimed variable (size, steps, LoRA, another
-reference, a reworded line elsewhere), if P1's arm two drops a reference but also drops the person's placement, if P4's
-held slice has no sung vocal in it (`get_output_audio` on the slice, or the record's note of where the vocal sits), or if
-a prompt differs from the record.
-cleanup: none.
-metrics: none.
-
 ### M-F468 — the #1528 P1 verdict (missing reference → stranger) re-checks against the frames
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
@@ -11836,35 +9201,6 @@ expected:
 - Counts come from cropped or `max_dimension`-raised frames, never from the 12-frame sheet alone.
 It is a **finding** if a job's verdict is missing, contradicts the frames on head count or on the third person's match,
 or rests on the contact sheet alone.
-cleanup: none.
-metrics: none.
-
-### M-F469 — the #1528 P2 verdict (wet words → skin streaks) re-checks on native-size face crops
-source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
-Steps: for each P2 job, `get_output_frames(name=<output>, at=[<at least three frames, the record's own if it names
-them>], crop=[<the face's box in source pixels>], max_dimension=<the crop's own long side or more, so no downscale>,
-workspace="probe-1528")`; the same frame indices on both arms at each seed.
-expected:
-- The record states, per job, whether the face skin shows streaks (lines, runs or wet tracks not in the reference), from
-  native-size face crops at named frames, and keeps rain or wetness elsewhere in frame apart from streaks on the skin.
-- Your judgment of each job agrees; a disagreement is stated with the frame index.
-It is a **finding** if a verdict is missing, rests on downscaled frames or the 12-frame sheet, or contradicts the crops.
-cleanup: none.
-metrics: none.
-
-### M-F470 — the #1528 P3 verdict (an exit written last doesn't happen) re-checks on the last frames
-source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
-Steps: for each P3 job, `get_output_frames(name=<output>, at=["frame:100","frame:112","frame:123"],
-workspace="probe-1528")` and `get_output_frames(name=<output>, count=12, workspace="probe-1528")` for the course of the
-shot.
-expected:
-- The record states, per job, whether the person is out of frame by the last frames (fully gone, partly in frame, or
-  still in place), and for the early-exit arm, whether the frame stays empty after the exit (no re-entry, no new person).
-- "Exits" means no part of the person in frame at `frame:123`; a body part at the edge is "partly", not an exit.
-- Your judgment of each job agrees; a disagreement is stated with the frame index.
-It is a **finding** if a verdict is missing, calls a partial exit an exit, or contradicts the last frames.
 cleanup: none.
 metrics: none.
 
@@ -11984,27 +9320,9 @@ It is a **finding** if the line is missing or names neither parameter, if `count
 cleanup: none.
 metrics: none.
 
-### M-F477 — #1528 leaves SKILL.md alone and, if #1519's H3 recipes index is on `develop`, adds each outside rule there as `untested`
-source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 (plugin skill, recipes guide). **Free**: reads only.
-Steps: `Grep` the loaded skill's `SKILL.md` for `stranger`, `wet`, `drummer`, `VRGDG`, `max_dimension`, `1528`;
-confirm its `references/staging.md` link line ("A crowd, two people in frame, or a three-reference shot: read
-`references/staging.md`") is unchanged; check #1519's state (`gh issue view 1519 --repo dkackman/diffusers-workflow
---json state,labels`) and, if it is closed verified, read its H3 index where it put it (its verify comment names the
-place: a recipes guide section or a skill reference).
-expected:
-- SKILL.md has none of those words for this stage, and its staging link line is as before. (The 12 KiB cap and
-  `tests/test_plugin_skills.py` are dw's own tests, not run here.)
-- #1519 landed before the stage was built: each of rules b, c and e-m has an `untested` row in the index, labelled
-  outside-reported. Not landed: no row is required, and the stage didn't wait for it.
-It is a **finding** if SKILL.md changed for this stage, or if #1519 had landed before the build and a rule has no
-`untested` row (or one marked tested).
-cleanup: none.
-metrics: none.
-
-### M-F478 — `experimental_hybrid_windows` is refused at validate and at run on a server without the flag, naming `DW_EXPERIMENTAL_HYBRID_WINDOWS`
+### M-F478 — `experimental_hybrid_windows` is refused at validate and at run on a server without the flag, naming `DW_EXPERIMENTAL_HYBRID_WINDOWS`: in every form, beside the seam pass, and with either `anchor` value
 source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` from noise. **Free**: validate, plus one `run_workflow` that must be
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` from noise. **Free**: validate, plus two `run_workflow` calls that must be
 refused before queuing. Workspace `regression-model-specific`; needs the `qa-1230/chain-26s.mp4` fixture (see M-F345).
 The server is lem as it normally runs, with no `DW_EXPERIMENTAL_HYBRID_WINDOWS` set (the deployed default).
 Workflow W_hyb (inline, used by M-F478–M-F484), two steps in order:
@@ -12017,13 +9335,29 @@ Workflow W_hyb (inline, used by M-F478–M-F484), two steps in order:
    `refine_strength` or `refine_windows`.
 2. `final`: `pair_audio(video="previous_result:gen", audio="asset:qa-1230/chain-26s.mp4", fit="video")`, result
    `video/mp4`.
-Steps: `validate_workflow(workspace="regression-model-specific", inline_workflow=W_hyb)` with (a) HW `{}`, NF 124;
-(b) HW `{}`, NF 690 (past the 345-frame ceiling: the length the key exists for); (c) HW
-`{"frames": 42, "overlap": 12, "blend": "pyramid", "positions": "rebased"}`, NF 124; (d) HW `"variable:hw"` with
-`variables: {"hw": {}}`, NF 124. Then `run_workflow(workspace="regression-model-specific", inline_workflow=W_hyb)`
-with (a)'s values and an `acknowledged_cost` built from the shape the refusal or `get_schema` documents (any
-fingerprint: the point is that the flag refusal comes first).
-expected:
+Steps, three arms. Report a failure by arm and row (for example "B(f)").
+- **Arm A (the key's plain forms).** `validate_workflow(workspace="regression-model-specific", inline_workflow=W_hyb)`
+  with (a) HW `{}`, NF 124;
+  (b) HW `{}`, NF 690 (past the 345-frame ceiling: the length the key exists for); (c) HW
+  `{"frames": 42, "overlap": 12, "blend": "pyramid", "positions": "rebased"}`, NF 124; (d) HW `"variable:hw"` with
+  `variables: {"hw": {}}`, NF 124. Then `run_workflow(workspace="regression-model-specific", inline_workflow=W_hyb)`
+  with (a)'s values and an `acknowledged_cost` built from the shape the refusal or `get_schema` documents (any
+  fingerprint: the point is that the flag refusal comes first).
+- **Arm B (every other form, and beside the seam pass).** W_hyb (NF 124), `validate_workflow` with HW =
+  (a) `{"switch_step": 0}` (S1's own arm);
+  (b) `{"frames": 42, "windw": 8}` (an unknown key); (c) `42`; (d) `"yes"`; (e) `[42, 12]`. Then (f): W_win from
+  M-F345 with RW `{}` (the seam pass, valid on its own) plus `experimental_hybrid_windows: {}` added to its `refine`
+  step; and (g) W_hyb (HW `{}`) with `hold_audio` removed.
+- **Arm C (`anchor`).** The legal `anchor` values are `"none"` (the default: S1-S3 behaviour) and `"keystone"`
+  (#1572, plan v3, design 7 and Q9). W_hyb (NF 124, `num_inference_steps` 4),
+  `validate_workflow(workspace="regression-model-specific",
+  inline_workflow=W_hyb)` with HW = (a) `{"anchor": "keystone"}`; (b) `{"anchor": "keystone", "switch_step": 0}`
+  (S5's arm a+k); (c) `{"anchor": "keystone", "switch_step": 3, "handoff": "finished"}` (S5's arm b+k);
+  (d) `{"anchor": "none"}`; (e) `{"anchor": "keystone"}` with NF 690 (past the 345-frame ceiling); (f) HW
+  `"variable:hw"` with `variables: {"hw": {"anchor": "keystone"}}`. Then `run_workflow(workspace=
+  "regression-model-specific", inline_workflow=W_hyb)` with arm C (a)'s values and an `acknowledged_cost` built from the
+  shape the refusal or `get_schema` documents (any fingerprint: the flag refusal must come first).
+expected, arm A:
 - (a)–(d): `valid: false`, an error at `gen` (path `steps[0].pipeline.arguments.experimental_hybrid_windows`, or a
   message naming `experimental_hybrid_windows`) that names `DW_EXPERIMENTAL_HYBRID_WINDOWS`.
 - (b): the flag refusal is present. A second error naming the 345-frame ceiling may sit beside it; record whether
@@ -12031,27 +9365,30 @@ expected:
   flag).
 - The `run_workflow`: refused with the same flag named, and no job id returned. If a job is queued,
   `cancel_job` it at once and record it as a finding.
-It is a **finding** if any of (a)–(d) validates clean, or a refusal names the key without the flag.
-cleanup: cancel any job the run queued (none expected).
-metrics: none.
-
-### M-F479 — with the flag off, `experimental_hybrid_windows` is refused in every form, including beside the seam pass
-source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server and workspace as M-F478.
-Steps: W_hyb from M-F478 (NF 124), `validate_workflow` with HW = (a) `{"switch_step": 0}` (S1's own arm);
-(b) `{"frames": 42, "windw": 8}` (an unknown key); (c) `42`; (d) `"yes"`; (e) `[42, 12]`. Then (f): W_win from
-M-F345 with RW `{}` (the seam pass, valid on its own) plus `experimental_hybrid_windows: {}` added to its `refine`
-step; and (g) W_hyb (HW `{}`) with `hold_audio` removed.
-expected:
+In arm A it is a **finding** if any of (a)–(d) validates clean, or a refusal names the key without the flag.
+expected, arm B:
 - Each of (a)–(g): `valid: false`. Each refusal names `experimental_hybrid_windows`, and (a), (f) and (g) name
   `DW_EXPERIMENTAL_HYBRID_WINDOWS`. (b)–(e) may be refused by the flag or by the value's shape; record which, and
   whether a shape error names the bad key (`windw`) or the value.
 - (g) may also name `hold_audio` as required; either order is fine, as long as it is not clean.
 - (f): the added key does not make the seam pass validate clean, and the refusal is about the new key, not about
   `refine_windows` (which M-F480 shows is clean alone).
-It is a **finding** if any of (a)–(g) validates clean on a server without the flag.
-cleanup: none.
+In arm B it is a **finding** if any of (a)–(g) validates clean on a server without the flag.
+expected, arm C:
+- (a)–(f): `valid: false`, an error at `gen` naming `experimental_hybrid_windows` and `DW_EXPERIMENTAL_HYBRID_WINDOWS`.
+- (a)–(f): no error names `anchor` as wrong: both values are legal, so the only refusal is the flag one (plus, for
+  (e), a possible 345-frame ceiling error beside it, as arm A (b); a ceiling error *alone* is a finding).
+- (b), (c): no `switch_step` or `handoff` error either: `anchor` combines with both phases' settings.
+- The `run_workflow`: refused with the flag named, and no job id returned. If a job is queued, `cancel_job` it at once
+  and record it as a finding.
+In arm C it is a **finding** if any of (a)–(f) validates clean, carries an `anchor` error, or is refused without the flag
+named.
+cleanup: cancel any job either run queued (none expected).
 metrics: none.
+
+absorbs: M-F479, M-F493 (merged 2026-11-26, suite review)
+- M-F479: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+- M-F493: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
 
 ### M-F480 — the seam pass (`refine_windows` + `refine_strength`) still validates clean, and still runs, with hybrid windows in the build
 source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
@@ -12127,22 +9464,45 @@ carries a `switch_step` error.
 cleanup: none.
 metrics: none.
 
-### M-F484 — a bad `handoff` is refused at validate by its own rule, naming `finished` and `x0`, before the flag check
+### M-F484 — a bad `handoff` or a bad `anchor` is refused at validate by its own rule, naming `finished` and `x0`, or `none` and `keystone`, before the flag check
 source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
-M-F478.
-Steps: W_hyb from M-F478 (NF 124), `validate_workflow` with HW = (a) `{"handoff": "finish"}`; (b)
-`{"handoff": "X0"}` (wrong case); (c) `{"handoff": 1}`; (d) `{"handoff": ""}`; (e) `{"handoff": "finished"}`;
-(f) `{"handoff": "x0"}`; (g) `{"switch_step": 3, "handoff": "x0"}`; (h) `{"switch_step": 9, "handoff": "nope"}`.
-expected:
+M-F478; arm N (j) also needs the `qa-cast/priya-portrait.jpg` fixture. Plan v3 S4 (#1572), on `anchor`: "anything else
+is refused at validate before the flag check, like `switch_step`".
+Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow` once per HW. Report a failure by arm
+and row (for example "N(d)").
+- **Arm H (`handoff`):** HW = (a) `{"handoff": "finish"}`; (b)
+  `{"handoff": "X0"}` (wrong case); (c) `{"handoff": 1}`; (d) `{"handoff": ""}`; (e) `{"handoff": "finished"}`;
+  (f) `{"handoff": "x0"}`; (g) `{"switch_step": 3, "handoff": "x0"}`; (h) `{"switch_step": 9, "handoff": "nope"}`.
+- **Arm N (`anchor`):** HW = (a) `{"anchor": "bogus"}`;
+  (b) `{"anchor": "Keystone"}` (wrong case); (c) `{"anchor": ""}`; (d) `{"anchor": "capstone"}` (the anchor plan v3
+  cut, design 10); (e) `{"anchor": 1}`; (f) `{"anchor": true}`; (g) `{"anchor": ["keystone"]}`; (h)
+  `{"anchor": null}`; (i) `{"anchor": "bogus", "switch_step": 9}` (two bad fields); (j) `{"anchor": "keystone"}` with
+  `image: "asset:qa-cast/priya-portrait.jpg"` added to `gen`'s arguments (a user image beside the internal anchor).
+expected, arm H:
 - (a)–(d): `valid: false`, an error naming `experimental_hybrid_windows` and `handoff` and listing the allowed values
   `finished` and `x0`, present whether or not the flag error also is.
 - (e), (f), (g): no `handoff` or `switch_step` error; the only refusal is the flag one.
 - (h): both the `switch_step` and the `handoff` error are reported (record if only the first is; one at a time is
   not a finding, a flag-only refusal is).
-It is a **finding** if any of (a)–(d) is refused only by the flag, or (e)–(g) carries a `handoff` error.
+In arm H it is a **finding** if any of (a)–(d) is refused only by the flag, or (e)–(g) carries a `handoff` error.
+expected, arm N:
+- (a)–(g): `valid: false`, an error naming `experimental_hybrid_windows` and `anchor` and listing the allowed values
+  `none` and `keystone`, present whether or not the flag error also is.
+- (h): either refused like (a)–(g) or treated as the default `"none"` (then only the flag refusal); record which.
+  Clean is a finding.
+- (i): both the `anchor` and the `switch_step` error are reported (record if only one is; one at a time is not a
+  finding, a flag-only refusal is).
+- (j): `valid: false`. Setting an anchor does not open the hybrid key to a user image (plan v3: the key keeps
+  refusing `image`, `last_image`, `keyframes` and `references`; the anchor is internal). Record whether the refusal
+  names `image` as a conflict or only the flag.
+In arm N it is a **finding** if any of (a)–(g) is refused only by the flag (no `anchor` error), an `anchor` error does not
+name the allowed values, or any arm N row validates clean.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F494 (merged 2026-11-26, suite review)
+- M-F494: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
 
 ### M-F485 — on a 23.6 GB card the Ref2VA ceilings at 1344x768 are 243/209/175/141 frames for 1/2/3/4 references, and the next 17-frame step is refused
 source: tester, verified in #1586 (claude-opus-5-5 via anthropic)
@@ -12177,14 +9537,17 @@ in a template `reason` or the `minimax-h3` skill without this boundary moving wi
 cleanup: none (nothing is queued or written).
 metrics: none.
 
-### M-F486 — `per-character.md` has *A costume change*: the measured path first (one portrait, the new clothes named in every shot, #1193), and wardrobe drifting across cuts without the portrait or a window
+### M-F486 — `per-character.md` has *A costume change*: the measured path first (one portrait, the new clothes named in every shot, #1193), wardrobe drifting across cuts without the portrait or a window, and the per-outfit portrait marked untested (#1591), MPS unmeasured, named `cast/<name>-<outfit>`, `shared=True`
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only. Stage A of #1591 is plugin-only, so it has no MCP
-surface.
-Steps: load `dw:minimax-h3` with the `Skill` tool (the plugin follows `develop`; use the base directory it reports, on
-the stage's build, not an older cached plugin). `Grep` its `references/per-character.md` for `^#+ ` and read the section
-headed *A costume change* in full. `Grep` `references/cuts.md` for `^## A place card holds the set`.
-expected:
+Model/pipeline: MiniMax H3 (plugin skill) and the FLUX 3 Klein catalog. **Free**: reads only. Stage A of #1591 is
+plugin-only, so the section itself has no MCP surface; arm U reads the catalog to check the names it cites.
+Steps:
+1. Load `dw:minimax-h3` with the `Skill` tool (the plugin follows `develop`; use the base directory it reports, on
+   the stage's build, not an older cached plugin). `Grep` its `references/per-character.md` for `^#+ ` and read the section
+   headed *A costume change* in full. `Grep` `references/cuts.md` for `^## A place card holds the set`.
+2. Call `get_server_info()` and
+   `list_workflows(shape="image-edit")`, with `workspace="regression-model-specific"` where it is taken.
+expected, arm M (the measured path):
 - `per-character.md` has exactly one heading named "A costume change".
 - The section states the measured path as the first option, before any untested one. That path is one cast portrait
   kept for the new outfit, with the new clothes named in the shot's prompt and the prompt saying the clothes are not
@@ -12195,18 +9558,10 @@ expected:
 - It links `cuts.md`'s *A place card holds the set* by that exact heading, and the heading exists in `cuts.md`. It
   quotes rather than rewords that section: any sentence it reproduces matches `cuts.md` word for word.
 - It does not claim the outfit was measured to hold **across** shots. #1193 measured a change within one shot only.
-It is a **finding** if the section is missing or duplicated, if #1193 is not cited, if the untested option comes
+In arm M it is a **finding** if the section is missing or duplicated, if #1193 is not cited, if the untested option comes
 before the measured one, if the cross-cut drift and its two remedies (portrait, window) are missing, if the link names
 a heading `cuts.md` doesn't have, or if the text says the outfit holds across cuts as a measured fact.
-cleanup: none.
-metrics: none.
-
-### M-F487 — *A costume change* marks the per-outfit portrait untested (#1591), says MPS is unmeasured, and names it `cast/<name>-<outfit>`, `shared=True`
-source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 (plugin skill) and the FLUX 3 Klein catalog. **Free**: reads only.
-Steps: read *A costume change* as in M-F486. Call `get_server_info()` and
-`list_workflows(shape="image-edit")`, with `workspace="regression-model-specific"` where it is taken.
-expected:
+expected, arm U (the untested per-outfit portrait):
 - The per-outfit portrait (one portrait per outfit, each an edit of the first portrait whose prompt names the face as
   kept) is marked **untested** and cites #1591. No sentence about it is worded as a measured rule or a requirement
   ("always", "must", "draw each outfit").
@@ -12217,11 +9572,14 @@ expected:
 - The asset name for an outfit portrait is `cast/<name>-<outfit>`, kept with `shared=True`, and it is distinct from
   the base `cast/<name>`. The form `cast/<name>/<outfit>` doesn't appear (Q2 took the default).
 - It says that when drift is checked, the reference is the portrait the shot used.
-It is a **finding** if "untested" or "#1591" is missing, if the per-outfit portrait is stated as a rule, if MPS is
+In arm U it is a **finding** if "untested" or "#1591" is missing, if the per-outfit portrait is stated as a rule, if MPS is
 not mentioned or is called measured, if a named template is not in the catalog, or if the asset name differs from
 `cast/<name>-<outfit>` or drops `shared=True`.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F487 (merged 2026-11-26, suite review)
+- M-F487: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F488 — `series-episodes` step 0 and `storyboard` each link *A costume change* once, by a heading that exists, with outfit item ids `cast-<name>-<outfit>`
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
@@ -12273,28 +9631,6 @@ a section that doesn't exist, or if the row breaks the table's column count.
 cleanup: none.
 metrics: none.
 
-### M-F491 — #1591's stage leaves the `cuts.md` place-card sentences and `script-to-video/SKILL.md` as they were
-source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: plugin skills `dw:minimax-h3`, `dw:script-to-video`. **Free**: reads only.
-Steps: read `cuts.md` § *A place card holds the set* in the loaded `dw:minimax-h3`. Load `dw:script-to-video` and
-`Grep` its `SKILL.md` for `costume`, `outfit`, `wardrobe` and `1591`. Read the stage's hand-off comment on #1594.
-expected:
-- These two bullets are still in `cuts.md`, word for word (line breaks may move):
-  - "**The card holds what it shows, and nothing else.** R1 held all three of its markers on a reverse the card does
-    not frame; the coat, which only the window's frames show, stayed lost. Hold wardrobe or a prop with the window,
-    or by putting it in the portrait."
-  - "**A new look is a new card.** A night version from the same Klein seed and prompt, its light changed, kept the
-    layout. Make one card per look, and keep each under its own name (`places/<set>-night`)."
-- `script-to-video/SKILL.md` has no hit for this stage. It had 4 bytes to spare under its cap, so the plan keeps it
-  untouched. A `wardrobe` hit that was there before the stage is not a finding.
-- The hand-off says dw's own `tests/test_plugin_skills.py` passed, naming the SKILL.md size cap, `TestPlaceCard` and
-  the intents test, plus a new `TestCostumeChange`. These are dw's tests and are not run here; the tester reads only
-  the shipped text.
-It is a **finding** if either bullet changed, if `script-to-video/SKILL.md` gained costume or outfit text, or if the
-hand-off doesn't say those tests passed.
-cleanup: none.
-metrics: none.
-
 ### M-F492 — no shipped skill text tells a session to put an `outfit` key on a ledger item, and the ledger still refuses one
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin skills (whole `dw` plugin) and the request ledger. **Free**: reads, plus one refused
@@ -12319,84 +9655,21 @@ cleanup: if step 2 created the request, `delete_request("m-f492-outfit-probe", w
 (with the `acknowledged_cost` it asks for).
 metrics: none.
 
-### M-F493 — `anchor: "keystone"` on the hybrid key is refused at validate and at run on a server without the flag, naming `DW_EXPERIMENTAL_HYBRID_WINDOWS`
-source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` from noise. **Free**: validate, plus one `run_workflow` that must be
-refused before queuing. Same server (flag off, the deployed default), workspace and fixture as M-F478.
-The legal `anchor` values are `"none"` (the default: S1-S3 behaviour) and `"keystone"` (plan v3, design 7 and Q9).
-Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow(workspace="regression-model-specific",
-inline_workflow=W_hyb)` with HW = (a) `{"anchor": "keystone"}`; (b) `{"anchor": "keystone", "switch_step": 0}`
-(S5's arm a+k); (c) `{"anchor": "keystone", "switch_step": 3, "handoff": "finished"}` (S5's arm b+k);
-(d) `{"anchor": "none"}`; (e) `{"anchor": "keystone"}` with NF 690 (past the 345-frame ceiling); (f) HW
-`"variable:hw"` with `variables: {"hw": {"anchor": "keystone"}}`. Then `run_workflow(workspace=
-"regression-model-specific", inline_workflow=W_hyb)` with (a)'s values and an `acknowledged_cost` built from the
-shape the refusal or `get_schema` documents (any fingerprint: the flag refusal must come first).
-expected:
-- (a)–(f): `valid: false`, an error at `gen` naming `experimental_hybrid_windows` and `DW_EXPERIMENTAL_HYBRID_WINDOWS`.
-- (a)–(f): no error names `anchor` as wrong: both values are legal, so the only refusal is the flag one (plus, for
-  (e), a possible 345-frame ceiling error beside it, as M-F478 (b); a ceiling error *alone* is a finding).
-- (b), (c): no `switch_step` or `handoff` error either: `anchor` combines with both phases' settings.
-- The `run_workflow`: refused with the flag named, and no job id returned. If a job is queued, `cancel_job` it at once
-  and record it as a finding.
-It is a **finding** if any of (a)–(f) validates clean, carries an `anchor` error, or is refused without the flag
-named.
-cleanup: cancel any job the run queued (none expected).
-metrics: none.
-
-### M-F494 — a bad `anchor` is refused at validate by its own rule, naming `none` and `keystone`, before the flag check
-source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
-M-F478; arm (j) also needs the `qa-cast/priya-portrait.jpg` fixture. Plan v3 S4: "anything else is refused at
-validate before the flag check, like `switch_step`".
-Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow` with HW = (a) `{"anchor": "bogus"}`;
-(b) `{"anchor": "Keystone"}` (wrong case); (c) `{"anchor": ""}`; (d) `{"anchor": "capstone"}` (the anchor plan v3
-cut, design 10); (e) `{"anchor": 1}`; (f) `{"anchor": true}`; (g) `{"anchor": ["keystone"]}`; (h)
-`{"anchor": null}`; (i) `{"anchor": "bogus", "switch_step": 9}` (two bad fields); (j) `{"anchor": "keystone"}` with
-`image: "asset:qa-cast/priya-portrait.jpg"` added to `gen`'s arguments (a user image beside the internal anchor).
-expected:
-- (a)–(g): `valid: false`, an error naming `experimental_hybrid_windows` and `anchor` and listing the allowed values
-  `none` and `keystone`, present whether or not the flag error also is.
-- (h): either refused like (a)–(g) or treated as the default `"none"` (then only the flag refusal); record which.
-  Clean is a finding.
-- (i): both the `anchor` and the `switch_step` error are reported (record if only one is; one at a time is not a
-  finding, a flag-only refusal is).
-- (j): `valid: false`. Setting an anchor does not open the hybrid key to a user image (plan v3: the key keeps
-  refusing `image`, `last_image`, `keyframes` and `references`; the anchor is internal). Record whether the refusal
-  names `image` as a conflict or only the flag.
-It is a **finding** if any of (a)–(g) is refused only by the flag (no `anchor` error), an `anchor` error does not
-name the allowed values, or any arm validates clean.
-cleanup: none.
-metrics: none.
-
-### M-F495 — with `anchor` in the build and absent from the key, the S1/S2 cases still hold and the field has no MCP surface
-source: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` and windowed refine. **Free**: validate and reads, plus M-F480's one
-GPU step (or a cited same-commit green run of M-F356, as M-F480 allows). Same server (flag off) and workspace as
-M-F478.
-Steps:
-1. M-F478, M-F479, M-F480, M-F481, M-F483 and M-F484 as written (none of their HW values carries `anchor`).
-2. M-F482 as written, adding `anchor`, `keystone` and `capstone` to its search terms, read in the hybrid-windows
-   context: a hit for the sequence-anchor keystone (#1187) or another feature's own `anchor` is not this case's; one
-   that documents `anchor` as a field of `experimental_hybrid_windows`, or `"none"`/`"keystone"` as its values, is.
-expected:
-- Step 1: each case's own expected result, unchanged. No error or warning in any of them names `anchor` (the field
-  defaults to `"none"`, so its absence changes nothing the caller sees).
-- Step 2: M-F482's expected result, and no MCP text documents the hybrid key's `anchor` field (plan v3: no schema
-  entry, no MCP tool text, `SURFACE_BUDGET` untouched).
-It is a **finding** if any step-1 case's result moves, an `anchor` error or warning appears with the field absent,
-or the field is documented on the MCP surface before a promotion plan is approved.
-cleanup: as each cited case.
-metrics: none.
-
-### M-F496 — `templates/qwen/transparent` is an image template on the base Qwen-Image-2.1 that says it makes a transparent PNG
+### M-F496 — `templates/qwen/transparent` is an image template on the base Qwen-Image-2.1 that says it makes a transparent PNG, and builds its prompt with the vendor RGBA wrapper around `subject`, with no new syntax
 source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `Qwen/Qwen-Image-2.1` (the base, `QwenImage21Pipeline`), not `Qwen/Qwen-Image-2.1-Turbo`.
-**Free**: reads only. Workspace `regression-model-specific`.
+**Free**: reads and validate only. Workspace `regression-model-specific`.
+The vendor wrapper (plan v2, Design): `This is an RGBA image with transparency. {subject}. The image has alpha
+channel and the background is transparent.`
 Steps:
 1. `list_workflows(shape="image")`.
 2. `get_workflow("templates/qwen/transparent")` (full form).
 3. `get_workflow("templates/qwen/transparent", variables_only=true)`.
-expected:
+4. In step 2's document, find the `prompt` argument of the pipeline step. If it is a
+   `prompt:<name>` reference, `get_prompt(<name>)` and read that prompt's text; if it names a previous step's
+   result, read that step's arguments the same way, until you reach the text that holds the wrapper.
+5. `validate_workflow(name="templates/qwen/transparent", arguments={"subject": "a red apple with a green leaf"})`.
+expected, arm T (the template):
 - Step 1: an entry named `templates/qwen/transparent` with `shape` `image`. Its `summary` says the result is a
   transparent (or RGBA / alpha) PNG: at least one of "transparent", "transparency", "RGBA" or "alpha", and "PNG".
   Its `traits` do not include `needs-input-media` or `image-conditioned` (it is text-to-image).
@@ -12411,11 +9684,25 @@ expected:
   or a fixed `num_inference_steps: 40` on the step, read in step 2). `subject` has a non-null default, since
   plan v2 says the template validates clean at its defaults (if `subject` is `required: true` instead, record it;
   M-F497's step 1 then decides).
-It is a **finding** if the entry is missing from `shape="image"`, the summary doesn't say transparent/RGBA PNG,
+In arm T it is a **finding** if the entry is missing from `shape="image"`, the summary doesn't say transparent/RGBA PNG,
 the model is anything but the base, the result is not `image/png`, the defaults differ from 1024×1024 at 40
 steps, or the description omits the non-commercial licence or the jpeg-flattens note.
+expected, arm W (the wrapper):
+- Step 4: the text that becomes the prompt contains, in this order: `This is an RGBA image with transparency.`,
+  then a substitution of `subject` (the `variable:subject` reference or the stored prompt's `subject`
+  placeholder), then `The image has alpha channel and the background is transparent.`. Both halves are present
+  word for word (case and punctuation as above); `subject` appears once between them.
+- The composition uses only syntax the server already documents (`get_guide("workflows")`'s References section:
+  `variable:`, `prompt:`, `previous_result:`); no other reference form appears.
+- Step 5: `valid: true` with no unknown-reference or unknown-syntax error or warning.
+In arm W it is a **finding** if either half of the wrapper is missing or reworded, `subject` is outside it or repeated, or
+the template relies on a reference form the References section does not describe. The resolved prompt of a real
+run is M-F499's.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F498 (merged 2026-11-26, suite review)
+- M-F498: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F497 — `templates/qwen/transparent` validates clean at its defaults and refuses an off-grid width or height, for free
 source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
@@ -12438,31 +9725,6 @@ expected:
   rule for it); a server error or a crash is a finding.
 It is a **finding** if (a) is not clean (a required argument with no default included), any of (c)–(e)
 validates clean or only warns, any on-grid arm is refused, or a Turbo download is required.
-cleanup: none.
-metrics: none.
-
-### M-F498 — `templates/qwen/transparent` builds its prompt with the vendor RGBA wrapper around `subject`, with no new syntax
-source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `Qwen/Qwen-Image-2.1` (base). **Free**: reads and validate only. Workspace
-`regression-model-specific`.
-The vendor wrapper (plan v2, Design): `This is an RGBA image with transparency. {subject}. The image has alpha
-channel and the background is transparent.`
-Steps:
-1. `get_workflow("templates/qwen/transparent")`. Find the `prompt` argument of the pipeline step. If it is a
-   `prompt:<name>` reference, `get_prompt(<name>)` and read that prompt's text; if it names a previous step's
-   result, read that step's arguments the same way, until you reach the text that holds the wrapper.
-2. `validate_workflow(name="templates/qwen/transparent", arguments={"subject": "a red apple with a green leaf"})`.
-expected:
-- Step 1: the text that becomes the prompt contains, in this order: `This is an RGBA image with transparency.`,
-  then a substitution of `subject` (the `variable:subject` reference or the stored prompt's `subject`
-  placeholder), then `The image has alpha channel and the background is transparent.`. Both halves are present
-  word for word (case and punctuation as above); `subject` appears once between them.
-- The composition uses only syntax the server already documents (`get_guide("workflows")`'s References section:
-  `variable:`, `prompt:`, `previous_result:`); no other reference form appears.
-- Step 2: `valid: true` with no unknown-reference or unknown-syntax error or warning.
-It is a **finding** if either half of the wrapper is missing or reworded, `subject` is outside it or repeated, or
-the template relies on a reference form the References section does not describe. The resolved prompt of a real
-run is M-F499's.
 cleanup: none.
 metrics: none.
 
@@ -12504,43 +9766,12 @@ wrapper, or (seeded) the background is painted rather than transparent.
 cleanup: `delete_output(job_id=<id>)`, and delete step 5's downloaded copy.
 metrics: none.
 
-### M-F500 — the #1680 mps probe's two bench workflows validate clean on mini-ai: two steps, components by path, no 64 GiB download
-source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageBlocks`), text encoder from
-`MiniMaxAI/MiniMax-H3`. Server: **mini-ai** (mps), workspace `bench` (pass `workspace="bench"` on every call). The
-pre-quantized folders exist only there: `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` and `.../transformer`.
-On any other server, record "mini-ai-only probe, skipped". **Free**: reads and validate only.
-Steps:
-1. `list_workflows` / `get_workflow("bench/h3-image-mps-t2i")` and `get_workflow("bench/h3-image-mps-edit3")`.
-2. `validate_workflow(name="bench/h3-image-mps-t2i", workspace="bench")` and the same for `bench/h3-image-mps-edit3`,
-   at their defaults.
-expected:
-- Step 1, both workflows: (at least) two pipeline steps. The **first** cuts the H3-Image pipeline to its encode blocks,
-  loads `text_encoder` by path from `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` (not a hub id, not the int4
-  `/Volumes/NVME/cache/h3-prequantized/` folder), removes `lm_head`, truncates the language model to 51 layers as the
-  catalog template does, and sets `release_pipeline: true`. The **second** runs denoise and decode, loads the
-  transformer by path from `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/transformer`, takes the VAE and the small parts
-  from `MiniMaxAI/MiniMax-H3-Image` (not the old folder's `vae/`, which is H3 video's), loads **no** text encoder, and
-  takes `prompt_embeds` and their modality tags from step 1 by `previous_result:`.
-- `h3-image-mps-t2i`: 2048×2048, the catalog template's prompt, `seed` 1317. `h3-image-mps-edit3`: an `image` list
-  of exactly 3 references that resolve on mini-ai (record which `asset:` names), with a pinned seed.
-- Neither sets `trust_remote_code` or `custom_pipeline`, and neither loads `MiniMaxAI/MiniMax-H3-Image-PE`.
-- Step 2, both: `valid: true` with no error. `plan.downloads_required` names nothing from `MiniMaxAI/MiniMax-H3`
-  and no transformer or text-encoder weights; at most the H3-Image repo's small parts (VAE, scheduler, tokenizer,
-  configs; ~1 GB in total, or nothing once cached). Any single download of tens of GB is a finding. The plan is not
-  refused for `host_ram_gb` (contrast M-F503).
-It is a **finding** if either workflow is missing, is one step, loads either big component by hub id, loads a text
-encoder in the denoise step, plans a text-encoder or transformer download, or does not validate clean. (Under the
-time stop the edit workflow is still owed this case: it need only validate.)
-cleanup: none.
-metrics: none.
-
-### M-F501 — a rerun of the #1680 mps t2i probe on mini-ai gives one 2048×2048 PNG under `final`
+### M-F501 — a rerun of the #1680 mps t2i probe on mini-ai gives one 2048×2048 PNG under `final`; its events show step 1's pipeline released before step 2 loads, and a host peak within 10% of the record
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `bench/h3-image-mps-t2i` (M-F500), mini-ai (mps), workspace `bench`. **Spends mini-ai time**: one
 2048×2048 still, plausibly 10-20+ min (dequantize-on-use), near 64 GB of unified memory: run nothing beside it.
 If the #1729 record (M-F504) says the probe **failed**, there is nothing to rerun: record "probe failed (job <id>,
-issue #<n>), nothing to rerun" and skip. On any server but mini-ai, skip as in M-F500.
+issue #<n>), nothing to rerun" and skip (both arms). On any server but mini-ai, skip as in M-F500.
 Steps:
 1. From the record, take the cold t2i job id (`J`). `get_job(J)`.
 2. `validate_workflow(name="bench/h3-image-mps-t2i", workspace="bench")`; bind `acknowledged_cost` from its plan.
@@ -12548,33 +9779,30 @@ Steps:
    note="M-F501 mps t2i rerun", wait_seconds=55)` if `rerun_job` refuses for a reason other than cost); follow
    `still_running: true` with `wait_for_job`. Do not cancel under 15 min of event silence.
 4. `get_job(<new id>)`; `get_output_image(<the png>)`.
-expected:
+5. `get_job_events(<new id>)` (page through all of them).
+expected, arm O (the output):
 - The job `succeeded`. Its outputs hold exactly one PNG from the `final` step (the step whose results are the
   workflow's deliverable), 2048×2048. No other image output.
 - The still is the prompt's subject, coherent (no noise field, no grey or black frame, no tiling seams); with seed
   1317 it matches the record's look at the cold arm's still in composition.
 - `job.warnings` carries no OOM retry, no fallback to cpu and no "component loaded anyway" warning.
-It is a **finding** if the run fails, produces no PNG, a size other than 2048×2048, or more than one image.
+In arm O it is a **finding** if the run fails, produces no PNG, a size other than 2048×2048, or more than one image.
 Wall time is recorded in the verify comment, never asserted.
-cleanup: `delete_output(job_id=<new id>)`.
-metrics: none.
-
-### M-F502 — the #1680 mps rerun's events show step 1's pipeline released before step 2 loads, and a host peak within 10% of the record
-source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the M-F501 rerun job, mini-ai (mps), workspace `bench`. **Free**: job reads. Skip when M-F501 skipped.
-Steps: `get_job_events(<M-F501 job id>)` (page through all of them); `get_job(<id>)`.
-expected:
+expected, arm E (the events, step 5):
 - Ordered events: step 1's text-encoder load, its encode, then a release of step 1's pipeline (an event naming the
   release, or the memory event after step 1 showing its resident memory dropped by roughly the text encoder's ~35 GB)
   **before** any event of step 2 loading the transformer. Step 2 loads no text encoder.
 - The highest host peak in the memory events (peak RSS, and committed where reported) is within ±10% of the record's
   peak for the t2i arm (cold or warm, whichever the rerun matches: say which). Compute and state the ratio.
 - The peak is below 64 GB (mini-ai's total): one model at a time, not both.
-It is a **finding** if step 2's load starts before step 1 is released, both big components are resident at once
+In arm E it is a **finding** if step 2's load starts before step 1 is released, both big components are resident at once
 (a peak near or past ~64 GB), a text encoder loads in step 2, or the peak differs from the record's by more than 10%.
 A missing memory event is a finding too: the record's peak can't be checked without one.
-cleanup: none.
+cleanup: `delete_output(job_id=<new id>)`, after step 5's events have been read.
 metrics: none.
+
+absorbs: M-F502 (merged 2026-11-26, suite review)
+- M-F502: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F503 — the shipped H3-Image catalog templates stay refused at validate on a 64 GB mps host, naming `host_ram_gb`
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
@@ -12662,19 +9890,6 @@ It is a **finding** if any says "untested"/"by rule" for H3-Image on mps, or a f
 cleanup: none.
 metrics: none.
 
-### M-F507 — after #1680's skill change, `get_server_info`'s `plugin` still reports the `minimax-h3-image` skill current
-source: tester, spec for #1730 from #1680's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the `dw:minimax-h3-image` plugin skill. **Free**: one read.
-Steps: `get_server_info()`; read `plugin.current_from`; read the release the loaded skill states it was written for.
-expected:
-- The skill states a release, and it is not older than `plugin.current_from` (semver order). On the 2026-11-25
-  mini-ai server `current_from` was `0.22.0`; take the live value.
-- The CUDA-side template pins are untouched: M-F503's `host_ram_gb` 64 still holds.
-It is a **finding** if the skill states no release or one older than `current_from`, so an agent would tell the
-user the plugin is out of date.
-cleanup: none.
-metrics: none.
-
 ### M-F508 — `get_gallery_metadata` reports `media.alpha` coverage on a `templates/qwen/transparent` PNG and on a cut-out, and no `alpha` on an RGB image
 source: tester, verified in #1735 (claude-opus-5-5 via anthropic)
 Model/pipeline: `Qwen/Qwen-Image-2.1` (`templates/qwen/transparent`, ~32 GB) and the `remove_background` image
@@ -12722,23 +9937,43 @@ memory at the refine load.
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
-### M-F510 — the #1680 mps probe reads its pre-quantized folders from the `bench` asset library with trust off, and its edit references resolve on mini-ai
+### M-F510 — the #1680 mps probe's two bench workflows validate clean on mini-ai: two steps, components by path, no 64 GiB download; they read their pre-quantized folders from the `bench` asset library with trust off, and the edit references resolve on mini-ai
 source: tester, spec for #1729 from #1680's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: `bench/h3-image-mps-t2i` and `bench/h3-image-mps-edit3` (M-F500's shape). Server: **mini-ai** (mps),
-workspace `bench` (pass `workspace="bench"` on every call). Plan v4 moved the folders: they are read from the `bench`
-workspace's own asset library, `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` and
-`.../transformer`. Where M-F500's text names `/Volumes/NVME/cache/h3-prequantized-int8/`, that path no longer exists;
-this case is the path check (M-F500's other checks stand). On any other server, record "mini-ai-only probe, skipped".
+Model/pipeline: `bench/h3-image-mps-t2i` and `bench/h3-image-mps-edit3`: MiniMax-H3-Image
+(`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageBlocks`), text encoder from `MiniMaxAI/MiniMax-H3`. Server:
+**mini-ai** (mps), workspace `bench` (pass `workspace="bench"` on every call). Plan v4 moved the folders: they are read
+from the `bench` workspace's own asset library, `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` and
+`.../transformer`, and exist only there. The older `/Volumes/NVME/cache/h3-prequantized-int8/` path no longer exists;
+arm P is the path check, arm S the shape check. On any other server, record "mini-ai-only probe, skipped".
 **Free**: reads and validate only.
 Steps:
 1. `get_server_info()`: read `trust_workflows`.
-2. `get_workflow("bench/h3-image-mps-t2i", workspace="bench")` and the same for `bench/h3-image-mps-edit3`.
-3. `validate_workflow(name=<each>, workspace="bench")` at defaults.
+2. `list_workflows` / `get_workflow("bench/h3-image-mps-t2i", workspace="bench")` and the same for `bench/h3-image-mps-edit3`.
+3. `validate_workflow(name="bench/h3-image-mps-t2i", workspace="bench")` and the same for `bench/h3-image-mps-edit3`,
+   at their defaults.
 4. For each `asset:` reference in the edit workflow's `image` list: `list_assets(workspace="bench")` (or
    `get_gallery_metadata(<the asset: ref>, include_workflow=false)` when the listing is long).
-expected:
+expected, arm S (shape):
+- Step 2, both workflows: (at least) two pipeline steps. The **first** cuts the H3-Image pipeline to its encode blocks,
+  loads `text_encoder` by path from `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` (not a hub id, not the int4
+  `/Volumes/NVME/cache/h3-prequantized/` folder), removes `lm_head`, truncates the language model to 51 layers as the
+  catalog template does, and sets `release_pipeline: true`. The **second** runs denoise and decode, loads the
+  transformer by path from `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/transformer`, takes the VAE and the small parts
+  from `MiniMaxAI/MiniMax-H3-Image` (not the old folder's `vae/`, which is H3 video's), loads **no** text encoder, and
+  takes `prompt_embeds` and their modality tags from step 1 by `previous_result:`.
+- `h3-image-mps-t2i`: 2048×2048, the catalog template's prompt, `seed` 1317. `h3-image-mps-edit3`: an `image` list
+  of exactly 3 references that resolve on mini-ai (record which `asset:` names), with a pinned seed.
+- Neither sets `trust_remote_code` or `custom_pipeline`, and neither loads `MiniMaxAI/MiniMax-H3-Image-PE`.
+- Step 3, both: `valid: true` with no error. `plan.downloads_required` names nothing from `MiniMaxAI/MiniMax-H3`
+  and no transformer or text-encoder weights; at most the H3-Image repo's small parts (VAE, scheduler, tokenizer,
+  configs; ~1 GB in total, or nothing once cached). Any single download of tens of GB is a finding. The plan is not
+  refused for `host_ram_gb` (contrast M-F503).
+In arm S it is a **finding** if either workflow is missing, is one step, loads either big component by hub id, loads a text
+encoder in the denoise step, plans a text-encoder or transformer download, or does not validate clean. (Under the
+time stop the edit workflow is still owed this arm: it need only validate.)
+expected, arm P (paths, trust and references):
 - Step 1: `trust_workflows: false`. The probe needs no trust window (plan v4, Q4); a server found running trusted
-  means this case proves nothing about the gate: record it and stop.
+  means arm P proves nothing about the gate: record it and stop arm P (arm S still runs).
 - Step 2, both workflows: the encode step's `text_encoder` path is
   `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/text_encoder` and the denoise step's transformer
   path is `/Users/don/diffusers-workspace/bench/assets/h3-prequantized-int8/transformer` (or the same folders named
@@ -12747,15 +9982,18 @@ expected:
   the int4 `cache/h3-prequantized/`).
 - Step 3, both: `valid: true`, no error, and **no warning or error about trust, a path outside the workspace's
   roots, or a missing local folder**. `plan.downloads_required` holds at most the H3-Image repo's small parts (as
-  in M-F500).
+  in arm S).
 - Step 4: exactly 3 references, each resolving in `bench` on mini-ai (listed, or metadata returned, not "Unknown
   asset"). None is an `asset:cast/...` or `asset:qa-cast/...` name that exists only on lem. Record the three names;
   M-F504's record names the same three.
-It is a **finding** if trust is off and either workflow names a `/Volumes/NVME/` path, is refused or warned for
+In arm P it is a **finding** if trust is off and either workflow names a `/Volumes/NVME/` path, is refused or warned for
 trust or a path outside the roots, or the edit workflow carries a reference that doesn't resolve on mini-ai or a
 count other than 3.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F500 (merged 2026-11-26, suite review)
+- M-F500: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F511 — with trust off, the #1680 probe's workflow pointed at a pre-quantized folder outside the workspace's roots is still refused at validate on mini-ai
 source: tester, spec for #1729 from #1680's plan v4 (claude-opus-5-5 via anthropic)

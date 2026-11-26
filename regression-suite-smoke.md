@@ -150,15 +150,40 @@ sanity check every other case leans on.
 cleanup: none (read-only).
 runner: script
 
-### S-F003 — generate a single image, default params
+### S-F003 — generate a single image, default params; its deliverable is marked `final`, so `list_gallery(subfolder="final")` finds it
 Using the server's basic image-generation tool/template, generate one image
 in `regression-smoke` with only the required parameters (a simple prompt,
 everything else default).
+The same run carries a second check, the `final` arm (#302): C-F071 guards the two
+sequence templates #235 fixed, but the `final` convention had never reached any *other*
+one-saving-step template — every LTX-2.5 template and the general single-shot ones
+(`text-to-image`, …) shipped `"subfolder": ""`, so the documented "list only deliverables"
+pattern returned nothing for them. The dw repo's own test now covers 1+ saving steps; this
+is the consumer-side guard that the convention holds catalog-wide, checked on the cheapest
+template rather than the LTX-2.5 one the issue was filed against (the fix is one sweep, so
+one template stands for the class). One generation serves both checks; do not generate
+again for the `final` arm.
+1. Run `templates/text-to-image` in `regression-smoke` (defaults) — the generation above;
+   `wait_for_job` (or `run_workflow(..., wait_seconds=55)`).
+2. `list_gallery(workspace="regression-smoke", subfolder="final")`.
 expected: call succeeds, response includes a reference to a generated image
 asset (path/id/url per whatever the schema returns), and that asset is
 retrievable/listable afterward in the workspace.
-cleanup: S-F006/S-P002 inspect this output first; delete it right after
-they've run (or after this case, if S-F006 is skipped).
+- `final` arm, step 1: the job succeeds; its one manifest entry (step `main`) has
+  `"subfolder": "final"` and its file name reads
+  `templates/text-to-image/<run id>/final/<file>.jpg` — the `final/` segment present in the
+  name, not just the field.
+- `final` arm, step 2: that file is listed with `subfolder: "final"` and `folder:
+  templates/text-to-image`.
+- `final` arm, the regression is: the manifest entry back to `"subfolder": ""`, a name
+  without the `final/` segment, or the `final` filter not listing the file.
+cleanup: S-F006/S-F006 inspect this output first; delete it right after
+they've run (or after this case, if S-F006 is skipped). Deleting the run
+(`delete_output(job_id=<id>)`) covers the `final` arm too.
+metrics: none.
+
+absorbs: S-F101 (merged 2026-11-26, suite review)
+- S-F101: tester, verified in #302 (implementer proposed the case in its hand-off comment; added after running it on 2026-09-21 over MCP as model `opus` via provider `anthropic` against `develop @ d5e3725`, in workspace `qa-verify-302`: `templates/text-to-image` job `1692848b00f8` → `templates/text-to-image/20260922-033453-b3b4bd77/final/test_image-0.0.jpg`, and the issue's own family `templates/ltx2/text-to-video` (`num_frames: 25`) job `61c44d8f7b66` → `.../20260922-033214-a189631c/final/LTX2-text_to_video.0-0.0.mp4`; `list_gallery(subfolder="final")` returned exactly those two).
 
 ### S-F004 — generate a single image, explicit size/seed
 Same as S-F003 but pin an explicit size and a fixed seed. The stock
@@ -176,27 +201,42 @@ two jpgs are byte-identical (compare `size` in the listing and the bytes
 returned) and both carry `seed: 424242` in `get_gallery_metadata`. Seed
 reproducibility is established behaviour as of 0.4.0-beta.3 — two different
 images from the same seed is the finding.
-cleanup: same as S-F003 — hold for S-F006/S-P002, then delete both images
+cleanup: same as S-F003 — hold for S-F006/S-F006, then delete both images
 (the seed-repeat one too).
 
-### S-F005 — invalid image-generation params are rejected cleanly
+### S-F005 — invalid image-generation params are rejected cleanly, and pipeline value constraints are a clean run-time failure
 Call the image-generation tool with an invalid parameter. Three probes,
 run all of them: (a) `arguments: {num_images_per_prompt: "not-a-number"}`;
 (b) `arguments: {nonexistent_variable: 3}`; (c) an inline workflow at
 383x383 (not divisible by 8).
+For (c), validate, then run: it is a workflow whose values are schema-valid but the
+pipeline will refuse, so call `validate_workflow` on it first, then run it.
 expected: a clear validation error, not a 500/crash/hang, and not a silently
 "corrected" result. (a) and (b) are refused pre-flight by `run_workflow`
 with a tool error naming the path and, for (b), listing the declared
 variables — nothing is queued. (c) is caught only at run time —
-`validate_workflow` passes it (that boundary is S-F011's subject): the job
+`validate_workflow` passes it (that boundary is the "(c), validate/run boundary" paragraph below): the job
 `fails` with the pipeline's "`height` and `width` have to be divisible by 8"
 message, an empty manifest, and nothing in the gallery.
+(c), validate/run boundary: documents where the line sits. `validate_workflow` checks schema
+and pipeline *signatures*, not value ranges, so it passes; the job then
+fails with the pipeline's own message, an empty manifest, and no partial
+output left behind. A hang, a 500, or a silently corrected size is the
+finding — so is a run that leaves a file in the gallery. (Same probe as (c) above,
+asserted separately because what this paragraph pins down is the validate/run boundary,
+not the error's tone.)
 cleanup: confirm nothing was created (a rejected call must not leave an
 output behind — if it did, that's part of the finding); delete it if so.
+For (c), confirm the failed run wrote nothing; delete it if it did.
 
-### S-F006 — list/probe workspace contents
+absorbs: S-F011 (merged 2026-11-26, suite review)
+- S-F011: (no source: line)
+
+### S-F006 — list/probe workspace contents, within a latency ceiling
 After S-F003/S-F004, use whatever inspection tool the server offers (list,
 probe, etc.) against `regression-smoke`.
+Time the listing/probe call (a workspace with a handful of assets already in it) for the
+`metrics:` line below.
 expected: the generated assets from this run are visible and correctly
 described (type, size, or other basic metadata matches what was requested).
 `list_gallery()` carries `folder`, `subfolder`, `kind`, `size`, `mtime` and a
@@ -206,6 +246,13 @@ requested" is checked with `get_output_image` (reports `original_size`) or
 cleanup: this is the last case that needs the S-F003/S-F004 outputs — delete
 them here, then re-list to confirm they're gone (a deleted output still
 showing is a finding).
+metrics: `latency` of the listing/probe call. Consumer-side wall clock
+(`condition: wall`) — a sub-second call's figure is almost entirely agent turnaround
+between two `date` readings, so this is only meaningful as a "nothing pathological"
+ceiling. baseline: 5 s wall — a ceiling, not a target; anything under it is a pass.
+
+absorbs: S-P002 (merged 2026-11-26, suite review)
+- S-P002: (no source: line)
 
 ### S-F007 — basic audio or multi-step template runs end-to-end
 Run one of the simpler multi-step templates (whatever the schema currently
@@ -215,7 +262,7 @@ chain: Bark `generate_speech` → `slice_audio` to `variable:clip_seconds` =
 1.5 → `fade_audio` at `variable:sample_rate` = 24000, saving only the final
 step. Pin the speech step's inputs exactly - `model_name: "suno/bark-small"`,
 step `seed: 7`, text `"Somebody finished the pistachio and nobody is saying
-anything."` - because S-P004 times this job: Bark's take length is set by
+anything."` - because this case's `metrics:` line times this job: Bark's take length is set by
 text and seed, and another sentence at seed 7 ("Hello there, this is a short
 test of the speech chain.") generates 14.7 s with 10.5 s of leading silence,
 taking 16.5 s instead of ~4 s and leaving the 1.5 s slice near-silent (#819).
@@ -229,17 +276,26 @@ actually reflects every input given, not just that the call returned 200).
 For the chain above: `get_gallery_metadata` on the final wav reports
 `duration_seconds: 1.5` and `sample_rate: 24000`, its envelope shows the
 fades and a non-silent level, and the unsaved intermediate steps report empty
-file lists. S-P004 times this same job.
+file lists. The `metrics:` line below times this same job.
 Loudness is not this case's subject, and an unseeded Bark take is random: a run
 that draws a near-silent take is not a failure as long as the job says so. The
 final wav either decodes audibly, **or** the job carries the near-silent warning
 (`near-silent for a deliverable meant to be heard`). Either passes. A near-silent
 wav with **no** warning is the finding (the #261 regression). Pin `seed` on
-`generate_speech` so S-P004 always times the same take. (Amended per
+`generate_speech` so the `metrics:` line always times the same take. (Amended per
 harnest#26, dw#530: Don, 2026-09-27, 0.5.0 release.)
 cleanup: delete every intermediate and final output the template
 produced, plus any asset `keep_output`-style steps may have linked, unless
 one is needed for a repro.
+metrics: `latency` of this job (speech → trim → fade, three steps in one job) using the
+job's own `started_at`/`finished_at`, not wall clock. Bark-small loading is included
+and is most of the figure; the two audio tasks are sub-second. A reading
+whose speech inputs differ from the pinned ones above is not comparable to the
+log - note it as such rather than filing it (#819). baseline: TBD — the log is the
+baseline.
+
+absorbs: S-P004 (merged 2026-11-26, suite review)
+- S-P004: (no source: line)
 
 ### S-F008 — delete_output actually removes the file
 Generate one small default image, delete it with the server's delete tool,
@@ -269,18 +325,6 @@ are refused pre-flight rather than failing a queued job, and the message and
 share one validator, and them drifting apart is the finding.
 cleanup: none (read-only).
 runner: script
-
-### S-F011 — pipeline value constraints are a clean run-time failure
-Validate, then run, a workflow whose values are schema-valid but the
-pipeline will refuse (e.g. an image size not divisible by 8).
-expected: documents where the line sits. `validate_workflow` checks schema
-and pipeline *signatures*, not value ranges, so it passes; the job then
-fails with the pipeline's own message, an empty manifest, and no partial
-output left behind. A hang, a 500, or a silently corrected size is the
-finding — so is a run that leaves a file in the gallery. (Same probe as
-S-F005(c); kept as its own case because what it pins down is the
-validate/run boundary, not the error's tone.)
-cleanup: confirm the failed run wrote nothing; delete it if it did.
 
 ### S-F012 — the host-memory high-water mark is never below current
 Call `get_memory()`. Whenever both `host_memory_rss_mb` and
@@ -427,13 +471,13 @@ source: tester, verified in #101 (all three items proposed by the implementer in
 that issue's hand-off; run over MCP 2026-09-13, model `opus` via provider
 `anthropic`).
 
-### S-F016 — an unseeded workflow is told why its step cache is off
+### S-F016 — an unseeded workflow is told why its step cache is off, and only a workflow that has something to seed
 `cached_steps: 0` on a plan is ambiguous on its own: it means either "nothing was
 cached yet" or "the cache is off because this workflow sets no `seed`". A consumer
 reading the second as the first re-runs everything forever and never learns why.
 `validate_workflow` must say which. Free and instant — no run.
 expected: `validate_workflow` on an inline workflow **with a pipeline step** and no
-top-level `seed` (a task-only workflow is exempt — see S-F069) →
+top-level `seed` (a task-only workflow is exempt — see the task-only arm below) →
 `valid: true` and a `warnings` entry naming both `seed` and `cached_steps` (the
 0.4.0-beta.3 wording: "This workflow sets no 'seed', so the step cache is disabled
 and 'cached_steps' is 0 without being probed …"). The **byte-identical** workflow
@@ -444,12 +488,32 @@ warn either.
 It becomes a **finding** if the warning disappears (the #107 regression), if it
 fires on a seeded workflow, or if `valid` flips to `false` — this is advice, not an
 error, and must never block a run.
+Task-only arm (#247) — the other half: the no-seed warning is scoped to workflows that
+have something to seed. A workflow built only of `task` steps has no generative
+randomness — regeneration is deterministic and free — so asking it for a `seed` is
+noise, and a consumer that takes every warning seriously adds a meaningless key or
+stops trusting the warning list. Free and instant — no run.
+`validate_workflow` on an inline workflow with **no top-level `seed`**
+whose only step is a task (`{"name": "qr", "task": {"command": "qr_code",
+"arguments": {"qr_code_contents": "https://example.com"}}, "result":
+{"content_type": "image/png", "file_base_name": "qr", "subfolder": "final"}}`)
+→ `valid: true` and `warnings: []` — in particular no "sets no 'seed'" entry.
+Control: the same call with that step replaced by a one-step `pipeline`
+(`configuration.component_type: StableDiffusionPipeline`, any `model_name`, no seed)
+→ `valid: true` **with** the warning above, so the gate did not simply switch the
+warning off.
+In this arm it becomes a **finding** if the task-only form warns about `seed`, if the
+pipeline control stops warning (the first finding above), or if `valid` flips to `false`
+on either.
 cleanup: none (read-only).
 source: tester, verified in #107 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic` — unseeded and `"seed": 1` forms of the same one-step
 `pair_audio` workflow, warning present then absent. The `pair_audio` form no
 longer warns as of #247 (it's task-only, see S-F069); the probe is now a
 one-step `StableDiffusionPipeline` workflow (proposed and verified in #297).
+
+absorbs: S-F069 (merged 2026-11-26, suite review)
+- S-F069: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via provider `anthropic` — the `qr_code` form validated with `warnings: []`; the `StableDiffusionPipeline` form validated with the no-seed warning present.
 
 ### S-F018 — the other three workflow objects are closed too
 The `step`, `task`, `pipeline_reference` and `workflow_reference` objects' schema
@@ -498,7 +562,7 @@ and does not after.
 Amended 2026-11-20 (dkackman/harnest#271, approved by Don): the legal root set gains
 `presets` (#1203) and `host_ram_gb` (#1227).
 
-### S-F019 — an input asset's own duration/fps/sample_rate is readable before a run
+### S-F019 — an input asset's own duration/fps/sample_rate, or an image's measured size, is readable before a run, and `include_workflow=false` drops the embedded workflow
 A workflow's `total_frames`, `fps` and `sample_rate` are arguments the *caller*
 supplies, and they are properties of the assets being passed in. If they cannot
 be read, they are guessed, and a wrong guess is discovered as a failed job or as
@@ -517,6 +581,14 @@ that names **every asset root it searched** (the workspace's own library,
 `common/assets`, the examples library) — not a path under `outputs/`. (d)
 Counter-case: `get_gallery_metadata(name="asset:../../../../etc/passwd")` is
 refused as an invalid asset *name*, before any lookup.
+Image arm (#922): asking "how big is this image" must not take reading the pipeline's
+arguments out of ~20 KB of embedded workflow. Read-only, no GPU. Two calls:
+(e) `get_gallery_metadata(name="asset:qa-cast/hal-portrait.jpg", include_workflow=false)`;
+(f) the same call without `include_workflow`.
+- (e): `media` is `{kind: "image", width: 768, height: 768, mode: "RGB"}`. `metadata` has
+  `workflow_omitted: true` and no `workflow` key, and still carries `step_name`, `seed` and
+  `arguments`.
+- (f): the same `media`, and `metadata.workflow` is present (the default is unchanged).
 It is a **finding** if an `asset:` reference resolves against the outputs root
 again (the original bug: the prefix was echoed into an outputs path verbatim, so
 the error read as a missing file rather than an unsupported reference form), if
@@ -524,9 +596,15 @@ the error read as a missing file rather than an unsupported reference form), if
 a media asset, or if (d) resolves to anything at all — that last one is a
 containment escape and belongs in `regression-suite-security.md`'s territory, so
 report it there as well.
+In the image arm it is a **finding** if `media` is null or has no `width`/`height` for an
+image, or if (e) still inlines `metadata.workflow`.
 cleanup: none (read-only).
+metrics: none.
 source: tester, verified in #127 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic`, workspace `qa-ep9`, dw 0.4.0-beta.3.
+
+absorbs: S-F142 (merged 2026-11-26, suite review)
+- S-F142: tester, verified in #922 on 2026-10-15 over MCP as model `claude-opus-5-5` via provider `anthropic` against `develop @ 4a79cb35` on `lem` (cuda).
 
 ### S-F020 — a `succeeded` image job never hands back a blank frame unannounced
 A job that reports `succeeded` with a populated manifest, a real file and no
@@ -581,7 +659,7 @@ source: regression agent, found on 2026-09-13 during the final sweep as model
 cleanup path every other case's `cleanup:` line depends on being able to reach —
 the same reason S-F014 is here.
 
-### S-F022 — `delete_output` reports the sweep, and a run directory is addressable and contained
+### S-F022 — `delete_output` reports the sweep, and a run directory is addressable and contained, including a run that failed before writing any media
 S-F021 measures the *outcome* — the workspace returning to the size it was. This
 case pins the two pieces of API surface #134's fix added to get there, which
 S-F021 would not notice the loss of: `delete_output`'s `run_swept` field, and the
@@ -610,9 +688,39 @@ expected:
 The last two are the reason this is not folded into S-F021: the addressable-run
 form is a recursive delete taking a caller-supplied path, and what makes it safe
 is that it refuses everything that is not exactly a run directory.
+Failed-run arm — a run that failed before writing any media is still deletable by its run
+name. The bullets above exercise the `<workflow>/<run id>` form only against runs that
+*did* write media. A run that fails before writing media is the one shape the form exists
+for: such a run leaves a run directory containing only `manifest.json` and
+`workflow.json`, no media file names it, and no other call can address it. If the form
+decays into "404 unless a media file names it", those directories accumulate with no way
+to reach them and every later sweep is wrong about what a workspace holds.
+Two fast runtime failures that reliably write nothing are known; the pipeline one is already
+run by S-F005(c)/S-F005, the task one is built here from one upload.
+- **Failed-run arm, from a failed pipeline run.** Take S-F005(c)/S-F005's 383x383 SD 1.5
+  job (fails in ~2.5 s on "`height` and `width` have to be divisible by 8",
+  `manifest: []`). Note its `run_id`, then `delete_output(name="<workflow id>/<run id>")`
+  → `deleted: true` and `run_swept` equal to that run id.
+- **Failed-run arm, from a failed task run.** `upload_asset` a few bytes of plain text
+  under a valid audio name, `sf034-not-audio.wav`, then run an inline one-step
+  `resample_audio` workflow on `asset:sf034-not-audio.wav` with `target_sample_rate: 16000`
+  → it passes pre-flight (name and rate are valid; only the task can see the content),
+  queues, and fails at the task layer with `manifest: []`. Delete it the same way →
+  `deleted: true`, `run_swept` the run id. Two different failure layers, because a form
+  wired only into the pipeline path would pass the pipeline bullet alone.
+- **Failed-run arm, the delete is the assertion.** Either call answering "not found", or
+  answering `deleted: true` with `run_swept: null`, is the finding — the second more
+  quietly, since it says the directory was left behind.
+- **Failed-run arm, and it actually went.** `list_workspaces()` reports this workspace's
+  `usage.files` down by exactly 2 per swept run (the two sidecars). A `deleted: true` that
+  does not move `usage` is the same finding as a refusal.
 cleanup: the case deletes its own runs as its assertions — nothing is left. If a
 probe's refusal unexpectedly succeeded, whatever it removed is gone and that is
-the finding.
+the finding. The failed-run arm has no run cleanup of its own — it *is* the cleanup those
+two failed runs would otherwise need, and it leaves nothing behind. `delete_asset` of
+`sf034-not-audio.wav`.
+metrics: none. The timings above are context for recognising the failures, not figures to
+log; S-P001 already tracks this box's SD 1.5 latency.
 source: tester, model `opus` via provider `anthropic`, verified in #134 on
 2026-09-13 against dw 0.4.0-beta.3 on `lem`, workspace `qa-ep10` (four jobs run
 and swept by the two forms; `usage` returned to 4 files / 6,138 bytes exactly).
@@ -624,6 +732,9 @@ reworded per #322 to the exact refusal strings #310's fix settled on (`cc0c710`,
 2026-09-22): the containment and not-a-run-id refusals no longer echo the `..`
 pattern or a resolved path, so the wording pins the two message suffixes
 observed over MCP instead.
+
+absorbs: S-F034 (merged 2026-11-26, suite review)
+- S-F034: regression agent, model `opus` via provider `anthropic`, found on 2026-09-16 while running S-F005 and C-F076 against dw 0.4.0-beta.4 on `lem`, workspace `regression-smoke`. Both halves were run: job `e4e35b833f56` (383x383, run `20260916-004532-c9a15679`) and job `2168c7a24782` (`target_sample_rate` 0, run `20260916-005157-1a7e0a0c`), each swept by its `<workflow>/<run id>` name with `run_swept` matching, and the workspace measured back to its pre-run 47 files / 43,135 bytes afterwards. Added at smoke level for the same reason S-F014, S-F021 and S-F022 are here: it is the cleanup path every other case's `cleanup:` line depends on being able to reach. Written as a new case rather than a bullet on S-F022, which no agent may edit.
 
 ### S-F025 — an `asset:` reference nested inside a list entry is resolved at validate
 `validate_workflow`'s argument pass must reach references that sit *inside* a
@@ -835,100 +946,6 @@ when approving the fix, as the list-entry variant of the existing #96 case. The 
 bullet is mine: the implementer's hand-off proposed only the single-entry 61/130 pair,
 which cannot tell a correct index from a hardcoded one.
 
-### S-F033 — a file the server named can be named back to it, and a name it refuses says which character
-A `for_each` step names its members `step@entry`, and the files it writes carry that `@`.
-Those names come back from `job.manifest`, `list_gallery` and `get_gallery_metadata`
-verbatim — but for a while feeding one back as an `output:` reference was rejected as
-malformed (#162), so a whole class of files the server itself had named could not be
-referenced by the language meant to consume them. Every list-driven template is affected,
-since `for_each` is how they all work, and the workaround was a re-render or an
-`upload_asset` round trip. The second half is the message: the refusal described a
-correctly-spelled name and never mentioned `@`, so the cause was only findable by
-bisecting against a sibling file.
-This case is the round trip — *what the server wrote, the server accepts* — plus the two
-edges of the widened grammar, so a future tightening of the pattern can't quietly take
-`@` back out and can't loosen into traversal either. Cheap: one `pair_audio` mux (no
-model load, a few seconds) and three free validate calls.
-expected:
-- **The round trip runs.** Take a `shot@<entry>` file name out of a list-driven run's
-  `job.manifest` **verbatim**, pass it as `output:<that name>` to a `pair_audio` step's
-  `video` (any audio from the same run as `audio`) → `validate_workflow` `valid: true`
-  with a `plan`, and `run_workflow` **`succeeded`** with a file in the manifest. Do not
-  retype or normalize the name; copying it from the manifest is the whole point. No GPU
-  needed if a prior run's files are still on the box — pick any run whose files a
-  `list_gallery` shows.
-- **A malformed name is refused in the free call, and names the character.**
-  `validate_workflow` on an inline workflow carrying `output:tpl/ru n/x.mp4` →
-  `valid: false`, error path **`steps[0].task.arguments.video`**, message naming the
-  offending character *and its position* (`' ' (position 6) is not a character this kind
-  of name may contain`). Two separate failures if either half is missing: a name that can
-  never resolve rejected only after the job is queued is a failure even though the job
-  fails (`validate_workflow` passed this exact workflow before the fix), and a message
-  that merely describes the correct form without naming its objection is the second.
-- **`@` is mid-segment only.** A *leading* `@` — `.../intermediate/@shot.mp4` →
-  `valid: false`, `segment '@shot.mp4' starts with '@', and every segment must start with
-  a letter, digit or underscore`. The widening admitted one character inside a segment; it
-  did not make `@` free.
-- **Shape first, then existence.** A well-formed `shot@no_such_entry...` name that is not
-  on disk, written inline in a step or as a declared variable's default → `valid: false`,
-  one error at the reference's own path (`steps[0].task.arguments.video`, or
-  `variables.<name>`), saying the output was not found. Since #494 validate checks that
-  references written into a step exist, not just caller `arguments`. The point kept from
-  the old bullet: a not-found error is distinct from the shape errors in the two bullets
-  above, and a malformed name gets the shape message, never not-found. (Amended per
-  harnest#28, dw#532: Don, 2026-09-27, 0.5.0 release.)
-Traversal in the same reference form is SE-F028, in the security suite, where a boundary
-escape belongs.
-cleanup: delete the run directory the mux wrote (`delete_output` on the run id); the three
-validate calls write nothing.
-source: tester, model `opus` via provider `anthropic`, verified in #162 on 2026-09-14
-against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep15` (round trip = job `2557decd9852`).
-First two bullets proposed by the implementer in its hand-off; the third and fourth are
-mine, from adjacent probes run at verification.
-
-### S-F034 — a run that failed before writing any media is still deletable by its run name
-S-F022 pins the `<workflow>/<run id>` delete form, but could only exercise it against
-runs that *did* write media — its own source note says the failed-job-with-no-media case
-"could not be provoked" from the consumer side, two attempts at a fast runtime failure
-having succeeded instead. That is the one shape the form exists for: such a run leaves a
-run directory containing only `manifest.json` and `workflow.json`, no media file names
-it, and no other call can address it. If the form decays into "404 unless a media file
-names it", those directories accumulate with no way to reach them and every later sweep
-is wrong about what a workspace holds.
-Two fast runtime failures that reliably write nothing are known; the pipeline one is already
-run by S-F005(c)/S-F011, the task one is built here from one upload.
-expected:
-- **From a failed pipeline run.** Take S-F005(c)/S-F011's 383x383 SD 1.5 job (fails in
-  ~2.5 s on "`height` and `width` have to be divisible by 8", `manifest: []`). Note its
-  `run_id`, then `delete_output(name="<workflow id>/<run id>")` → `deleted: true` and
-  `run_swept` equal to that run id.
-- **From a failed task run.** `upload_asset` a few bytes of plain text under a valid
-  audio name, `sf034-not-audio.wav`, then run an inline one-step `resample_audio`
-  workflow on `asset:sf034-not-audio.wav` with `target_sample_rate: 16000` → it passes
-  pre-flight (name and rate are valid; only the task can see the content), queues, and
-  fails at the task layer with `manifest: []`. Delete it the same way → `deleted: true`,
-  `run_swept` the run id. Two different failure layers, because a form wired
-  only into the pipeline path would pass the first bullet alone.
-- **The delete is the assertion.** Either call answering "not found", or answering
-  `deleted: true` with `run_swept: null`, is the finding — the second more quietly, since
-  it says the directory was left behind.
-- **And it actually went.** `list_workspaces()` reports this workspace's `usage.files`
-  down by exactly 2 per swept run (the two sidecars). A `deleted: true` that does not move
-  `usage` is the same finding as a refusal.
-cleanup: none of its own — the case *is* the cleanup those two cases would otherwise have
-to do, and it leaves nothing behind. `delete_asset` of `sf034-not-audio.wav`.
-metrics: none. The timings above are context for recognising the failures, not figures to
-log; S-P001 already tracks this box's SD 1.5 latency.
-source: regression agent, model `opus` via provider `anthropic`, found on 2026-09-16 while
-running S-F005 and C-F076 against dw 0.4.0-beta.4 on `lem`, workspace `regression-smoke`.
-Both halves were run: job `e4e35b833f56` (383x383, run `20260916-004532-c9a15679`) and job
-`2168c7a24782` (`target_sample_rate` 0, run `20260916-005157-1a7e0a0c`), each swept by its
-`<workflow>/<run id>` name with `run_swept` matching, and the workspace measured back to
-its pre-run 47 files / 43,135 bytes afterwards. Added at smoke level for the same reason
-S-F014, S-F021 and S-F022 are here: it is the cleanup path every other case's `cleanup:`
-line depends on being able to reach. Written as a new case rather than a bullet on S-F022,
-which no agent may edit.
-
 ### S-F035 — a stored default that cannot resolve is caught by the free pre-flight, not by the run
 `validate_workflow` is documented as the pre-flight you always run before
 `run_workflow`, and its own description promises a valid answer says "whether it
@@ -1042,7 +1059,7 @@ control rests on, and a hole in it is silent — a `valid: true` with a plan loo
 exactly like a healthy one right up until the run burns the budget.
 
 ### S-F038 — a media-less run directory is enumerable and deletable by name
-S-F034 pins that a run which wrote no media can still be *deleted* by its
+S-F022 pins that a run which wrote no media can still be *deleted* by its
 `<workflow>/<run id>` name — but only while you still hold that name from the job
 you just ran. Nothing enumerated the ones already on disk, so a workspace could
 report files in `list_workspaces().usage` that no listing call would name and no
@@ -1074,7 +1091,7 @@ expected:
   finding.
 - Assert on the orphan listing's own `total`, not on `list_workspaces().usage` —
   #177 (verified) was `usage` lagging a delete; asserting on the listing's own
-  `total` keeps this case independent of it. S-F021 and S-F034 are where `usage` is held to account.
+  `total` keeps this case independent of it. S-F021 and S-F022 are where `usage` is held to account.
 cleanup: it is cleanup — each run it deletes is litter by definition. Delete only
 what the orphan listing named, one run is enough to prove the round trip, and never
 in a workspace outside this suite's own.
@@ -1158,29 +1175,6 @@ metrics: none.
 source: tester, model `opus` via provider `anthropic`, verified in #222 on 2026-09-18
 against dw `0.4.0-beta.6` (develop `a516b12`) on `lem`: python 3.12.3, torch
 2.14.0+cu130, cuda 13.0, driver 580.173.02, diffusers 0.41.0.dev0 on both tools.
-
-### S-F069 — the no-seed warning is scoped to workflows that have something to seed
-S-F016 checks the warning fires on an unseeded workflow with a pipeline-shaped step;
-this is the other half. A workflow built only of `task` steps has no generative
-randomness — regeneration is deterministic and free — so asking it for a `seed` is
-noise, and a consumer that takes every warning seriously adds a meaningless key or
-stops trusting the warning list (#247). Free and instant — no run.
-expected: `validate_workflow` on an inline workflow with **no top-level `seed`**
-whose only step is a task (`{"name": "qr", "task": {"command": "qr_code",
-"arguments": {"qr_code_contents": "https://example.com"}}, "result":
-{"content_type": "image/png", "file_base_name": "qr", "subfolder": "final"}}`)
-→ `valid: true` and `warnings: []` — in particular no "sets no 'seed'" entry.
-Control: the same call with that step replaced by a one-step `pipeline`
-(`configuration.component_type: StableDiffusionPipeline`, any `model_name`, no seed)
-→ `valid: true` **with** the S-F016 warning, so the gate did not simply switch the
-warning off.
-It becomes a **finding** if the task-only form warns about `seed`, if the pipeline
-control stops warning (that is S-F016's finding too), or if `valid` flips to `false`
-on either.
-cleanup: none (read-only).
-source: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via
-provider `anthropic` — the `qr_code` form validated with `warnings: []`; the
-`StableDiffusionPipeline` form validated with the no-seed warning present.
 
 ### S-F070 — a text-only run is visible to `list_gallery`, and its `.txt` is the run's media
 A run whose only output is a `.txt` (`transcribe-audio`, `expand-prompt`, any `text`-shape
@@ -1308,7 +1302,7 @@ from the last `phase` event in `get_job_events`, or if `seconds_in_phase` grows 
 (one from before a server restart) showing no `progress` is not a finding — there is nothing
 to derive it from.
 cleanup: `delete_output(name="<workflow id>/<run id>")` for both runs (each leaves only the
-two sidecars, S-F034's shape), or delete the case's workspace.
+two sidecars, S-F022's shape), or delete the case's workspace.
 metrics: none.
 source: tester, verified in #269 on 2026-09-21 over MCP as model `opus` via provider
 `anthropic`, dw 0.4.0-beta.6 on `lem`: job `19fa559e8158` OOM'd at `at: 6.3` after
@@ -1527,37 +1521,6 @@ added after running it on 2026-09-21 over MCP as model `opus` via provider `anth
 `cfa6fb531220`, mid-run reads at `age_seconds` 1.8 and 8.4 with `reason: "job_running"`
 and `info` populated; `memory` events at seq 8/11/39/41/60 after `cached`/`generating`/
 `decoding`/`saving`/post-run, reserved 4088 → 6376 → 13316 MB across them).
-
-### S-F101 — a single-saving-step template's deliverable is marked `final`, so `list_gallery(subfolder="final")` finds it
-#302: C-F071 guards the two sequence templates #235 fixed, but the `final` convention had
-never reached any *other* one-saving-step template — every LTX-2.5 template and the general
-single-shot ones (`text-to-image`, …) shipped `"subfolder": ""`, so the documented "list
-only deliverables" pattern returned nothing for them. The dw repo's own test now covers
-1+ saving steps; this is the consumer-side guard that the convention holds catalog-wide,
-checked on the cheapest template rather than the LTX-2.5 one the issue was filed against
-(the fix is one sweep, so one template stands for the class). Reuse S-F003's run if it is
-still present rather than generating again.
-1. Run `templates/text-to-image` in this suite's workspace (defaults); `wait_for_job` (or
-   `run_workflow(..., wait_seconds=55)`).
-2. `list_gallery(workspace=<this suite's workspace>, subfolder="final")`.
-expected:
-- Step 1: the job succeeds; its one manifest entry (step `main`) has `"subfolder":
-  "final"` and its file name reads `templates/text-to-image/<run id>/final/<file>.jpg` —
-  the `final/` segment present in the name, not just the field.
-- Step 2: that file is listed with `subfolder: "final"` and `folder:
-  templates/text-to-image`.
-- The regression is: the manifest entry back to `"subfolder": ""`, a name without the
-  `final/` segment, or the `final` filter not listing the file.
-cleanup: delete the run (`delete_output(job_id=<id>)`) unless S-F003's cleanup already
-covers it.
-metrics: none.
-source: tester, verified in #302 (implementer proposed the case in its hand-off comment;
-added after running it on 2026-09-21 over MCP as model `opus` via provider `anthropic`
-against `develop @ d5e3725`, in workspace `qa-verify-302`: `templates/text-to-image` job
-`1692848b00f8` → `templates/text-to-image/20260922-033453-b3b4bd77/final/test_image-0.0.jpg`,
-and the issue's own family `templates/ltx2/text-to-video` (`num_frames: 25`) job
-`61c44d8f7b66` → `.../20260922-033214-a189631c/final/LTX2-text_to_video.0-0.0.mp4`;
-`list_gallery(subfolder="final")` returned exactly those two).
 
 ### S-F106 — on the mounted server, moving the session pin off a non-default workspace warns that the pin is shared, and `create_workspace(use=true)` lands for its own caller
 #298: the mounted `/mcp` surface has one workspace pin for every connected client, so
@@ -1834,10 +1797,23 @@ relative and sat behind the server's bearer token, which the agent can't attach.
 no delete tool reaches. Since #592/#595 the zip route is ungated like `/outputs`, so
 `export_job`'s `auth_required` is `false` even on a server whose `get_server_info` reports
 `auth_required: true`. The two fields answer different questions: zip gated vs server has a
-token. Cheap: one ~1 s utility job, no model load.
+token. Cheap: one ~1 s utility job, no model load, plus the token arm's own task-only job of about
+a second.
 Workflow: the S-F114 inline `resample_audio` on `asset:qa-cast/ep11-bed.wav`. Validate it,
 then `run_workflow(..., workspace="regression-smoke", acknowledged_cost=<plan>,
 wait_seconds=55)` → `succeeded`. Its output name is `<name>`.
+Token arm (#592): `/exports/<id>.zip` is ungated by design, like `/outputs`, but `export_job`
+set `auth_required` from whether the *server* has a token. On a token-bearing server it then
+told the agent "do NOT fetch it; hand open_url to the person". This arm checks that the field
+now reports the zip URL's own gating and that `next` tells the agent to fetch. Use workspace
+`regression-smoke`.
+T1. `get_server_info`. Record `auth_required`. lem has a token (`true` on 2026-10-05). If it
+   reads `false`, the server has no token: run the arm anyway, but report that the token arm
+   wasn't exercised, so the run proves nothing about #592.
+T2. `run_workflow(inline_workflow=W, wait_seconds=55)` with W =
+   `{"id": "c-f180-export", "steps": [{"name": "qr", "task": {"command": "qr_code", "arguments": {"qr_code_contents": "c-f180", "width": 256, "height": 256}}, "result": {"content_type": "image/png", "file_base_name": "qr"}}]}`.
+   It must succeed. Then `get_job` on it, for the manifest.
+T3. `export_job(job_id=<T2's job>)`.
 expected:
 - The **served tool descriptions** (the schemas as loaded):
   - `export_job`'s says `open_url` needs no token and to fetch it, with handing `open_url`
@@ -1858,15 +1834,38 @@ expected:
 - `download_output(name=<name>, destination="outputs/regsmoke-f118/r1/")` → `saved_to`
   ends in `outputs/regsmoke-f118/r1/<file>`, bytes > 0. After that,
   `delete_output(name="regsmoke-f118/r1/<file>")` → `deleted: true`.
+- Token arm: T3 succeeds with `auth_required: false`, even though T1 read `true`.
+- Token arm: `open_url` is either relative and exactly
+  `/exports/<job id>.zip?workspace=regression-smoke`, or absolute (when the server sets a
+  public URL) and ending in that same path and query. `zip_url` names the same
+  `/exports/<job id>.zip`.
+- Token arm: `next` tells the agent to fetch `open_url` itself, with whatever HTTP it has.
+  When `open_url` is relative, `next` says to prefix the server address the agent reaches it
+  at. `next` says to unpack the zip into `exports/` under the working directory, and keeps
+  the warning not to create the job-id folder first. Hand-over wording is allowed only as the
+  fallback for an agent that can't make HTTP requests.
+- Token arm: `next` does **not** tell the agent to hand `open_url` to the person as the
+  normal path, and does not say "do NOT fetch".
+- Token arm: `files` lists the PNG from the manifest under `<job id>/outputs/`. Every file
+  the manifest names for this job appears under `<job id>/outputs/`. `total_bytes` is a
+  positive number.
 It is a **finding** if `auth_required` is `true` while the zip opens without a token, if
 `next` or the description says "do not fetch" while `auth_required` is `false`, or if
 `download_output`'s description tells the agent to omit `destination`.
 `export_job.auth_required: false` beside `get_server_info.auth_required: true` is not a
-finding (C-F180). It is also a finding if `absolute_zip_url` comes back as `null`, or
+finding (the token arm). It is also a finding if `absolute_zip_url` comes back as `null`, or
 if the no-destination call succeeds, wherever the file lands.
+In the token arm it is a **finding** if `auth_required` is `true` on a token-bearing server,
+or if `next` still steers the agent away from fetching. That is #592.
+Not checked over MCP: a token-less GET of `open_url` returning that zip. A consumer agent has
+no HTTP client. The plan makes `tests/test_server_exports.py` (token configured →
+`auth_required` false → unauthenticated GET 200) the required check for that pairing. Say in
+the report that the fetch arm was covered by that test, not by this case. A session that does
+have HTTP may GET `open_url` without a token and expect a 200 zip whose entries match `files`.
 cleanup: `delete_output(job_id=<job>)`, plus the downloaded copy as above. The export
 directory (`exports/<job id>`, a few KB) stays on the server because no MCP tool removes
-exports.
+exports. Token arm: `delete_output(job_id=…)` for T2's job. Also delete what `export_job`
+wrote, if a tool can reach its directory. If none can, say so in the report and leave it.
 metrics: none.
 source: tester, verified in #353 on 2026-09-23 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 4aaeef7` (export of `ef9c0e9cc3ff` and a
@@ -1875,6 +1874,9 @@ above; the DW_PUBLIC_URL-set path is untested, since that is server config).
 Amended 2026-11-20 (dkackman/harnest#270, approved by Don): the `export_job` expectations
 follow #592/#595, which made `auth_required` report the zip route's own gating; they were
 written for #353 and contradicted C-F180.
+
+absorbs: C-F180 (merged 2026-11-26, suite review)
+- C-F180: tester, spec for #595 from #592's plan v2 (claude-opus-5-5 via anthropic)
 
 ### S-F119 — gallery reads take an `output:`-prefixed name, and `list_gallery(media=true)` carries duration
 You need one audio or video output in the workspace. S-F007's final wav works if you run
@@ -2425,21 +2427,31 @@ metrics: none.
 source: tester, verified in #913 on 2026-10-14 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 9dfb9e6c` on `lem` (cuda).
 
-### S-F141 — a job kept as a shared asset survives its workspace's deletion
+### S-F141 — a job kept as a shared asset, and the shared copy itself, survive the workspace's deletion
 S-F140's forgetting must not reach a job whose output was kept with `keep_output(shared=true)`.
 The asset's metadata names that job, and `get_job_workflow` is how its workflow is recovered
 (#917). CPU only, about 5 s per run: `templates/relevel-clip` with `arguments={"clip":
 "asset:qa-cast/ep177-episode.mp4"}`, `acknowledged_cost=true`, `wait_seconds=55`, and
 `workspace="regression-smoke-917"` pinned.
+The kept copy itself is checked too. `keep_output` answers `linked: true`. A consumer relies
+on the shared copy being independent (the standing task deletes a workspace once its outputs
+are kept shared). If "linked" ever meant a symlink or a reference into the workspace,
+deleting the workspace would break every shared asset kept from it. C-F025 covers deleting a
+*workspace asset*; this covers deleting the whole *workspace*.
 1. `create_workspace("regression-smoke-917")`. Run job K, then job U with `target_lufs: -18`
-   (the control).
+   (the control). Read `get_gallery_metadata` on K's final mux file (the output step 2
+   keeps): note `frame_count`, `duration_seconds`.
 2. `keep_output(name=<K's final mux file>, asset_name="regression-smoke-917/kept.mp4",
    shared=true, workspace="regression-smoke-917")`.
 3. `delete_workspace("regression-smoke-917", acknowledged_cost=true)`.
 4. `get_gallery_metadata(name="asset:regression-smoke-917/kept.mp4")`, `get_job_workflow(K)`,
-   `get_job(K)` and `get_job(U)`.
+   `get_job(K)` and `get_job(U)`. Also, from another workspace (the kept-from one is
+   gone), `assess_output("asset:regression-smoke-917/kept.mp4")`.
 5. `create_workspace("regression-smoke-917")`, then `list_jobs(workspace="regression-smoke-917")`.
 expected:
+- Call 2 returns `shared: true` and the reference `asset:regression-smoke-917/kept.mp4`.
+- Call 4 reads the kept file: same `frame_count` and `duration_seconds` as step 1, a `media`
+  block, no "not found". `assess_output` runs on it.
 - Call 4: the metadata's `job.id` is K. `get_job_workflow(K)` returns `realized: false` with the
   ReLevelClip definition and `clip` folded into `variables`. `get_job(K)` answers with
   `historical: true` and `workspace: "regression-smoke-917 (deleted)"`. `get_job(U)` answers the
@@ -2447,28 +2459,15 @@ expected:
 - Call 5 returns `total: 0`.
 It is a **finding** if `get_job_workflow(K)`, `get_job(K)` or `get_job(U)` errors `Unknown job`,
 or if K shows up in the recreated workspace's listing.
-cleanup: `delete_asset("regression-smoke-917/kept.mp4")`, then
+cleanup: `delete_asset("regression-smoke-917/kept.mp4")` — with `shared=true`, or the tool's
+equivalent for a shared asset — then
 `delete_workspace("regression-smoke-917", acknowledged_cost=true)`.
 metrics: none.
 source: tester, verified in #917 on 2026-10-15 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 3fbe4ba6` on `lem` (cuda).
 
-### S-F142 — an image's `media` is its measured size, and `include_workflow=false` drops the embedded workflow
-Asking "how big is this image" must not take reading the pipeline's arguments out of ~20 KB of
-embedded workflow (#922). Read-only, no GPU.
-1. `get_gallery_metadata(name="asset:qa-cast/hal-portrait.jpg", include_workflow=false)`.
-2. The same call without `include_workflow`.
-expected:
-- Call 1: `media` is `{kind: "image", width: 768, height: 768, mode: "RGB"}`. `metadata` has
-  `workflow_omitted: true` and no `workflow` key, and still carries `step_name`, `seed` and
-  `arguments`.
-- Call 2: the same `media`, and `metadata.workflow` is present (the default is unchanged).
-It is a **finding** if `media` is null or has no `width`/`height` for an image, or if call 1
-still inlines `metadata.workflow`.
-cleanup: none.
-metrics: none.
-source: tester, verified in #922 on 2026-10-15 over MCP as model `claude-opus-5-5` via provider
-`anthropic` against `develop @ 4a79cb35` on `lem` (cuda).
+absorbs: C-F183 (merged 2026-11-26, suite review)
+- C-F183: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
 
 ### S-F143 — an `asset:` image in `gather_images` `urls` loads from disk, and `file://` and bare outside paths are still refused
 `gather_images` used to send every `urls` entry to the http fetcher, so an `asset:` reference
@@ -2499,14 +2498,27 @@ metrics: none.
 source: tester, verified in #1201 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ f25446b4` on `mini-ai` (mps).
 
-### S-F144 — a `result.file_base_name` an `output:` name can't hold is refused at validate, and an accepted one round-trips
-S-F033 is the reading side, where a name the server wrote can be named back to it. This case
-is the writing side. A `file_base_name` once accepted characters the `output:` grammar
+### S-F144 — a `result.file_base_name` an `output:` name can't hold is refused at validate, an accepted one round-trips, a file the server named can be named back to it, and a name it refuses says which character
+The reading-side arm below is the reading side, where a name the server wrote can be named
+back to it. The first four bullets are the writing side. A `file_base_name` once accepted characters the `output:` grammar
 refuses, such as a space or `#` (#1249). The run succeeded and wrote a file that nothing
 except `delete_output` could reference afterwards. The two sides must follow one rule.
 Cheap: free validate calls plus one `stills_to_video` run of one still, with no model load.
 Any small image asset works for `images`. `asset:uploads/spider-halloween/spider.webp` is the
 one used at verification.
+Reading side (#162): a `for_each` step names its members `step@entry`, and the files it
+writes carry that `@`. Those names come back from `job.manifest`, `list_gallery` and
+`get_gallery_metadata` verbatim — but for a while feeding one back as an `output:` reference
+was rejected as malformed, so a whole class of files the server itself had named could not
+be referenced by the language meant to consume them. Every list-driven template is affected,
+since `for_each` is how they all work, and the workaround was a re-render or an
+`upload_asset` round trip. The second half is the message: the refusal described a
+correctly-spelled name and never mentioned `@`, so the cause was only findable by
+bisecting against a sibling file.
+The reading-side arm is the round trip — *what the server wrote, the server accepts* — plus
+the two edges of the widened grammar, so a future tightening of the pattern can't quietly
+take `@` back out and can't loosen into traversal either. Cheap: one `pair_audio` mux (no
+model load, a few seconds) and three free validate calls.
 expected:
 - `validate_workflow` on a one-step `stills_to_video` (`durations: 2`, `fps: 12`) whose
   `result` is `{"content_type": "video/mp4", "file_base_name": "src a#1"}` → `valid: false`,
@@ -2521,12 +2533,46 @@ expected:
   The file name copied verbatim from `job.manifest`, passed as `output:<name>` in a later
   `validate_workflow`'s `arguments` for a declared variable, comes back `valid: true` with
   that variable in `checked_arguments`.
+- **Reading side: the round trip runs.** Take a `shot@<entry>` file name out of a
+  list-driven run's `job.manifest` **verbatim**, pass it as `output:<that name>` to a
+  `pair_audio` step's `video` (any audio from the same run as `audio`) → `validate_workflow`
+  `valid: true` with a `plan`, and `run_workflow` **`succeeded`** with a file in the
+  manifest. Do not retype or normalize the name; copying it from the manifest is the whole
+  point. No GPU needed if a prior run's files are still on the box — pick any run whose
+  files a `list_gallery` shows.
+- **Reading side: a malformed name is refused in the free call, and names the character.**
+  `validate_workflow` on an inline workflow carrying `output:tpl/ru n/x.mp4` →
+  `valid: false`, error path **`steps[0].task.arguments.video`**, message naming the
+  offending character *and its position* (`' ' (position 6) is not a character this kind
+  of name may contain`). Two separate failures if either half is missing: a name that can
+  never resolve rejected only after the job is queued is a failure even though the job
+  fails (`validate_workflow` passed this exact workflow before the fix), and a message
+  that merely describes the correct form without naming its objection is the second.
+- **Reading side: `@` is mid-segment only.** A *leading* `@` —
+  `.../intermediate/@shot.mp4` → `valid: false`, `segment '@shot.mp4' starts with '@', and
+  every segment must start with a letter, digit or underscore`. The widening admitted one
+  character inside a segment; it did not make `@` free.
+- **Reading side: shape first, then existence.** A well-formed `shot@no_such_entry...` name
+  that is not on disk, written inline in a step or as a declared variable's default →
+  `valid: false`, one error at the reference's own path (`steps[0].task.arguments.video`, or
+  `variables.<name>`), saying the output was not found. Since #494 validate checks that
+  references written into a step exist, not just caller `arguments`. The point kept from
+  the old bullet: a not-found error is distinct from the shape errors in the two bullets
+  above, and a malformed name gets the shape message, never not-found. (Amended per
+  harnest#28, dw#532: Don, 2026-09-27, 0.5.0 release.)
+Traversal in the same reference form is SE-F028, in the security suite, where a boundary
+escape belongs.
 It is a **finding** if any refused name passes validate, or if the accepted name's file
 can't be referenced.
 cleanup: `delete_output(job_id=…)` for the round-trip run. The validate calls write nothing.
+Reading side: delete the run directory the mux wrote (`delete_output` on the run id); the
+three validate calls write nothing.
 metrics: none.
 source: tester, verified in #1249 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 6db8d963` on `mini-ai` (mps), round trip = job `b9768b53d145`.
+
+absorbs: S-F033 (merged 2026-11-26, suite review)
+- S-F033: tester, model `opus` via provider `anthropic`, verified in #162 on 2026-09-14 against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep15` (round trip = job `2557decd9852`). First two bullets proposed by the implementer in its hand-off; the third and fourth are mine, from adjacent probes run at verification.
 
 ### S-F145 — an object or list sent to a bool-typed variable is refused, not folded to `true`
 The bool counterpart of S-F128 and S-F108. A variable's type comes from its default, and a
@@ -2557,7 +2603,7 @@ metrics: none.
 source: tester, verified in #1250 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 6db8d963` on `mini-ai` (mps).
 
-### S-F146 — an omitted voice reference is refused as required, never as a missing `voice.wav`
+### S-F146 — an omitted, empty or null voice reference is refused at validate as required, never as a missing `voice.wav`
 The three voice-cloning templates declare `reference_audio` as required with no default. They
 used to default it to `asset:voice.wav`, so an omitted reference failed only because that file
 was missing. Any stray `voice.wav` asset would then have cloned a voice nobody chose (#1253).
@@ -2570,6 +2616,13 @@ Free: no job is queued.
    "reference_text": "Some words.", "reference_audio": ""})`.
 3. `get_workflow("templates/voice-clone", variables_only=true)`, and
    `list_workflows(shape="audio")`.
+4. After the #1384 probe (#1386). Free: `validate_workflow` only, in workspace
+   `regression-smoke`. On `templates/voice-clone`, with `text` the template default and
+   `seed` 1: (4a) no `reference_audio` argument at all; (4b) `reference_audio` = `""`;
+   (4c) `reference_audio` = `null`.
+5. If `list_workflows` lists the probe's bench workflow (`narration-reference-ab`), repeat 4a
+   and 4b on it, with the reference variable it declares.
+6. `get_workflow("templates/voice-clone")`, and `list_jobs(workspace="regression-smoke")`.
 expected:
 - Step 1: `valid: false` for each template. The error names `reference_audio` and says it is
   required and has no default. Today's message begins `'reference_audio' is required and has no
@@ -2577,6 +2630,14 @@ expected:
 - Step 2: still refused at `arguments.reference_audio` as empty (the #1209 rule).
 - Step 3: the stored `reference_audio` is `null`, with `required: true` under `constraints`.
   The compact listing shows `required` in the `reference_audio` rule for all three templates.
+- Step 4: each of 4a, 4b and 4c is refused at validate, before anything queues, and the
+  message names `reference_audio` (today's reason: "give an asset: reference of the voice to
+  clone (at most 20 s) together with its reference_text").
+- Step 5: the same holds for the bench workflow if it is listed. A bench workflow that
+  silently falls back to a default voice when the reference is missing is a **finding**.
+- Step 6: `get_workflow("templates/voice-clone")` still declares `reference_audio` with
+  `required: true` and `min_length: 1`. `list_jobs(workspace="regression-smoke")` shows no
+  job from this case.
 It is a **finding** if any template in step 1 validates, or refuses only because an asset is
 missing, because a stray `voice.wav` would then clone that voice. It is also a finding if any of
 the three shows a stored default for `reference_audio`.
@@ -2584,6 +2645,9 @@ cleanup: none. Nothing is queued or written.
 metrics: none.
 source: tester, verified in #1253 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ ab29dfdb` on `mini-ai` (mps).
+
+absorbs: C-F921 (merged 2026-11-26, suite review)
+- C-F921: tester, spec for #1386 from #1384's plan v2 (claude-opus-5-5 via anthropic)
 
 ### S-F147 — an H3 video reference shorter than the encoder's minimum is refused at validate
 An H3 `MiniMaxH3VideoReference` must run a minimum number of frames, which comes from
@@ -2648,28 +2712,11 @@ baseline: TBD — the log is the baseline; when a human sets one, cold and warm
 get separate ceilings.
 cleanup: as S-F003.
 
-### S-P002 — workspace listing/probe latency
-Time S-F006 (listing/probing a workspace with a handful of assets already in
-it). Consumer-side wall clock (`condition: wall`) — a sub-second call's
-figure is almost entirely agent turnaround between two `date` readings, so
-this is only meaningful as a "nothing pathological" ceiling.
-baseline: 5 s wall — a ceiling, not a target; anything under it is a pass.
-cleanup: as S-F006.
-
 ### S-P003 — tool/template discovery latency
 Time S-F002 (the tools/templates list call), cold — i.e. as the first call of
 the run, before anything else warms up server-side caches. Consumer-side wall
-clock (`condition: wall`), same caveat as S-P002; no cold server-side penalty
+clock (`condition: wall`), same caveat as S-F006; no cold server-side penalty
 has been seen to date (the same call later in a run is indistinguishable), so
 a real one appearing is worth a note even under the noise band.
 baseline: TBD — the log is the baseline.
 cleanup: none (read-only).
-
-### S-P004 — multi-step audio chain latency
-Time S-F007 (speech → trim → fade, three steps in one job) using the job's own
-`started_at`/`finished_at`, not wall clock. Bark-small loading is included
-and is most of the figure; the two audio tasks are sub-second. A reading
-whose speech inputs differ from S-F007's pinned ones is not comparable to the
-log - note it as such rather than filing it (#819).
-baseline: TBD — the log is the baseline.
-cleanup: as S-F007.
