@@ -12582,7 +12582,7 @@ Model/pipeline: every `templates/minimax-h3-image/*` entry (`text-to-image` at l
 on a host with more than ~70 GB of RAM the refusal doesn't apply: record the host and skip. Workspace `bench`.
 **Free**: validate only.
 Steps: `list_workflows(shape="image")` and `list_workflows(shape="image-edit")` to collect the
-`templates/minimax-h3-image/` names; `validate_workflow(name=<each>, workspace="bench")` at defaults.
+`templates/minimax-h3-image/` names; `validate_workflow(name=<each>, workspace="bench")` at defaults, except `multi-reference`: pass `images` as three references that resolve in `bench` (from `list_assets`, or uploaded first), since its default references are lem-only fixtures.
 expected:
 - Each: `valid: false`, refused (not only warned), with the error naming `host_ram_gb` (the template's declared 64
   plus the margin against the host's RAM). Nothing is queued.
