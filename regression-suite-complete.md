@@ -30907,8 +30907,7 @@ metrics: none.
 source: tester, spec for #1715 from #1689's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. **Web UI, black-box**, through `ui-check`, after the commit check in C-F1376. Let W be
 the cancelled chip's `color` and L the running chip's `background_color`, per theme, from C-F1376. In each theme:
-1. Open a catalog template with a required variable from the Workflows page, and open its run form (stub `**/api/jobs?**`
-   and `**/api/jobs` so nothing is queued). `inspect` a required-field marker.
+1. Open a workflow in the editor and select a step whose task has a required argument with no value set, so its arguments form shows a required-field marker (ArgumentsEditor/SchemaNode); `inspect` that marker.
 2. Open a workflow in the editor and type one character into its text, so it is unsaved; `inspect` the unsaved
    (dirty) marker in the tab or header.
 3. With `mock {url_glob: "**/api/validate**"}` from the real answer, add one warning to its warnings list (the
