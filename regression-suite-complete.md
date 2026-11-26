@@ -29866,7 +29866,7 @@ metrics: none.
 source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`, in `regression-complete`. Before the `goto`,
 `mock {url_glob: "**/api/gallery?**", set: {...}}` from the real answer, setting on three of the real files (any
-three, keep `name` and `url`): `files.0.label` and `files.0.note` to `"cf1670 red sports car"`; `files.1.label`
+three, keep `name` and `url`), choosing for `files.2` a real file whose `name` and `url` do not contain `re`: `files.0.label` and `files.0.note` to `"cf1670 red sports car"`; `files.1.label`
 and `.note` to `"cf1670 car painted red"`; `files.2.label` and `.note` to `"cf1670 blue car"`. If the page then
 shows none of the three for `cf1670`, its haystack holds neither label nor note: say so in the report and file
 nothing. **Word-filter sequence W** (C-F1325 to C-F1328 reuse it): `fill` the page's filter box with, in turn, and
