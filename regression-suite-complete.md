@@ -29950,7 +29950,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1330 — on Gallery and on Assets, Escape clears the picks, and does nothing with none
-pending: #1703
 source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 CPU task only, two tiny jobs. **Web UI, black-box**, through `ui-check`. **Setup S1670-GRID** (C-F1331 to C-F1333
 reuse it): in `regression-complete`, run twice, after `validate_workflow`, `{"id": "qa-c-f1330", "steps": [{"name":
@@ -29994,7 +29993,6 @@ cleanup: as C-F1330.
 metrics: none.
 
 ### C-F1332 — opening a file by its `open` hash scrolls it into view on Gallery and on Assets
-pending: #1703
 source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free past S1670-GRID. Web UI through `ui-check` at the default 1280x720. Find the hash form: on the Gallery,
 `inspect` GA's tile (by its label) and read the `open=` link in its `href`, or click it and read the URL the page
