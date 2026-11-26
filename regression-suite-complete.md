@@ -28618,7 +28618,6 @@ cleanup: C-F1533's.
 metrics: none.
 
 ### C-F1536 — `templates/minimax/dialogue-short` declares `first_at_shape` at 6.0 min over width, height, dtype and attention
-pending: #1764
 source: tester, spec for #1764 from #1615's plan v3 (claude-opus-5-5 via anthropic)
 
 Free.
@@ -28633,7 +28632,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1537 — on lem, a B3s `dialogue-short` quote carries the first-pass term only for shapes this card hasn't run
-pending: #1764
 source: tester, spec for #1764 from #1615's plan v3 (claude-opus-5-5 via anthropic)
 
 Free: `validate_workflow` only, on `lem` (cuda, one RTX 3090). Workspace `regression-complete`. The seen shapes are
