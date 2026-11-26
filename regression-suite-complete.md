@@ -174,7 +174,7 @@ smoke's Fixtures lists the asset too.
   `ep33-episode.mp4`'s length. Read-only — never sliced in place, never deleted.
 - `asset:qa-cast/ep11-bed.wav`, above, is also the base of C-F1315's swell score. Its quiet,
   fairly level body (−49.9 dBFS mean, −28.9 dBFS peak, 32 kHz mono, 472 frames at 24 fps) is
-  what makes a +24 dB, 0.25 s boost the one clear peak of its envelope. A substitute needs a
+  what makes a +40 dB, 0.25 s boost the one clear peak of its envelope. A substitute needs a
   quiet body with no bin within 12 dB of the boosted one, and at least 416 frames at 24 fps.
   `ep6-cold-open.mp4` + `ep3-shot2-reply.mp4` (248 frames together) with `ep20-score.wav`
   are C-F1313's cut and score, at `total_frames` 248 so the score never runs past its end.
@@ -29698,7 +29698,7 @@ score has one peak and nothing else in the mix competes with it.
 
 Setup (the swell score). Run, after `validate_workflow`, `{"id": "qa-c-f1315-swell-<YYYYMMDDHHMM>", "seed": 1,
 "steps": [{"name": "swell", "task": {"command": "gain_audio", "arguments": {"audio": "asset:qa-cast/ep11-bed.wav",
-"gain_db": 24, "start_seconds": 12.0, "duration_seconds": 0.25}}, "result": {"content_type": "audio/wav",
+"gain_db": 40, "start_seconds": 12.0, "duration_seconds": 0.25}}, "result": {"content_type": "audio/wav",
 "subfolder": "final", "file_base_name": "swell"}}]}` with `wait_seconds=55`. Call its file's `output:` reference
 `<swell>`. Read `get_gallery_metadata(name=<swell>, envelope=true, interval_seconds=0.25, include_workflow=false)`.
 Its loudest `rms_dbfs` bin must be bin 48 (12.0 s), at least 12 dB over every bin outside 47 to 49. If it isn't, the
