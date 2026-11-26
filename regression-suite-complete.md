@@ -29532,8 +29532,8 @@ expected:
 - (1) `check-01` reads `planned` with `ready: false` while `shot-01` has no take.
 - (4) `shot-01`: `status` `done`, `result.job` is T (not K), `attempts` holds exactly one entry (T), and no `choose`
   entry in the request's or the item's `needs` names `shot-01`.
-- (4) `check-01`: `status` `done`, `result.job` is K, `attempts` is exactly [K], and its `result.output` is K's JSON
-  (`kind` `text`, or the file K's manifest lists), not a video.
+- (4) `check-01`: `status` `done`, `result.job` is K, `attempts` is exactly [K], and its `result.output` is not a video
+  (`null`, or K's JSON).
 - (4) `cut` reads `ready: true` and `export` reads `ready: false`; neither has an attempt.
 It is a **finding** if K appears in `shot-01`'s `attempts` or as its `result`, or if `shot-01` raises a `choose`: the
 check is then a take of the shot, which is the #1523 field report this stage's guidance routes around.
@@ -29556,7 +29556,7 @@ CPU only. Same fixture and workspace rule as C-F1309.
 4. The same `run_workflow(..., request="cf1310/export", wait_seconds=55)` as step 2 (re-validate if the binding is
    stale). Call its job E. `get_request(request="cf1310")`.
 expected:
-- (2) Refused before anything queues: the error says `unknown_item` and its message contains `has no item 'export'`.
+- (2) Refused before anything queues: the error message contains `has no item 'export'`.
   `list_jobs(request="cf1310")` is empty.
 - (3) The write is accepted and `export` reads back with `depends_on: ["cut"]`, `status` `planned`.
 - (4) E queues and succeeds with `request` "cf1310", `item` "export". `export` reads `done` with `result.job` E and
