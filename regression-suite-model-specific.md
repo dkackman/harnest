@@ -2579,7 +2579,6 @@ concern.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 
 ### M-F073 — one lip-sync check round on a real two-singer `minimax/music-video` cut, timed by rule 1
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/music-video` (MiniMax H3), then `templates/attribute-lines` (Whisper, htdemucs,
 ECAPA) and `get_output_frames`. This case **rides on** a two-singer `music-video` render that the suite or an episode
@@ -2718,32 +2717,6 @@ metrics: `latency_s` (the whole job, from `get_job`). Record it in `regression-p
 with condition `t2va-124f-960x544-hold`. The first run seeds the file. Flag a reading more than
 50% over the median.
 
-### M-F077 — without `hold_audio`, a seed-42 t2va run matches the pre-#618 render
-pending: #618
-source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
-Plan decision D2: the hold/release blocks are always in the sequence and do nothing without
-`hold_audio`, so the output must be identical to before the stage. The reference is the fixture
-`asset:h3-hold/vwa-seed42-baseline.mp4` (see Fixtures), rendered before #618 deployed. If it is
-missing, record "fixture missing" and skip. That is a note for Don, not an issue.
-Steps:
-1. `run_workflow("templates/minimax/video-with-audio", arguments={"seed": 42},
-   acknowledged_cost=true, wait_seconds=55)`. Use the template's defaults otherwise, the same as
-   the fixture's. Then `wait_for_job` until it is done.
-2. `get_gallery_metadata` on both the output and the fixture.
-3. `get_output_frames` on both, at the same four moments (0.5 s, 1.7 s, 3.4 s, 5.0 s), with
-   `hear=1.0`.
-expected:
-- The same `frame_count`, size, duration and audio sample rate.
-- The frames are indistinguishable at all four moments: same composition, subject pose, colours
-  and background. The audio is the same sound at the same level (`mean_dbfs` within 0.5 dB).
-- Equal file `size` is expected. If the sizes differ but the frames and audio are
-  indistinguishable, record it as a note, not a finding.
-It is a **finding** if any moment's frame visibly differs (other composition, pose or colour), or
-the audio differs. The always-inserted blocks then changed the no-hold path.
-cleanup: `delete_output(job_id=<id>)`. Keep the fixture.
-metrics: none.
-
 ### M-F078 — `hold_audio` longer than the clip is cropped, shorter is padded with silence, and stereo 44.1 kHz is taken
 source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
@@ -2774,7 +2747,6 @@ cleanup: `delete_output(job_id=...)` for each job.
 metrics: none.
 
 ### M-F079 — `hold_audio` on ref2va keeps the reference image's identity, and on fl2va keeps the first frame
-pending: #618
 source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 ref2va (`templates/minimax/reference-to-video`, ref2v turbo LoRA) and
 fl2va (`templates/minimax/image-to-video`).
@@ -5025,49 +4997,6 @@ cleanup: `delete_output(job_id=...)` unless the gate (#1049) cites the job.
 metrics: `wall_minutes` and the decode's peak VRAM if the events report it, to
 `regression-perf/M-F176.jsonl` on each run.
 
-### M-F178 — `templates/minimax/tiled-refine-1080p` is listed with a measured cost, shows its variables and constraints, and the minimax-h3 skill says when to pick it
-pending: #1049
-source: tester, spec for #1049 from #1043's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the stage B template (H3 base → `upscale_h3_latents` 1920×1088 → tiled refine →
-`pair_audio`). Free.
-Steps:
-1. `list_workflows(shape="shot", traits="has-audio")`; find the entry.
-2. `get_workflow("templates/minimax/tiled-refine-1080p")` and with `variables_only=true`.
-3. `validate_workflow("templates/minimax/tiled-refine-1080p", workspace="regression-model-specific")`
-   at its defaults; then with `num_frames` 125 (off the 17n+5 grid) and 360 (over 345).
-4. Load the `dw:minimax-h3` skill and find the template's row.
-expected:
-- The entry has shape `shot`, trait `has-audio`, a non-null `cost` naming a device and minutes, and
-  `constraints` for `num_frames` (17n+5, 124–345).
-- `get_workflow` shows the variables, `cost_drivers` (at least `num_frames`), and the
-  `refine_tiles` step at 1920×1088 with the winning gate arm's base (544p or 768p).
-- Defaults validate clean with no VRAM warning. 125 snaps up or is refused per its constraint
-  (as `video-with-audio-768p`'s does), and 360 is refused, both at validate.
-- The skill's row names the template and says when to use it over the spandrel route and LTX
-  `upscale-clip` (arms (e), (f)), with its cost.
-It is a **finding** if the entry is missing or has no cost, the constraints are absent, the defaults
-fail validation, or the skill has no row.
-cleanup: none.
-metrics: none.
-
-### M-F179 — `tiled-refine-1080p` at its defaults runs to a 1920×1088 clip with base audio once
-pending: #1049
-source: tester, spec for #1049 from #1043's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/tiled-refine-1080p` (MiniMax H3, 768p turbo LoRA). GPU: its
-listed cost (~25–30 min per the plan); `wait_seconds=1500`.
-Steps, in workspace `regression-model-specific`: validate at defaults, `run_workflow(...,
-acknowledged_cost=..., wait_seconds=1500)` with `seed` 42, `wait_for_job` while running; `get_job`,
-`get_gallery_metadata` and `assess_output` on the final mp4.
-expected:
-- The job succeeds. The final mp4 is 1920×1088 at 24 fps with the template's default frame count,
-  and exactly one audio stream lasting the clip.
-- Wall time is within 25% of the template's listed `cost` (a cold model load stated).
-- `assess_output` raises no seam or silence flag.
-It is a **finding** if the run fails, the size, fps, frame count or audio differ, or the wall time is
-far outside the listed cost.
-cleanup: `delete_output(job_id=...)`.
-metrics: `wall_minutes`, to `regression-perf/M-F179.jsonl` on each run.
-
 ### M-F189 — the minimax-h3 skill links `references/style.md`, the file ships, and SKILL.md keeps its pinned lines
 source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job, no GPU. Invoke the `dw:minimax-h3` skill
@@ -5340,7 +5269,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### M-F220 — `templates/minimax/regional-edit` is listed as a shot that needs input media and has audio, and validates over an uploaded take and mask with an estimate
-pending: #1078
 source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the stage B template (MiniMax H3 t2va regional edit). Free.
 Setup: M-F215 (masks). Workspace `regression-model-specific`.
@@ -5368,7 +5296,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F221 — the `minimax-h3` skill has a "fix one region of a good take" branch that covers the mask, `refine_strength` and the grain
-pending: #1078
 source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3` skill (consumer surface), as loaded from `develop`. Free.
 Steps: load the `dw:minimax-h3` skill. Find the branch for fixing one region of a good take.
@@ -8723,32 +8650,6 @@ templates' `cost`.
 cleanup: none.
 metrics: none.
 
-### M-F429 — the #1438 flag is proven to reach the scheduler: the blend-only refusal, a flag-only reload and the realized scheduler block, lem's diffusers build, and each checkpoint's `euler_update_form`
-pending: #1459
-source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 video and MiniMax-H3-Image on lem (cuda), workspace `bench`. **Free**: reads only.
-Steps: `get_job(workspace="bench")` and `get_job_events(workspace="bench")` on the fail-fast job the record names and on
-one flagged arm (V1); `get_job_workflow` on the fail-fast job and on V1; `get_diffusers_state()`; the record as quoted on #1459/#1438.
-expected:
-- A fail-fast job exists whose scheduler `from_config_args` has `stochastic_sampling` `true` and `euler_update_form`
-  `"velocity"`. Its status is `failed`, and its error (in `get_job` or `get_job_events`) names the requirement that
-  stochastic sampling needs the `"blend"` form. A fail-fast job that `completed`, or failed for another reason (OOM, a
-  missing file), is a finding: it does not prove the key reached `__init__`.
-- The flag reached the scheduler, shown by all three together (the `Loading scheduler` line is only in lem's
-  journal, not in `get_job_events`; dkackman/diffusers-workflow#1487 would forward it): the fail-fast job above is
-  refused at construction; V1 `get_job` reports `load_cached: false` after a run that changed only the flag; and
-  `get_job_workflow` on V1 shows `scheduler` with `configuration.scheduler_type` `MiniMaxH3Scheduler` and
-  `from_config_args` carrying `stochastic_sampling` and `euler_update_form`.
-- The record quotes a `get_diffusers_state` taken before the first arm, and says the build's `MiniMaxH3Scheduler` has
-  the flag. Every arm ran on that one build (today's state is context only).
-- The record states each checkpoint's `euler_update_form` (H3 video, H3-Image) as read on lem, and what each arm had to
-  change. The arm split follows from it: V0b exists **iff** the video checkpoint is `"velocity"`; where H3-Image is
-  `"velocity"` and I2 ran, I1 (blend only) ran too.
-It is a **finding** if the refusal is missing or for the wrong reason, the flag-only run is `load_cached: true` or its realized scheduler block lacks the flag, the build is not
-quoted, or the arm split contradicts the stated forms.
-cleanup: none.
-metrics: none.
-
 ### M-F446 — an FL2V LoRA on the hybrid step is still refused at validate by the partition rule, and the ref2va turbo is still clean there
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the hybrid workflow from `get_job_workflow(<hybrid job>)` (the hybrid job id is in
@@ -8994,7 +8895,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F483 — a `switch_step` out of range is refused at validate by its own rule, before the flag check
-pending: #1570
 source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
 M-F478. The legal range is read as 0..S, S being the run's denoise passes, `num_inference_steps - 1` on H3: 0 is the
