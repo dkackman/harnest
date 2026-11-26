@@ -25123,7 +25123,6 @@ on both assets.
 metrics: none.
 
 ### C-F1331 — a picked file deleted elsewhere drops from the picks, and a filter-hidden pick is kept, on both pages
-pending: #1703
 source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 CPU task only. S1670-GRID, plus setup S1536-BG (C-F1233). The plan keeps each page's rule for which files count toward an `open=` link: the Gallery checks it against all its files, Assets against the files it shows. Picks share one rule on both pages: a filter-hidden pick is kept but not counted, and counts again when the filter shows it.
 1. Gallery: spec `goto` Gallery; `fill` `cf1670`; pick both; `wait_text` "1 selected" or the bar's count reading 1
@@ -25162,7 +25161,6 @@ cleanup: none (C-F1333's cleanup covers the setup).
 metrics: none.
 
 ### C-F1333 — Assets keeps its sections, their order, and its paging
-pending: #1703
 source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free past S1670-GRID. Web UI through `ui-check`. The Assets page's explainer says the workspace's own assets come
 first, then the shared ones its workflows name; the sort toggle is `Name` / `Newest` (pinned 2026-11-25). Spec on
