@@ -30443,7 +30443,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1353 — `templates/text-to-image` declares `width` and `height` at 512, and takes them at validate
-pending: #1710
 source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Before the stage, `validate_workflow(name="templates/text-to-image", arguments={"width":768},
 workspace="regression-complete")` refused `arguments.width` as an unknown variable (declared: `num_images_per_prompt`,
@@ -30468,7 +30467,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1354 — SD 1.5 at defaults still renders 512x512; `width=768 height=512` renders 768x512
-pending: #1710
 source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 GPU, the cheapest image template (SD 1.5). Workspace `regression-complete`. `validate_workflow` each call first and
 pass its `acknowledged_cost`.
@@ -30487,7 +30485,6 @@ cleanup: `delete_output(job_id=<id>)` for each of the three jobs.
 metrics: none.
 
 ### C-F1355 — an SD 1.5 size off the pipeline's grid is refused at validate, or what happens is recorded
-pending: #1710
 source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free at validate; one cheap SD 1.5 run only in the fallback arm. Workspace `regression-complete`.
 1. `validate_workflow(name="templates/text-to-image", arguments={"width":500,"seed":1234})` (500 is not a multiple of 8).
@@ -30511,7 +30508,6 @@ cleanup: `delete_output(job_id=<id>)` for the fallback run, if one was made.
 metrics: none.
 
 ### C-F1356 — every `text_to_image` ladder target declares the contract's required variables, and the declines are what the plan says
-pending: #1710
 source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. The defaults file itself has no MCP surface until #1626 (its pins are pytest); this checks the same
 contract from the outside, on each target's declared variables. Ladder (plan v2): draft `templates/text-to-image`;
@@ -30539,7 +30535,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1357 — the workflows guide has a *Default preferences* section with the file, the contract and the placement rule
-pending: #1710
 source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_guides()`; then `get_guide("workflows")` (the index) and `get_guide("workflows", section=<the section
 whose title names default preferences>)`.
