@@ -29727,7 +29727,6 @@ only: leave it.
 metrics: none.
 
 ### C-F1316 — a workflow's page reads only its own folder, newest six, and shows no other folder's file
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`. Workspace `regression-complete` (routes are hash routes:
 `/#/ws/<workspace>/<page>`, pinned 2026-11-25). Pick folder F: a folder in `regression-complete` whose
@@ -29748,7 +29747,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1317 — a workflow's page with fewer than six outputs, or none, shows what it has and the empty state
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check`, as in C-F1316. Pick G: a folder with 1 to 5 files that has a workflow page
 (`templates/ltx2/text-to-video` held 1 on 2026-11-25). Pick E: a catalog workflow whose
@@ -29767,7 +29765,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1318 — Compare with 2 and with 4 files from one folder makes one listing read and shows each file and note
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check`. Use F from C-F1316 (7+ files). Reach Compare the way the Gallery offers it:
 on the Gallery page, filter to F's folder (or find F's tiles), pick two of F's files and use the page's Compare
@@ -29787,7 +29784,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1319 — Compare over two folders makes one read per folder, however the names are split
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1318 (same URL form). Folders F (C-F1316) and G (C-F1317, or any other folder with a
 file). Visits: {F1, G1}; {F1, F2, G1} (three names, two folders); {G1, F1, F2, G1′} if G has a second file, else
@@ -29801,7 +29797,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1320 — Compare shows the missing-file state for a gone file and for a folder that no longer exists
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1318. Visits, each with one real file F1 from F:
 1. {F1, `<F>/<F1's run id>/final/cf1670-no-such-file.png`} (the folder exists, the file doesn't);
@@ -29818,7 +29813,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1321 — Compare with fewer than two names makes no listing read
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1318. Visits: Compare's URL with one name (F1); with none (the names part empty or
 left out, whichever the URL form allows). `record **/api/gallery**` before each `goto`; `wait_text` any visible text
@@ -29833,7 +29827,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1322 — a note changed over MCP shows on the Workflow page and in Compare within one feed interval, re-read narrow
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check` with setup S1536-BG (C-F1233: runner in the background, the MCP write made
 while its last `wait_text` waits). File X: F's newest file (in C-F1316's strip). Note its current note N0.
@@ -29851,7 +29844,6 @@ cleanup: `set_note(target=<X>, note=<N0>, workspace="regression-complete")` (or 
 metrics: none.
 
 ### C-F1323 — the Gallery page still reads and shows the whole listing
-pending: #1701
 source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI through `ui-check`. Stage A changes `api.gallery`'s call shape and keeps today's for the
 whole-listing callers; this checks the Gallery is still one. Spec: `record **/api/gallery**`; `goto
