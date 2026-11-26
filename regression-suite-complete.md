@@ -28687,4 +28687,30 @@ so the implementer confirms it.
 cleanup: none. Nothing is queued.
 metrics: none.
 
+### C-F1538 — a seedless parent's drawn seed reruns to the same child still, and a literal child seed still wins
+source: tester, verified in #1642 (plan v2 acceptance 7 and Q5; claude-opus-5-5 via anthropic)
+GPU: four short z-image jobs, about 30 s each. Workspace `regression-complete`. `models/z-image` declares `seed: 42`.
+Before #1642's Q5 engine change, a null parent seed handed the child nothing, so it ran at 42, and a rerun at the
+recorded seed made a different still. Each inline run is validated first, and `acknowledged_cost` is taken from that
+validate. Every run uses `wait_seconds=55`. Z(seed) = one step `{"name": "img", "workflow": {"path":
+"models/z-image.json", "arguments": {"prompt": "a lighthouse", "seed": seed, "num_images_per_prompt": 1,
+"num_inference_steps": 4, "width": 512, "height": 320}}, "result": {"content_type": "image/jpeg", "embed_metadata":
+true}}`.
+1. Seedless run: `run_workflow(inline_workflow={"id": "zz-seed-a", "seed": "variable:seed", "variables": {"seed": null},
+   "steps": [Z("variable:seed")]})`. Then `get_job_workflow` it to get the drawn seed S, and `get_gallery_metadata` its
+   still.
+2. `rerun_job(<step 1 job>, acknowledged_cost=...)`. The first call's refusal names the fingerprint to re-acknowledge,
+   because the rerun pins S. Then call `get_gallery_metadata` on the still, and `compare_outputs` it against step 1's.
+3. Literal child seed: an inline parent with `"variables": {"seed": 9}` and step Z(5). Control: an inline parent with
+   `"variables": {"seed": 5}` and step Z("variable:seed"). `compare_outputs` the two stills.
+expected:
+1. Step 1: `get_job_workflow` shows the drawn seed S, which is not null and not 42. The still's embedded `seed` is S.
+2. Step 2: the rerun's `arguments` carry `seed: S`. Its still's embedded seed is S, and `compare_outputs` scores it
+   identical to step 1's. A different still, or 42 on either child, is a **finding**: the run's record doesn't
+   reproduce it.
+3. Step 3: the two stills are identical, so the literal 5 won over the parent's 9. A difference is a **finding**. This
+   arm judges pixels only: the literal run's embedded seed is tracked in #1765.
+cleanup: `delete_output(job_id=<id>)` for all four jobs.
+metrics: none.
+
 ## Performance
