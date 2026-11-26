@@ -31942,7 +31942,6 @@ cleanup: DELETE `qa_args`; `delete_output(job_id=...)` for both jobs.
 metrics: none.
 
 ### C-F1423 — `templates/preferred/text-to-image` is in the catalog: prompt, seed, width, height and a `tier` preset over one `preference:text_to_image` step
-pending: #1724
 source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Before the stage, `get_workflow(name="templates/preferred/text-to-image")` answered "Unknown workflow ...
 did you mean one of: templates/flux3/text-to-image, templates/minimax-h3-image/text-to-image, templates/text-to-image":
@@ -31962,7 +31961,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1424 — validating the template resolves `preference:text_to_image` per tier: default standard, draft is SD 1.5
-pending: #1724
 source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Workspace `regression-complete` on every call. Shipped ladder (#1626 plan v2, C-F1406): draft
 `templates/text-to-image`; standard `models/z-image`, `models/z-image-sdnq`; best `models/minimax-h3-image` (cuda only),
@@ -31989,7 +31987,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1425 — the template refuses a tier outside `draft | standard | best`, and queues nothing
-pending: #1724
 source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 Free. Workspace `regression-complete`.
 1. `validate_workflow(workflow="templates/preferred/text-to-image", arguments={"prompt": "a lighthouse", "tier": T})` for
@@ -32007,7 +32004,6 @@ cleanup: cancel and `delete_output` the job if 2 queued one against the expectat
 metrics: none.
 
 ### C-F1426 — a run of the template makes one image, on the resolved target, pinned in the job
-pending: #1724
 source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 GPU: one SD 1.5 image and one z-image image. Workspace `regression-complete`. `validate_workflow` each run first with the
 same arguments and pass its `acknowledged_cost`.
@@ -32024,7 +32020,6 @@ cleanup: `delete_output(job_id=<id>)` for both jobs.
 metrics: none.
 
 ### C-F1427 — `get_guide("agent-rules")` has a *Choosing a model* section naming the `choosing-a-model` skill
-pending: #1724
 source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 Free. Before the stage the guide's `sections` were `FLUX 3 Klein`, `MiniMax H3`, `Longer than one clip`.
 1. `get_guide("agent-rules")` (the index); then `get_guide("agent-rules", section="Choosing a model")`.
@@ -32044,7 +32039,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1428 — the `dw:choosing-a-model` skill routes a no-family request to the preference, a smoke test to SD 1.5, and a named workflow past both
-pending: #1724
 source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 Free. A reading of the plugin skill as loaded in the session (plugin skills load from `develop`), plus read-only MCP calls.
 1. Find `dw:choosing-a-model` in the session's skill list; read its description. Load it with the `Skill` tool.
