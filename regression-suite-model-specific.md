@@ -12621,7 +12621,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F505 — the `minimax-h3-image` skill's mps rule matches the #1680 record: pre-quantized folders and the bench workflow, or CUDA only with the measured reason
-pending: #1730
 source: tester, spec for #1730 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3-image` plugin skill (as loaded from `develop`), against M-F504's record. **Free**:
 reading the skill and the record's quote.
@@ -12646,7 +12645,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F506 — after #1680, no H3-Image mps statement says "untested" or "by rule"; ACCELERATION.md and the template README carry the measured result
-pending: #1730
 source: tester, spec for #1730 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3-image` skill, `docs/ACCELERATION.md` (its H3-Image row), and
 `workflows/templates/minimax-h3-image/README.md`. **Free**: reads only.
@@ -12665,7 +12663,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F507 — after #1680's skill change, `get_server_info`'s `plugin` still reports the `minimax-h3-image` skill current
-pending: #1730
 source: tester, spec for #1730 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3-image` plugin skill. **Free**: one read.
 Steps: `get_server_info()`; read `plugin.current_from`; read the release the loaded skill states it was written for.
