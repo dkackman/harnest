@@ -30400,7 +30400,7 @@ Docs review:
   `ui/scripts/arch-metrics.mjs`, `ui/scripts/arch-metrics.test.ts`, `ui/src/lib/freshness.test.ts` and the docs line,
   plus any source file fix 1 had to fix (named in the hand-off). Any other file is a **finding**.
 Over MCP and the UI (the tester runs these):
-- `get_server_info()` answers, and the commit it reports contains the stage's merge.
+- `get_server_info()` answers; the driver-reported develop commit for lem contains the stage's merge.
 - `ui-check` with `[{"step":"goto","path":"/"},{"step":"wait_text","regex":".+","timeout_ms":15000},
   {"step":"goto","path":"/#/ws/default/gallery"},{"step":"wait_text","regex":".+","timeout_ms":15000}]` reports every step `ok`
   and no `page_errors`.
