@@ -31771,17 +31771,16 @@ Free, no GPU. Workspace `regression-complete`. Templates T and their portrait st
 Templates that need a variable with no default (`required: true` under `constraints`, e.g. a voice or a song) get the
 cheapest fixture that satisfies it (`asset:qa-cast/priya-voice.wav` for a voice, `asset:qa-cast/ep15-song.mp3` for a song).
 1. `get_workflow(name=T, variables_only=true)` and `get_workflow(name=T)` for each T.
-2. `validate_workflow(name=T, arguments={...})` with no tier, then `"tier": "draft"`, then `"tier": "best"`.
+2. `validate_workflow(name=T, arguments={...})` with no tier; for a T that declares `tier` (`dialogue-short`, `music-video`), then `"tier": "draft"`, then `"tier": "best"`.
 expected:
 - 1: each declares `portrait_workflow: "preference:text_to_image"`. Each portrait step is `{"workflow": {"path":
   "variable:portrait_workflow", "arguments": {...}}}` passing `prompt`, `seed: "variable:seed"`,
   `num_images_per_prompt: 1`, `width`/`height` 768x768 (960x544 in storyboard) and `tier: "standard"`. No inline
   Z-Image pipeline (a `pipeline` block with a literal `num_inference_steps: 9`) remains in any portrait step.
   `dialogue-short`'s second portrait step still carries `release_pipeline: true` on the composing step.
-- 2: `valid: true` each time. Every portrait step has its own resolution line `preference:text_to_image (tier standard) ->
-  models/z-image` (one line per step, or one line naming every portrait step), under all three run tiers. A portrait line
-  saying `tier draft` or `tier best` is a **finding** (Q4: portraits pin standard).
-- The run's `tier` still drives the H3 step: the plan's estimate or H3 settings differ between `draft` and `best`.
+- 2: `valid: true` each time. Exactly one resolution line `preference:text_to_image (tier standard) -> models/z-image` for the plan, whatever the number of portrait steps,
+  under every run tier tried. A portrait line saying `tier draft` or `tier best` is a **finding** (Q4: portraits pin standard).
+- For `dialogue-short` and `music-video`, the run's `tier` still drives the H3 step: the plan's estimate or H3 settings differ between `draft` and `best`.
 cleanup: none.
 metrics: none.
 
