@@ -26810,7 +26810,6 @@ cleanup: `delete_output(job_id=<id>)` for all four jobs.
 metrics: none.
 
 ### C-F1436 — the workflow guide's composition section states the pass-through convention
-pending: #1726
 source: tester, spec for #1726 from #1642's plan v1 (claude-opus-5-5 via anthropic)
 Free. Before the stage `get_guide("workflows", section="Composing a stored workflow")` (a `###` under "Authoring a
 workflow from an agent") covered path resolution, where the composed output is saved, and validation's
