@@ -1,0 +1,156 @@
+{
+ "id": "SE-F022",
+ "level": "security",
+ "title": "documented input caps refuse at validation, not after",
+ "note": "The runner cannot build 'one more entry than the cap' from a number it reads, so the for_each is written out at 33 entries, one more than the 32 the prose records, and step 1 is a guard on that fixture: if the schema's cap moves, step 1 fails with a readable message and this file needs the new count. (b), the run_workflow, is only for a server that let (a) through; a failed step 2 is that finding, and it is not sent.",
+ "steps": [
+  {
+   "label": "the schema documents for_each.maxItems as 32",
+   "call": "get_schema",
+   "args": {
+    "section": "steps"
+   },
+   "expect": [
+    {
+     "path": "schema.$defs.step.properties.for_each.maxItems",
+     "eq": 32
+    }
+   ]
+  },
+  {
+   "label": "(a) a for_each of 33 entries is refused at validation, at the for_each path",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-se-f022",
+     "steps": [
+      {
+       "name": "t",
+       "for_each": [
+        {
+         "name": "e01"
+        },
+        {
+         "name": "e02"
+        },
+        {
+         "name": "e03"
+        },
+        {
+         "name": "e04"
+        },
+        {
+         "name": "e05"
+        },
+        {
+         "name": "e06"
+        },
+        {
+         "name": "e07"
+        },
+        {
+         "name": "e08"
+        },
+        {
+         "name": "e09"
+        },
+        {
+         "name": "e10"
+        },
+        {
+         "name": "e11"
+        },
+        {
+         "name": "e12"
+        },
+        {
+         "name": "e13"
+        },
+        {
+         "name": "e14"
+        },
+        {
+         "name": "e15"
+        },
+        {
+         "name": "e16"
+        },
+        {
+         "name": "e17"
+        },
+        {
+         "name": "e18"
+        },
+        {
+         "name": "e19"
+        },
+        {
+         "name": "e20"
+        },
+        {
+         "name": "e21"
+        },
+        {
+         "name": "e22"
+        },
+        {
+         "name": "e23"
+        },
+        {
+         "name": "e24"
+        },
+        {
+         "name": "e25"
+        },
+        {
+         "name": "e26"
+        },
+        {
+         "name": "e27"
+        },
+        {
+         "name": "e28"
+        },
+        {
+         "name": "e29"
+        },
+        {
+         "name": "e30"
+        },
+        {
+         "name": "e31"
+        },
+        {
+         "name": "e32"
+        },
+        {
+         "name": "e33"
+        }
+       ],
+       "task": {
+        "command": "compose_text",
+        "arguments": {
+         "parts": [
+          "item:name"
+         ]
+        }
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].for_each\""
+     ]
+    }
+   ]
+  }
+ ]
+}

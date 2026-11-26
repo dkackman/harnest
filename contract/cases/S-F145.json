@@ -2,7 +2,7 @@
  "id": "S-F145",
  "level": "smoke",
  "title": "an object or list sent to a bool-typed variable is refused, not folded to true",
- "note": "<img> is the common asset qa-cast/priya-portrait.jpg. run.py cannot compare two steps' answers: run_workflow's 'the same message' is asserted by pinning today's message whole in steps 1 and 3, and 'no new job in list_jobs' by giving the run a note only this case uses and asserting no listed job carries it. Step 3 sends acknowledged_cost=true as the prose does: if the refusal ever regresses, this step queues a real GPU job.",
+ "note": "<img> is the common asset qa-cast/priya-portrait.jpg. Step 1 pins today's message whole; run_workflow's 'the same message' is step 1's own answer, captured there. 'No new job in list_jobs' is the job total unchanged across the run_workflow call, and no listed job carrying the note only this case uses: a job another session queues in that second fails the total while the note check still passes. Step 3 sends acknowledged_cost=true as the prose does: if the refusal ever regresses, this step queues a real GPU job (the runner cancels it).",
  "steps": [
   {
    "label": "step 1: an object is refused at arguments.look_hold",
@@ -34,7 +34,10 @@
      "path": "errors[0].message",
      "eq": "Cannot convert variable 'look_hold' value {'precompensate': True} to type bool: this variable is typed bool by its default and takes true or false, not an object or list"
     }
-   ]
+   ],
+   "capture": {
+    "refusal": "errors[0].message"
+   }
   },
   {
    "label": "step 2: a list is refused at arguments.look_hold",
@@ -74,6 +77,16 @@
    ]
   },
   {
+   "label": "step 3, before: the job total",
+   "call": "list_jobs",
+   "args": {
+    "limit": 1
+   },
+   "capture": {
+    "jobs_before": "total"
+   }
+  },
+  {
    "label": "step 3: run_workflow refuses before queueing, same message, no job_id",
    "call": "run_workflow",
    "args": {
@@ -98,7 +111,7 @@
      "path": "",
      "contains": [
       "Error executing tool run_workflow",
-      "arguments.look_hold: Cannot convert variable 'look_hold' value {'precompensate': True} to type bool: this variable is typed bool by its default and takes true or false, not an object or list"
+      "arguments.look_hold: ${refusal}"
      ]
     },
     {
@@ -108,12 +121,16 @@
    ]
   },
   {
-   "label": "step 3: no job carrying this case's note is listed",
+   "label": "step 3: no new job, and none carrying this case's note",
    "call": "list_jobs",
    "args": {
     "limit": 20
    },
    "expect": [
+    {
+     "path": "total",
+     "eq": "${jobs_before}"
+    },
     {
      "path": "jobs",
      "exists": true

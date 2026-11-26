@@ -1,0 +1,152 @@
+{
+ "id": "C-F615",
+ "level": "complete",
+ "title": "the catalog lists video-to-sound-effects and text-to-sound-effect as audio, the video one needing input media, both stating the licences",
+ "note": "'No usable default' for VTS's clip is asserted as behaviour: the bare template is refused at a variable. 'P's description asks for the on-screen sound sources' is that phrase in the template's description, where the template says it today. 'Outputs the stem and the muxed clip' is an audio result, a video result, and a step that consumes an earlier step's result. 'Research purposes only' passes as that or as 'research only'. The notice is C-F614's sentence. list_workflows takes no workspace=, so the four spec-time entries (one of them, parhelion-score, is a workspace's own) are read in whatever workspace the runner's session lands in: `default` when this was drafted.",
+ "steps": [
+  {
+   "label": "1: both are listed as audio, beside the four spec-time entries",
+   "call": "list_workflows",
+   "args": {
+    "shape": "audio"
+   },
+   "expect": [
+    {
+     "path": "workflows",
+     "contains": [
+      "templates/video-to-sound-effects",
+      "templates/text-to-sound-effect",
+      "parhelion-score",
+      "templates/generate-speech",
+      "templates/minimax/music",
+      "templates/voice-clone"
+     ]
+    },
+    {
+     "path": "details[\"templates/video-to-sound-effects\"].shape",
+     "eq": "audio"
+    },
+    {
+     "path": "details[\"templates/text-to-sound-effect\"].shape",
+     "eq": "audio"
+    },
+    {
+     "path": "details[\"templates/video-to-sound-effects\"].traits",
+     "contains": "needs-input-media"
+    }
+   ]
+  },
+  {
+   "label": "1: only the video one needs input media",
+   "call": "list_workflows",
+   "args": {
+    "shape": "audio",
+    "traits": "needs-input-media"
+   },
+   "expect": [
+    {
+     "path": "workflows",
+     "contains": "templates/video-to-sound-effects"
+    },
+    {
+     "path": "workflows",
+     "not_contains": "templates/text-to-sound-effect"
+    }
+   ]
+  },
+  {
+   "label": "2: VTS is generate_sound_effects, outputs the stem and the muxed clip, states the licences",
+   "call": "get_workflow",
+   "args": {
+    "name": "templates/video-to-sound-effects"
+   },
+   "expect": [
+    {
+     "path": "steps[0].task.command",
+     "eq": "generate_sound_effects"
+    },
+    {
+     "path": "variables.prompt",
+     "exists": true
+    },
+    {
+     "path": "description",
+     "contains": [
+      "on-screen sound sources",
+      "CC-BY-NC 4.0",
+      "Apple Machine Learning Research Model License",
+      "Apple Machine Learning Research Model is licensed under the Apple Machine Learning Research Model License Agreement."
+     ]
+    },
+    {
+     "path": "description",
+     "contains_any": [
+      "research purposes only",
+      "research only"
+     ]
+    },
+    {
+     "path": "steps[*].result.content_type",
+     "any_contains": "audio/"
+    },
+    {
+     "path": "steps[*].result.content_type",
+     "any_contains": "video/"
+    },
+    {
+     "path": "steps[*].task.arguments",
+     "any_contains": "previous_result:"
+    }
+   ]
+  },
+  {
+   "label": "2: VTS has no usable default clip",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/video-to-sound-effects"
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors[*].path",
+     "any_contains": "variables."
+    }
+   ]
+  },
+  {
+   "label": "2: TXS is generate_sound_effects, takes a prompt, states the licences",
+   "call": "get_workflow",
+   "args": {
+    "name": "templates/text-to-sound-effect"
+   },
+   "expect": [
+    {
+     "path": "steps[0].task.command",
+     "eq": "generate_sound_effects"
+    },
+    {
+     "path": "variables.prompt",
+     "exists": true
+    },
+    {
+     "path": "description",
+     "contains": [
+      "CC-BY-NC 4.0",
+      "Apple Machine Learning Research Model License",
+      "Apple Machine Learning Research Model is licensed under the Apple Machine Learning Research Model License Agreement."
+     ]
+    },
+    {
+     "path": "description",
+     "contains_any": [
+      "research purposes only",
+      "research only"
+     ]
+    }
+   ]
+  }
+ ]
+}

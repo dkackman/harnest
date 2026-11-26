@@ -1485,6 +1485,7 @@ judged. Control: SE-F009's `https://huggingface.co/encode` still validates clean
 for reasons SE-F009 already accepts). If it doesn't, the rule is over-broad, and that is a
 finding.
 cleanup: none (validation only).
+runner: script
 
 ### SE-F036 — a redirect is re-checked on every hop, so a public URL can't bounce the fetch inside the box
 source: tester, spec for #411 from #407's plan v2
@@ -1636,6 +1637,7 @@ escape — and this file's own "What belongs here" puts that in
 `smoke`/`complete`, not here. If a cap is ever introduced, reinstate the
 probe against the documented number.
 cleanup: `cancel_job` anything enqueued; delete outputs.
+runner: script
 source: harness, initial security suite 2026-09-13.
 
 ### SE-F023 — a sub-workflow `path` can't escape the workflow sources

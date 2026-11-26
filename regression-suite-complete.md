@@ -7909,6 +7909,7 @@ error doesn't name the parameter or its range, or if a boundary value is refused
 a finding if a non-numeric string validates (#657), or the `variable:` reference is refused
 as if it were a literal.
 cleanup: none (no job should exist; if one does, `delete_output(job_id=…)` and file it).
+runner: script
 metrics: none.
 
 absorbs: C-F329 (merged 2026-11-26, suite review)
@@ -15033,6 +15034,7 @@ It is a **finding** if either template is missing or mis-shaped, VTS lacks `need
 a default clip, VTS doesn't output both the stem and the muxed clip, or a description lacks a licence
 or the notice.
 cleanup: none.
+runner: script
 metrics: none.
 amended: 2026-11-26, suite review: inlined the four spec-time audio entries from C-F612, which is retired; nothing else changed.
 
@@ -19087,6 +19089,7 @@ expected:
 - The 12-file limit is not probed here: the plan names it but not which inputs count as files. Probe it only if the
   template's description says which inputs count.
 cleanup: none.
+runner: script
 metrics: none.
 
 ### C-F916 — an unseeded cut renders with the workflow `seed`, and a seeded cut with its own

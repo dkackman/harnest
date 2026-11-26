@@ -1,0 +1,263 @@
+{
+ "id": "C-F915",
+ "level": "complete",
+ "title": "replace-performer refuses more references than the ref2va class allows at validate, and accepts up to the limit",
+ "note": "C-F883's call 2 with only `references` changed; the catalog name is templates/minimax/replace-performer. The typed reference is repeated, which validate accepts. 'Not refused for the reference count' is: no error at the path where the ten-reference call reported the count refusal (captured there, not written here). `valid` is not asserted for nine and seven: on lem the nine-reference call is refused for projected VRAM, at another path, which the prose allows. 'No job from this case' is the workspace's job total unchanged from before the first call to after the last: a job another session queues in regression-complete meanwhile would fail it.",
+ "steps": [
+  {
+   "call": "list_jobs",
+   "args": {
+    "workspace": "regression-complete",
+    "limit": 1
+   },
+   "label": "before: the workspace's job total",
+   "capture": {
+    "jobs_before": "total"
+   }
+  },
+  {
+   "label": "1: ten image references are refused at validate, naming references and the limit of 9",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "name": "templates/minimax/replace-performer",
+    "arguments": {
+     "source_video": "asset:qa-cast/ep49-episode.mp4",
+     "mask_video": "asset:qa-cast/ep49-episode.mp4",
+     "cuts": [
+      {
+       "name": "cut-1",
+       "start_frame": 0,
+       "num_frames": 124,
+       "render_frames": 124
+      },
+      {
+       "name": "cut-2",
+       "start_frame": 124,
+       "num_frames": 124,
+       "render_frames": 124
+      }
+     ],
+     "references": [
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      }
+     ],
+     "prompt": "a man speaks to camera",
+     "seed": 7
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "reference",
+      "9"
+     ]
+    }
+   ],
+   "capture": {
+    "count_error": "errors[0].path"
+   }
+  },
+  {
+   "label": "2: nine are not refused for the count",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "name": "templates/minimax/replace-performer",
+    "arguments": {
+     "source_video": "asset:qa-cast/ep49-episode.mp4",
+     "mask_video": "asset:qa-cast/ep49-episode.mp4",
+     "cuts": [
+      {
+       "name": "cut-1",
+       "start_frame": 0,
+       "num_frames": 124,
+       "render_frames": 124
+      },
+      {
+       "name": "cut-2",
+       "start_frame": 124,
+       "num_frames": 124,
+       "render_frames": 124
+      }
+     ],
+     "references": [
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      }
+     ],
+     "prompt": "a man speaks to camera",
+     "seed": 7
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "exists": true
+    },
+    {
+     "path": "errors",
+     "none_contains": "\"path\": \"${count_error}\""
+    }
+   ]
+  },
+  {
+   "label": "3: seven are not refused for the count (v2's limit of 6 is gone)",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "name": "templates/minimax/replace-performer",
+    "arguments": {
+     "source_video": "asset:qa-cast/ep49-episode.mp4",
+     "mask_video": "asset:qa-cast/ep49-episode.mp4",
+     "cuts": [
+      {
+       "name": "cut-1",
+       "start_frame": 0,
+       "num_frames": 124,
+       "render_frames": 124
+      },
+      {
+       "name": "cut-2",
+       "start_frame": 124,
+       "num_frames": 124,
+       "render_frames": 124
+      }
+     ],
+     "references": [
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      },
+      {
+       "reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+       "from_file": "asset:qa-cast/hal-portrait.jpg"
+      }
+     ],
+     "prompt": "a man speaks to camera",
+     "seed": 7
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "exists": true
+    },
+    {
+     "path": "errors",
+     "none_contains": "\"path\": \"${count_error}\""
+    }
+   ]
+  },
+  {
+   "call": "list_jobs",
+   "args": {
+    "workspace": "regression-complete",
+    "limit": 1
+   },
+   "label": "no job from this case",
+   "expect": [
+    {
+     "path": "total",
+     "eq": "${jobs_before}"
+    }
+   ]
+  }
+ ]
+}

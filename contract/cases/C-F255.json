@@ -1,0 +1,1101 @@
+{
+ "id": "C-F255",
+ "level": "complete",
+ "title": "validate_workflow refuses an out-of-range tonal control, naming it and its range, and accepts the ends; a non-numeric string for a float grade control is refused, and a variable: reference to one is not",
+ "note": "C-F252's one-grade-step shape. 'Names its range' is the range in any of the usual spellings ('-1.0 and 1.0', '-1 to 1', '[-1, 1]' and so on). `fade: \"0.5\"` 'may be accepted' asserts nothing, so it is not sent. `highlights: null` may be refused or read as unset; only 'not a crash' is asserted (no tool error, a verdict present). 'Queues no job' is the refusal with no job_id, and the workspace's job total unchanged across the call: a job another session queues in regression-complete in that second would fail it. The run_workflow sends acknowledged_cost=true as the prose does, and comes after step 1 has seen validate refuse the same arguments.",
+ "steps": [
+  {
+   "label": "range: shadows 2 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "shadows": 2
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.shadows\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "shadows"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "-1.0 and 1.0",
+      "-1 and 1",
+      "-1.0 to 1.0",
+      "-1 to 1",
+      "[-1.0, 1.0]",
+      "[-1, 1]"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "range: fade -0.1 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "fade": -0.1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.fade\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "fade"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "0.0 and 1.0",
+      "0 and 1",
+      "0.0 to 1.0",
+      "0 to 1",
+      "[0.0, 1.0]",
+      "[0, 1]"
+     ]
+    },
+    {
+     "path": "errors",
+     "none_contains": "-1"
+    }
+   ]
+  },
+  {
+   "label": "range: fade 1.0001 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "fade": 1.0001
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.fade\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "fade"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "0.0 and 1.0",
+      "0 and 1",
+      "0.0 to 1.0",
+      "0 to 1",
+      "[0.0, 1.0]",
+      "[0, 1]"
+     ]
+    },
+    {
+     "path": "errors",
+     "none_contains": "-1"
+    }
+   ]
+  },
+  {
+   "label": "range: highlights -1.0001 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "highlights": -1.0001
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.highlights\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "highlights"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "-1.0 and 1.0",
+      "-1 and 1",
+      "-1.0 to 1.0",
+      "-1 to 1",
+      "[-1.0, 1.0]",
+      "[-1, 1]"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "range: whites 1.5 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "whites": 1.5
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.whites\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "whites"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "-1.0 and 1.0",
+      "-1 and 1",
+      "-1.0 to 1.0",
+      "-1 to 1",
+      "[-1.0, 1.0]",
+      "[-1, 1]"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "range: blacks -2 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "blacks": -2
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.blacks\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "blacks"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "-1.0 and 1.0",
+      "-1 and 1",
+      "-1.0 to 1.0",
+      "-1 to 1",
+      "[-1.0, 1.0]",
+      "[-1, 1]"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "range: clarity 3 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "clarity": 3
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.clarity\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "clarity"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "-1.0 and 1.0",
+      "-1 and 1",
+      "-1.0 to 1.0",
+      "-1 to 1",
+      "[-1.0, 1.0]",
+      "[-1, 1]"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "range: vignette -1.1 is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "vignette": -1.1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.vignette\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "vignette"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "-1.0 and 1.0",
+      "-1 and 1",
+      "-1.0 to 1.0",
+      "-1 to 1",
+      "[-1.0, 1.0]",
+      "[-1, 1]"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "range: fade '5' is refused, naming it and its range",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "fade": "5"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.fade\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "fade"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "0.0 and 1.0",
+      "0 and 1",
+      "0.0 to 1.0",
+      "0 to 1",
+      "[0.0, 1.0]",
+      "[0, 1]"
+     ]
+    },
+    {
+     "path": "errors",
+     "none_contains": "-1"
+    }
+   ]
+  },
+  {
+   "label": "range: two bad values in one call give two errors",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "shadows": 2,
+         "fade": -0.1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 2
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.shadows\"",
+      "shadows"
+     ]
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.fade\"",
+      "fade"
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "-1.0 and 1.0",
+      "-1 and 1",
+      "-1.0 to 1.0",
+      "-1 to 1",
+      "[-1.0, 1.0]",
+      "[-1, 1]"
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "0.0 and 1.0",
+      "0 and 1",
+      "0.0 to 1.0",
+      "0 to 1",
+      "[0.0, 1.0]",
+      "[0, 1]"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "range: highlights null is refused or read as unset, never a crash",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "highlights": null
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "exists": true
+    }
+   ]
+  },
+  {
+   "label": "range: fade 0 is accepted",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "fade": 0
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "label": "range: fade 1 is accepted",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "fade": 1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "label": "range: highlights -1 is accepted",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "highlights": -1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "label": "range: highlights 1 is accepted",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "highlights": 1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "label": "range: all six at -1 is accepted",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "highlights": -1,
+         "shadows": -1,
+         "whites": -1,
+         "blacks": -1,
+         "clarity": -1,
+         "vignette": -1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "label": "range: all six at 1 is accepted",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "highlights": 1,
+         "shadows": 1,
+         "whites": 1,
+         "blacks": 1,
+         "clarity": 1,
+         "vignette": 1
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "call": "list_jobs",
+   "args": {
+    "workspace": "regression-complete",
+    "limit": 1
+   },
+   "label": "before the run: the workspace's job total",
+   "capture": {
+    "jobs_before": "total"
+   }
+  },
+  {
+   "label": "range: run_workflow with shadows 2 queues no job",
+   "call": "run_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "inline_workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "shadows": 2
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    },
+    "acknowledged_cost": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "not_contains": "job_id"
+    }
+   ]
+  },
+  {
+   "call": "list_jobs",
+   "args": {
+    "workspace": "regression-complete",
+    "limit": 1
+   },
+   "label": "after the run: no new job in the workspace",
+   "expect": [
+    {
+     "path": "total",
+     "eq": "${jobs_before}"
+    }
+   ]
+  },
+  {
+   "label": "T1: shadows 'abc' needs a number",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "shadows": "abc"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.shadows\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "shadows"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "number",
+      "numeric"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "T1: temperature 'abc' needs a number",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "temperature": "abc"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.temperature\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "temperature"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "number",
+      "numeric"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "T1: highlights 'xyz' needs a number",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "highlights": "xyz"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.highlights\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "highlights"
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "number",
+      "numeric"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "T2: a numeric string is coerced, no error on shadows",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "shadows": "0.5"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "errors",
+     "none_contains": "shadows"
+    }
+   ]
+  },
+  {
+   "label": "T3: a variable: reference is not literal text",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "shadows": "variable:sh"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ],
+     "variables": {
+      "sh": 0.2
+     }
+    }
+   },
+   "expect": [
+    {
+     "path": "errors",
+     "none_contains": "shadows"
+    }
+   ]
+  },
+  {
+   "label": "T3: a non-numeric value for that variable is refused at arguments.sh",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-complete",
+    "workflow": {
+     "id": "qa-c-f252",
+     "steps": [
+      {
+       "name": "grade",
+       "task": {
+        "command": "grade",
+        "arguments": {
+         "media": "asset:qa-cast/priya-portrait.jpg",
+         "shadows": "variable:sh"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ],
+     "variables": {
+      "sh": 0.2
+     }
+    },
+    "arguments": {
+     "sh": "abc"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"arguments.sh\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains": "float"
+    }
+   ]
+  }
+ ]
+}

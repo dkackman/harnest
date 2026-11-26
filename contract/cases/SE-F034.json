@@ -1,0 +1,295 @@
+{
+ "id": "SE-F034",
+ "level": "security",
+ "title": "a backslash anywhere in a URL is refused (media and remote_text_encoder.url)",
+ "note": "Validate only, as the prose demands: no probe is ever run. (d), the percent-encoded backslash, is 'recorded, not judged': the report has nowhere to record it, so it is not sent. (e) uses templates/image-to-image, one of the image-conditioned templates list_workflows(shape='image-edit') lists. The (f) carrier and the control are SE-F009's shape: a pipeline with configuration, from_pretrained_arguments and arguments, plus the remote_text_encoder block. 'Names the backslash or an invalid URL' is either word in any of the answer's error messages.",
+ "steps": [
+  {
+   "label": "(a) the plan's probe, as a task argument",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-se-f034",
+     "steps": [
+      {
+       "name": "s",
+       "task": {
+        "command": "get_image_size",
+        "arguments": {
+         "image": "http://169.254.169.254\\@example.com/a.png"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.image\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "backslash",
+      "nvalid URL"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(b) a backslash in the authority with no @",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-se-f034",
+     "steps": [
+      {
+       "name": "s",
+       "task": {
+        "command": "get_image_size",
+        "arguments": {
+         "image": "https://huggingface.co\\evil.example/x.png"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.image\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "backslash",
+      "nvalid URL"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(c) a backslash in the path only",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-se-f034",
+     "steps": [
+      {
+       "name": "s",
+       "task": {
+        "command": "get_image_size",
+        "arguments": {
+         "image": "https://example.com/a\\b.png"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].task.arguments.image\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "backslash",
+      "nvalid URL"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(e) the same probe as a pipeline argument on an image-conditioned template",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/image-to-image",
+    "arguments": {
+     "image": "http://169.254.169.254\\@example.com/a.png"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].pipeline.arguments.image\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "backslash",
+      "nvalid URL"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(f) remote_text_encoder.url, evil host before the backslash",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-se-f034",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stable-diffusion-v1-5/stable-diffusion-v1-5"
+        },
+        "remote_text_encoder": {
+         "url": "https://evil.example\\@huggingface.co/encode"
+        },
+        "arguments": {
+         "prompt": "an apple"
+        }
+       },
+       "result": {
+        "content_type": "image/jpeg"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].pipeline.remote_text_encoder.url\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "backslash",
+      "nvalid URL"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(f) remote_text_encoder.url, evil host after the backslash",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-se-f034",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stable-diffusion-v1-5/stable-diffusion-v1-5"
+        },
+        "remote_text_encoder": {
+         "url": "https://huggingface.co\\@evil.example/encode"
+        },
+        "arguments": {
+         "prompt": "an apple"
+        }
+       },
+       "result": {
+        "content_type": "image/jpeg"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].pipeline.remote_text_encoder.url\""
+     ]
+    },
+    {
+     "path": "errors[*].message",
+     "contains_any": [
+      "backslash",
+      "nvalid URL"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "control: SE-F009's https://huggingface.co/encode still validates",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-se-f034",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stable-diffusion-v1-5/stable-diffusion-v1-5"
+        },
+        "remote_text_encoder": {
+         "url": "https://huggingface.co/encode"
+        },
+        "arguments": {
+         "prompt": "an apple"
+        }
+       },
+       "result": {
+        "content_type": "image/jpeg"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "plan",
+     "exists": true
+    }
+   ]
+  }
+ ]
+}
