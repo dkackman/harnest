@@ -30565,7 +30565,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1361 — the mps bench gives each mps-capable default target an mps `cost`, or an open issue saying why not, and none to H3-Image
-pending: #1712
 source: tester, spec for #1712 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Before the stage, only `templates/text-to-image` (mps 0.2) among the `text_to_image` defaults had an
 mps figure.
@@ -30587,7 +30586,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1362 — each committed mps bench figure is cited to a completed job at defaults whose duration matches it within 10%
-pending: #1712
 source: tester, spec for #1712 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Run it on a server whose `get_server_info` accelerator is mps (the bench ran on mini-ai); a job id
 from another server answers unknown here, which is a skip, not a finding. The job ids come from #1712's hand-off
@@ -30604,7 +30602,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1363 — on mps, a non-default argument on a newly benched entry prices as SD 1.5's does, not as the catalog figure
-pending: #1712
 source: tester, spec for #1712 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU; holds on any server. Control: `templates/text-to-image`, which had its mps figure before the stage.
 Workspace `regression-complete`.
