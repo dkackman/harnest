@@ -29589,7 +29589,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1312 — the plugin documents finishing a cut in one job, composing `assemble-and-score`, and placing a score on a beat
-pending: #1700
 source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
 Free. Load `dw:long-form`, `dw:cinematography` and `dw:script-to-video` with the `Skill` tool, and read
 `references/run-and-repair.md` and `references/audio.md` from `dw:long-form`'s base directory and
@@ -29629,7 +29628,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1313 — the one-job finishing recipe, copied with real shots and score, validates clean and gives a graded, grained, scored cut
-pending: #1700
 source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
 CPU utility work only, about a minute on lem. Workspace `regression-complete`. Fixtures: `asset:qa-cast/ep6-cold-open.mp4`
 and `asset:qa-cast/ep3-shot2-reply.mp4` (124 frames each, 24 fps), and `asset:qa-cast/ep20-score.wav`.
@@ -29667,7 +29665,6 @@ shared: leave them.
 metrics: none.
 
 ### C-F1314 — the finishing recipe is refused at validate for a bad palette entry, naming it, and warns on a misspelled template argument
-pending: #1700
 source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
 Free: `validate_workflow` only, `workspace="regression-complete"`. Nothing is run. Start from C-F1313's step 1
 workflow (the recipe with the fixture shots and score), id `qa-c-f1314`. In its `apply_lut` step's `palette`:
@@ -29695,7 +29692,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1315 — a score placed by the docs' rule peaks on the chosen beat of the finished cut, for two beats
-pending: #1700
 source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
 CPU utility work only, three short runs. Workspace `regression-complete`. The point is the placement rule, so the
 score has one peak and nothing else in the mix competes with it.
