@@ -32473,4 +32473,24 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1444 — a request item whose job writes only JSON shows that file as `result.output`, kind `text`
+source: tester, verified in #1740 (claude-opus-5-5 via anthropic)
+CPU only, a few seconds. Use `workspace="regression-complete"` on every call.
+1. `set_request(request="cf1444", revision=0, title="CF1444", goal="JSON-only item output", why="C-F1444 fixture",
+   items=[{key:"check-01", title:"JSON only", workflow:"templates/split-takes",
+   arguments:{text:"The sun rose over the hills. Birds began to sing."}}])`.
+2. `validate_workflow(name="templates/split-takes", arguments={"text":"The sun rose over the hills. Birds began to sing."})`,
+   then `run_workflow(workflow_path="templates/split-takes", arguments=<same>, request="cf1444/check-01",
+   acknowledged_cost=<bound>, wait_seconds=55)`. Call its job J; its manifest lists one `final/...json` file, F.
+3. `get_request(request="cf1444")`, then `get_output_text(name=<check-01's result.output.name>)`.
+4. `get_request()` (no id): the `cf1444` entry's `cover`.
+expected:
+- (3) `check-01` is `done`, `result.job` is J, and both `result.output` and `attempts[0].output` are
+  `{"name": F, "kind": "text"}`. `get_output_text` on that name returns the JSON with `content_type`
+  `application/json`.
+- (4) `cover` includes `{"name": F, "kind": "text"}`.
+It is a **finding** if `result.output` is `null`, the regression of #1740.
+cleanup: `delete_output(job_id=J)`; read the `revision` and `delete_request(request="cf1444", revision=<it>)`.
+metrics: none.
+
 ## Performance
