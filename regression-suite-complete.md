@@ -30944,7 +30944,6 @@ cleanup: revert the probe edits and discard the scratch tree.
 metrics: none.
 
 ### C-F1380 — an agent's `state="done"` or `"abandoned"` on an open request is refused `close_needs_user`, naming `propose_close`
-pending: #1716
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, MCP only. Setup: `create_workspace(name="cf1380-close")`; `workspace="cf1380-close"` on every call;
 create `demo` as in C-F1121 step (2) (it reads `revision: 1`, `state: open`). Each step below is a `set_request` on
@@ -30967,7 +30966,6 @@ cleanup: `delete_workspace(name="cf1380-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1381 — `propose_close` stores a pending proposal, leaves the request open, and survives a plan edit that leaves it out
-pending: #1716
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, MCP only. Setup: `create_workspace(name="cf1381-close")`, `workspace=` on every call; create `demo` as
 in C-F1121 step (2). (1) `set_request` at `revision=1`, same plan, `propose_close={"state":"done","reason":"all 3
@@ -30988,7 +30986,6 @@ cleanup: `delete_workspace(name="cf1381-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1382 — a proposal's shape is checked strictly: `done` or `abandoned`, a one-line reason of at most 200 characters, no other field
-pending: #1716
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, MCP only. Setup: `create_workspace(name="cf1382-close")`, `workspace=` on every call; create `demo` as
 in C-F1121 step (2). Each step a `set_request` on `demo`, same plan, at the current revision, with `propose_close`:
@@ -31010,7 +31007,6 @@ cleanup: `delete_workspace(name="cf1382-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1383 — `propose_close=null` withdraws a pending proposal, and a second proposal replaces the first
-pending: #1716
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, MCP only. Setup: `create_workspace(name="cf1383-close")`, `workspace=` on every call; create `demo` as
 in C-F1121 step (2). Each a `set_request` on `demo`, same plan, at the current revision: (1) `propose_close=null`
@@ -31126,7 +31122,6 @@ cleanup: `delete_workspace(name="cf1387-close", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1388 — the PUT model, the tool schema, the guide, the agent rules and the request skill describe the handshake
-pending: #1716
 source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 Free, read-only. (1) The client's tool list: `set_request`'s schema and description. (2) `ui-check` with one step
 `{"step":"fetch","path":"/openapi.json"}`: the PUT `/api/workspaces/{name}/requests/{id}` body schema
