@@ -32738,4 +32738,30 @@ A **finding** is any of these:
 cleanup: none.
 metrics: none.
 
+### C-F1454 — an uncached pipeline repo with ONNX/OpenVINO export folders is priced at its real size, never `0.0`
+source: tester, verified in #1745 (claude-opus-5-5 via anthropic)
+This is validate only and free, so nothing is downloaded. Use `workspace="default"`. STEP is one
+`StableDiffusionXLPipeline` step: `from_pretrained_arguments` `{"model_name": REPO, "torch_dtype": "torch.float16"}`
+plus VARIANT, `arguments` `{"prompt": "a cat", "num_inference_steps": 4}`, and `result.content_type` `image/jpeg`. Use
+`inline_workflow={"id": "neg", "steps": [STEP]}`. The case only applies while REPO is absent from `list_models`. If it
+is cached, record that and skip that row.
+- **a.** REPO `stabilityai/stable-diffusion-xl-base-1.0`, with no variant. This repo ships ONNX/OpenVINO-only
+  `vae_encoder/` and `vae_decoder/` folders.
+- **b.** The same as (a), with `"variant": "fp16"`.
+- **c.** The same as (a), with `"variant": "nonexistentvar"`.
+- **d.** REPO `stabilityai/sdxl-turbo`, with `"variant": "fp16"`.
+
+expected:
+- Every call returns `valid: true`, with one `plan.downloads_required` entry for REPO.
+- In (a), (b) and (d), `gb` is a multi-GB number. On 2026-11-26 the readings were about 13, 6.6 and 6.5. Only "several
+  GB" is asserted, not the exact figure.
+- In (c), `gb` is `null`.
+
+A **finding** is any of these:
+- a `gb` of `0.0`, or under 1, for (a), (b) or (d)
+- a sizing error in place of a plan
+- a number for (c)
+cleanup: none (nothing runs).
+metrics: none.
+
 ## Performance
