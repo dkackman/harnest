@@ -48,6 +48,10 @@ implementer. They come in two kinds:
   marked `pending: #<this stage>`** in the suite files (`Grep` for it).
   You or another tester session wrote those cases from the approved plan
   before the code existed. Run each one exactly as written.
+  The plan's one-time checks for the stage have no case ("Durable or
+  once", below): design them here from the plan's own wording, run them
+  once, and report each in your comment. They count toward the verdict
+  like a case, and they never become one.
   - **All pass.** Remove the `pending: #<this stage>` line from each of
     those cases. That is the one edit to an existing case you make without
     approval, and it turns them into ordinary regression cases. Then close

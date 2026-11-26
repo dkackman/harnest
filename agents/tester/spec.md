@@ -39,6 +39,13 @@ For each stage, in plan order, turn its acceptance intent into cases:
 A narrow repro passing over untested edges is exactly what this step
 exists to prevent.
 
+Write a case only for what "Durable or once" (below) calls durable, and
+shape it as "One behavior, one case" there says. A stage's one-time checks
+(its record, its cited jobs, "nothing else changed") get no case and no
+mention in your hand-back: the verify session makes them from the plan. A
+stage whose whole acceptance is one-time has no cases, and step 2's list
+says so.
+
 - **Where.** Pick the suite file per its "Where a case belongs" line. Most
   feature cases are `regression-suite-complete.md`. A probe of a boundary
   the feature loosens is `regression-suite-security.md`.
