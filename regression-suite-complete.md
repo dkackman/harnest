@@ -28622,7 +28622,7 @@ source: tester, spec for #1764 from #1615's plan v3 (claude-opus-5-5 via anthrop
 
 Free.
 1. `get_workflow(name="templates/minimax/dialogue-short")`.
-2. `list_workflows(shape="shot")` in its compact default form.
+2. `list_workflows(shape="sequence")` in its compact default form.
 expected:
 - Step 1: its cost row carries `"first_at_shape": {"minutes": 6.0, "keys": ["width", "height", "weights_dtype",
   "attention_backend"]}`. Every name in `keys` is a variable step 1 also declares.
