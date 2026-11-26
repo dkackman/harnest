@@ -1571,6 +1571,35 @@ Amended 2026-11-20 (dkackman/harnest#272, approved by Don): the reference entrie
 out with `reference_type` and the full dotted path, and `<img>` names a fixture asset (the
 verification's `asset:uploads/cast/loki.jpg` is not on lem).
 
+### S-F148 — leaving out `arguments` does not skip the required-variable check, at validate or at submit
+Validate is the free check a caller runs before quoting a price. With `arguments` left out
+entirely, as opposed to `arguments={}`, it used to skip the `required` rule. It then answered
+`valid: true` with a plan and estimate for a run that could not happen (#1758). Free: no job
+queues.
+1. `validate_workflow(name="templates/voice-clone", workspace="regression-smoke")`, with no
+   `arguments` at all, and again with `arguments={}`.
+2. `validate_workflow(workflow_path="templates/minimax/h3-seam-pass", workspace="regression-smoke")`,
+   with no `arguments`.
+3. `run_workflow(workflow_path="templates/voice-clone", acknowledged_cost=true,
+   workspace="regression-smoke")`, with no `arguments`, then
+   `list_jobs(workspace="regression-smoke", limit=3)`.
+4. `validate_workflow(name="templates/preferred/text-to-image", workspace="regression-smoke")`,
+   with no `arguments`.
+expected:
+- Step 1: both calls give `valid: false`, with the same error at `variables.reference_audio`
+  saying it is required and has no default, and no `plan`.
+- Step 2: `valid: false` at `variables.source` (required, no default), and no `plan`.
+- Step 3: the call is refused with the `reference_audio` required message, and `list_jobs`
+  shows no job from it.
+- Step 4: `valid: true` with a `plan`, because a template with no required variable still
+  validates with `arguments` left out.
+It is a **finding** if step 1's or step 2's call with `arguments` left out validates, or prices
+a plan, or if step 3 queues a job. It is also a finding if step 4 is refused.
+cleanup: none (nothing queues; if step 3 did queue, `cancel_job` it and `delete_output(job_id=...)`).
+metrics: none.
+source: tester, verified in #1758 on 2026-11-26 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 009256f1` on `lem`.
+
 ## Performance
 
 ### S-P001 — default image generation latency
