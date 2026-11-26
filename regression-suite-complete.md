@@ -30033,7 +30033,6 @@ cleanup: `delete_asset` on `cf1670-grid-a.wav` and `cf1670-grid-b.wav`, and `del
 metrics: none.
 
 ### C-F1334 — #1704's continuity record is on the ticket, with a runs table naming every job, arm, card or shot, prompt and seed
-pending: #1704
 source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads only). The record is `bench/records/continuity-grammar.md` in the dw repo, which the tester can't read:
 read it as the stage's hand-off comment on #1704 quotes it (`gh issue view 1704 --repo dkackman/diffusers-workflow
@@ -30059,7 +30058,6 @@ cleanup: none (the probe's jobs are the record's evidence).
 metrics: none.
 
 ### C-F1335 — every #1704 job completed on its probe's family, with its arm's prompt and seed, and the arms are paired
-pending: #1704
 source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads only). For every job id in C-F1334's runs table: `get_job(job_id=<id>, workspace=<the record's
 workspace>)` and `get_job_workflow(job_id=<id>, workspace=...)`. Read the pipeline or template, each generating
@@ -30089,7 +30087,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1336 — each #1704 job's realized workflow passes `validate_workflow`
-pending: #1704
 source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free (`validate_workflow` only; nothing runs). The stage owes that its three bench workflows pass validate; the
 tester can't read `bench/workflows/`, so validate what ran. For one job per probe arm (six jobs: P-A, P-B, P-C ×
@@ -30103,7 +30100,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1337 — #1704's marker reads match the outputs, card by card and seed by seed, for both arms
-pending: #1704
 source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads and free assessments; an eye call). For P-A and P-B, `get_output_image` on every card of both arms and
 both seeds (24 stills; the job's output, not an `asset:`). For P-C, `get_output_frames` at the first, middle and
@@ -30127,7 +30123,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1338 — #1704's verdicts follow the both-seeds rule: confirmed only when both treatment seeds pass every card or shot
-pending: #1704
 source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads the record against C-F1337's reads).
 expected:
@@ -30148,7 +30143,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1339 — #1704 stays in its spend, sends unsettled reads to Don as `taste`, and ships no skill text or surface
-pending: #1704
 source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads only). From C-F1335's `get_job` answers, sum each job's run time (its finish less its start). Read the
 issue threads (`gh issue view 1704 --repo dkackman/diffusers-workflow --comments`, and #1685 likewise). Invoke
