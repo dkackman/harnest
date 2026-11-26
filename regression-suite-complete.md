@@ -32455,4 +32455,26 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1443 — GET `/api/system/dw` keeps its shape and answers every repeated read, with the version fetch moved out of the lock
+pending: #1743
+source: tester, spec for #1743 from #1736's plan v2 (claude-opus-5-5 via anthropic)
+Free, read-only, no GPU, no update. Stage 2 moves the upstream latest-version GET outside `_latest_lock`, so a read
+no longer waits up to 3 s behind another read's slow fetch. A slow or offline upstream can't be induced over MCP or
+`ui-check` (the plan proves the latency with a unit test). This case pins what a black-box reader can see: the reply's
+shape, and that back-to-back reads all answer. At spec time the reply was `{version, latest, managed, command, status,
+error, log}`, e.g. `version` `"0.23.0-alpha.2"`, `latest` `"0.22.0"`, `managed` false, `status` `"idle"`, `error` and
+`log` null.
+1. `ui-check` spec with four steps in a row: `fetch {path: "/api/system/dw"}` four times.
+2. `ui-check` spec: `goto {path: "/"}`, `click {role: "link", name: "Models"}` (or the nav entry that opens the Models
+   page), `wait_text {text: <version from step 1>, timeout_ms: 3000}`, `screenshot {name: "models-version"}`.
+expected:
+- 1: all four answer `status` 200 with `content_type` JSON and none `timed_out`. Each body carries `version` (a
+  non-empty string), `latest` (a string or null), `managed` (bool), `command` (string), `status` (string), `error` and
+  `log` (string or null), the same keys on every read. `version` is the same on all four. A missing key, a non-200, or
+  a `timed_out` read is a **finding**. An added `newer` field is recorded, not a finding (deferred stage 3 adds it).
+- 2: the Models page shows the running version within 3 s with no `page_errors`. A miss or a page error is a
+  **finding**.
+cleanup: none.
+metrics: none.
+
 ## Performance
