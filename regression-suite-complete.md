@@ -3180,11 +3180,11 @@ It becomes a **finding** if `frame_grid` is missing from `get_task`, if the defa
 size departs from the formula (a different tile height, columns fewer than rows), if the
 first/last labels do not reach the clip's ends, if an over-long `count` fails the run
 instead of clamping, or if `count: 0` reaches the run.
-metrics: `default_grid_seconds` — `finished_at - started_at` of the defaults job.
 cleanup: `delete_output` on each run's `qa-frame-grid/<run id>` directory.
 source: moved from S-F071 (curation 2026-09-22, harnest#2); tester, verified in #245 on 2026-09-19 over MCP as model `opus` via provider
 `anthropic` — defaults `[1280, 543]` in 1.3 s, labels `00:00.0` → `00:05.1`; `count: 200`
 clamped to a 16×8 grid at `[1280, 360]`; `count: 0` refused at validate.
+amended: 2026-11-26, suite review: dropped the `default_grid_seconds` metric (Don, in session); #1015 and #1281, both wontfix, found the ~40 ms task's whole-job time tracks box load
 
 ### C-F084 — `pair_audio` `fit: "video"` warns in both directions, and stays quiet on an exact fit
 `fit: "video"` is lossy in one direction only: padding a short track adds silence
