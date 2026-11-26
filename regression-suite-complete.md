@@ -32278,7 +32278,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1437 — a video saved with no declared or carried frame rate warns `video_fps_defaulted` and is 8 fps; a declared or carried rate does not warn
-pending: #1727
 source: tester, spec for #1727 from #1643's plan v1 (claude-opus-5-5 via anthropic)
 Task-only, no model load: seconds of GPU-free work. Workspace `regression-complete`. Fixture
 `asset:qa-cast/ep3-shot1-incident.mp4` (24 fps, 124 frames). `video_frames` returns a bare `(frames, h, w, c)` uint8
@@ -32314,7 +32313,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F1438 — a CUDA run carries no `device_adjusted` warning, and the guide says where an MPS correction is reported
-pending: #1727
 source: tester, spec for #1727 from #1643's plan v1 (claude-opus-5-5 via anthropic)
 GPU: one small seeded image. Workspace `regression-complete`. The `device_adjusted` sites (MPS/CPU placement, compile,
 quantized-matmul, attention slicing) cannot fire on lem (`get_server_info.device` `cuda`), so the stage is verified by
