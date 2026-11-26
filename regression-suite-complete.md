@@ -29210,7 +29210,6 @@ cleanup: none (mocks only, nothing queued).
 metrics: none.
 
 ### C-F1298 — a one-shot `dialogue-short` at a new frame count is priced from its own bucket's history, rescaled by frames
-pending: #1696
 source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
 Free when the history exists: `validate_workflow` only. Workspace `regression-complete`. Before #1696, a caller's `shots`
 list with a `num_frames` outside the template's default entries (124, 141) threw away its bucket's history. On
@@ -29257,7 +29256,6 @@ cleanup: none if no setup run was needed. Otherwise only the setup job's outputs
 metrics: none.
 
 ### C-F1299 — the rescale is `low_confidence` only past a 2x reach from its runs, at either side of the edge
-pending: #1696
 source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
 Free. The same workspace, definitions and setup as C-F1298, run first. Read N from C-F1298 step 2's `scaled`. The
 values below assume N = 124. With another N, pick the valid counts (17k + 5, 124-345) nearest inside and outside 2N.
@@ -29278,7 +29276,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1300 — a different bucket gets no borrowed history: other steps or another shot count price as before
-pending: #1696
 source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
 Free. The same workspace, definitions and setup as C-F1298, run first (X and N from its step 2).
 1. `{"num_inference_steps": 12, "shots": [<shot(175)>]}`. 12 steps is a bucket with no runs here.
@@ -29298,7 +29295,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1301 — a shot list at the defaults' frame counts still quotes `observed`, unscaled
-pending: #1696
 source: tester, spec for #1696 from #1615's plan v2 (claude-opus-5-5 via anthropic)
 Free. The same workspace and definitions as C-F1298.
 1. `<base>` alone: the template's own five shots, 637 frames.
