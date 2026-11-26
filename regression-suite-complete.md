@@ -30019,7 +30019,8 @@ first, then the shared ones its workflows name; the sort toggle is `Name` / `New
 expected:
 - The section headings and their order are the workspace's own assets, then the shared ones (as the explainer
   says); every own asset from `list_assets` is in the first.
-- `Name` orders each section by name; `Newest` by newest first, `cf1670-grid-b.wav` before `cf1670-grid-a.wav`.
+- `Name` groups each section by folder, with folders in name order; the files inside each folder stay newest first
+  (grid-b before grid-a). `Newest` is one list across the folders, `cf1670-grid-b.wav` before `cf1670-grid-a.wav`.
   Sorting reorders within a section and never moves a file across sections.
 - Every page but the last holds the same number of tiles; the pages together list each asset once, none skipped
   or repeated; the page's file count matches `list_assets`.
