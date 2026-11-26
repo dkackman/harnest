@@ -28711,7 +28711,6 @@ cleanup: `delete_output(job_id=<id>)` for all four jobs.
 metrics: none.
 
 ### C-F1539 — `get_server_info` carries a `storage` block: job history's real row count, size and date span, and the log file's size and backups
-pending: #1766
 source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Before #1766, no tool or route reported the job-history database's size or row count, or anything
 about the log files, and `list_jobs`' `total` once stopped at 200 (#1466). Run it with no job queued or running.
@@ -28742,7 +28741,6 @@ cleanup: `use_workspace(name="default")` (step 4 does it).
 metrics: none.
 
 ### C-F1540 — `GET /api/server` serves the same `storage` block, and the OpenAPI document declares it
-pending: #1766
 source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check` `fetch` steps only (no page). Run with no job queued or
 running. Spec: `fetch {path: "/api/server"}`, `fetch {path: "/openapi.json"}`. Then `get_server_info()` over MCP.
@@ -28759,7 +28757,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1541 — Server › Status shows job history (rows, size, date span) and logs (size, backups), read-only, and a `null` figure doesn't break it
-pending: #1766
 source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`. Run once `get_server_info` reports a commit containing the
 stage's merge. Spec A: `fetch {path: "/api/server"}` (note `storage`); `record {url_glob: "**/api/**"}`; `goto /`;
@@ -28786,7 +28783,6 @@ cleanup: none (nothing queued).
 metrics: none.
 
 ### C-F1542 — `storage.job_history.rows` and `newest` move with each admitted job, in step with `list_jobs`' `total`
-pending: #1766
 source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
 GPU: one short z-image job (C-F1538's Z(seed) run, about 30 s on lem; any fixture-free run the server admits will
 do, named in the record). Workspace `regression-complete`. Nothing else may be queued or running during the case:
