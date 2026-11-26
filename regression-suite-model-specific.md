@@ -8322,7 +8322,7 @@ expected:
   `DW_EXPERIMENTAL_REFINE_WINDOWS=1`, an H3 `fl2va` call argument with `balance` (default 20) and `blocks`
   (default `31-33,36-44,47`), and that it needs an `image` and `guides` and is refused beside TST, sparse
   attention, a capstone or gated guide rows.
-- It states block numbering as an assumption (diffusers' 0–49 taken as ComfyUI's), or the #1391 bench record states the numbering result checked on lem (M-F427); one of the two must.
+- It states block numbering as an assumption (diffusers' 0–49 taken as ComfyUI's), or the #1391 bench record states the numbering result checked on lem (the record comment on #1391); one of the two must.
 - No template description and no MCP tool description names the key (the plan moves no surface).
 - If an attributions guide is served: it credits roycho87's NerdNotes tests 19–20, geiru_context_suite's Keystone
   Attention (concepts only) and ckinpdx's Carry Attention. If it is not served over MCP, record that; checking it
@@ -8330,26 +8330,6 @@ expected:
 It is a **finding** if the line is missing, presents the key as stable, or gives different defaults than M-F375
 found.
 cleanup: none.
-metrics: none.
-
-### M-F385 — the #1391 record's numbers match the gate jobs and a re-measure of the gate takes
-pending: #1394
-source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads and CPU assessment only (`assess_output` is free; any
-`analyze_*` task run must be priced and is CPU).
-Steps: for the two gate takes (`2817a04202ae` control, `29923da18475` attention; no full arm ran): `get_job` (`workspace="bench"`) for the output paths and frame counts;
-`get_gallery_metadata` on each take; `assess_output` on each; `analyze_seams` (and `analyze_face_drift` for SFace)
-over each take at the seam frames the record names, through `run_workflow` in `bench` with a `note` naming
-M-F385.
-expected:
-- The record has two columns (keystone control, attention arm) for seg01-02: the seg02 face-sharpness rise as seam
-  + in-segment, the seam-1 `jump_ratio`, SFace drift at seg02's end, and the luma seam step.
-- Each take's frame count, duration and fps in the record match `get_gallery_metadata`.
-- The re-measured seam jumps and SFace drift agree with the record within 5% (or 0.02 absolute where the value is
-  under 0.4); luma and saturation within 1 unit on the record's scale.
-It is a **finding** if a measure or column is missing, a frame count disagrees, or a re-measure falls outside the
-tolerance.
-cleanup: `delete_output(job_id=...)` on each analysis job this case ran.
 metrics: none.
 
 ### M-F387 — a cached H3 turbo LoRA file named through `variable:lora_weight_name` is no download; an uncached file in the same repo is one
@@ -8740,46 +8720,6 @@ expected:
 - If either template's description carries a cost note, it doesn't contradict the guide.
 It is a **finding** if the card gap, its x4/x16 cause or the bus-bound reason is missing, or the section contradicts the
 templates' `cost`.
-cleanup: none.
-metrics: none.
-
-### M-F425 — the #1391 arm pair runs dense and differs only in the argument
-pending: #1394
-source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 on lem (cuda), bench workspace. **Free**: reads only.
-The **arm jobs** are `keystone-attention-control` and `keystone-attention`: the early (seg01–02) gate jobs; the
-gate failed and no full arm ran.
-Steps: `get_job_workflow(workspace="bench")` on each arm job; the record on #1394 or #1391.
-expected:
-- Every segment's transformer in both arms is dense: `attention_backend` null or absent, and no `sparse_tau` or
-  `sparse_topk`.
-- Attention arm vs keystone control: the only difference is `experimental_keystone_attention` with `balance` 20 and
-  `blocks` `"31-33,36-44,47"` (no step 2, per Don's 2026-11-19 ruling) on seg02. The record says whether segment 1 carries it.
-- An early job is its arm's full workflow cut after seg02, with nothing else changed.
-- The record states the arm diff in words.
-It is a **finding** if any other argument differs, any arm segment is sparse, or the record omits the diff.
-cleanup: none.
-metrics: none.
-amended: 2026-11-26, suite review: dropped the pointer to M-F384, which is retired; the fact it backed is stated here; nothing else changed.
-
-### M-F427 — the #1391 record states the checked numbering, the blocks and why, the LSE cost against the dense control, the dense-vs-sparse risk, the attributions, the gate takes' paths, and the gate verdict
-pending: #1394
-source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
-Steps: read the record as quoted on #1394 or #1391; `get_job(workspace="bench")` on both arms' jobs for timings.
-expected:
-- It states the numbering result from step 1 as checked on lem, not as an assumption (Q3 tested by Q6).
-- It gives step 1's per-run numbers, or points to where they are on #1394, and the blocks the gate arms used (roycho87's `31-33,36-44,47`; step 2 was not run, per Don's 2026-11-19 ruling).
-- It gives the LSE op's wall-clock cost: the attention arm against the **dense** keystone control, per segment or
-  per job, within 10% of the `get_job` timings. It names the op the selected blocks ran (cuDNN or native flash).
-- It states that a positive result is a dense-attention result while the shipped templates run sparse, and that a
-  sparse processor would be a new stage proposed then.
-- It says the result transfers to `keystone_slot` `first` and `last` only, and that no moving-shot arm ran.
-- It credits roycho87's #1391 comment (issuecomment-6922271175) and NerdNotes test 19 (CC BY-SA 4.0) for the
-  block-finding method. The matching `docs/ATTRIBUTIONS.md` line is docs review, not this case.
-- It gives the two gate takes' output paths and states the gate verdict, "gate failed", as Don ruled on 2026-11-19.
-It is a **finding** if any item is missing, the cost is measured against the sparse column, or the verdict is
-missing or differs from Don's.
 cleanup: none.
 metrics: none.
 
