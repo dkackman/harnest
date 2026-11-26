@@ -24533,7 +24533,6 @@ absorbs: C-F1303 (merged 2026-11-26, suite review)
 - C-F1303: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 
 ### C-F1304 — a declared-rate quote is a usable acknowledgement, and the first successful run replaces it with `observed`
-pending: #1698
 source: tester, spec for #1698 from #1619's plan v1 (claude-opus-5-5 via anthropic)
 CPU only: one utility run of an 11.75 s clip, under a minute on lem. Workspace `regression-complete`. Definitions are
 C-F1302's. Use a fresh id every pass, `qa-c-f1304-<YYYYMMDDHHMM>` from `date`, so a run from an earlier pass never
