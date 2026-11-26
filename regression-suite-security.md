@@ -2359,20 +2359,23 @@ source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthrop
 Free, no GPU. Workspace `regression-complete`. Stage 1 adds a new `workflow.path` form whose key indexes a server-held
 file (the shipped ladder, later the overlay). The key must be checked as a name before any lookup.
 Carrier `<P0(path)>` from C-F1406. Keys K: `../preferences`, `../../etc/passwd`, `/etc/passwd`, `text_to_image/../x`,
-`..%2Fpreferences`, `text_to_image%00`, `~/x`, `C:\\x`, a 300-character run of `a`.
+`..%2Fpreferences`, `text_to_image%00`, `~/x`, `C:\\x`, a 300-character run of `a`, `/nonexistent-dw-probe/x`.
+P1 is `/etc/passwd` (exists) and P2 is `/nonexistent-dw-probe/x` (missing).
 1. `validate_workflow(inline_workflow=<P0("preference:" + K)>)` for each K.
 2. The same through a variable: `<PT("variable:w")>` with `"w": "preference:text_to_image"` in `variables`, validated
    with `arguments={"w": "preference:" + K}`.
 3. `run_workflow` the first K bare, with a made-up `acknowledged_cost`; `list_jobs(workspace="regression-complete")`.
 expected:
 - Every probe `valid: false`, refused as a bad key name (or an unknown key), at `steps[0].workflow.path`. None resolves
-  to a target, none is read as a workflow file, and P1 and P2 answer alike.
+  to a target, none is read as a workflow file, and P1 and P2 are refused with the same message, in step 1 and in
+  step 2, so the answer does not reveal whether a file exists.
 - No answer carries an absolute server path (`/home/`, `/Users/`, a workspace or checkout root), file contents, or a
   stack trace.
 - 3 is refused; no job is queued.
 It is a **finding** if any probe resolves, reads a file, or leaks a server path. That is a boundary escape: never file
 it as an issue. File it privately with `./scripts/file-advisory.sh`, putting the repro and the model in the description.
 cleanup: none (cancel and `delete_output` a job if 3 queued one).
+amended: 2026-11-26, suite review: P1 and P2 were undefined; named them as the suite's existing/missing pair (Don, in session) and added the missing-path key; live, both are refused identically
 
 ### SE-F085 — a stored ladder target is a library workflow name: a path, URL or bad argument reference is refused at PUT
 pending: #1723
