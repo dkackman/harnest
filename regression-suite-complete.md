@@ -29969,24 +29969,24 @@ cleanup: C-F1333's cleanup (run it last), or, run alone: `delete_output(job_id=.
 on both assets.
 metrics: none.
 
-### C-F1331 — a picked file deleted elsewhere drops from the picks, by each page's own rule
+### C-F1331 — a picked file deleted elsewhere drops from the picks, and a filter-hidden pick is kept, on both pages
 pending: #1703
 source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
-CPU task only. S1670-GRID, plus setup S1536-BG (C-F1233). The plan keeps each page's rule for which picks count:
-the Gallery checks a pick against all its files, Assets against the files it shows.
+CPU task only. S1670-GRID, plus setup S1536-BG (C-F1233). The plan keeps each page's rule for which files count toward an `open=` link: the Gallery checks it against all its files, Assets against the files it shows. Picks share one rule on both pages: a filter-hidden pick is kept but not counted, and counts again when the filter shows it.
 1. Gallery: spec `goto` Gallery; `fill` `cf1670`; pick both; `wait_text` "1 selected" or the bar's count reading 1
    (`regex`, `timeout_ms: 30000`); `screenshot`. The write: `delete_output(name=GB's run directory or job_id=GB's
    job, workspace="regression-complete", ...)` acknowledged.
 2. Gallery, filter-hidden pick: re-run S1670-GRID's GB job (a new GB), pick both under `cf1670`, then `fill`
-   `cf1670 grid a` so only GA shows; `screenshot`; `fill` `cf1670`; `screenshot`.
+   GA's run id so only GA shows (the Gallery's tile search doesn't match note text); `screenshot`; `fill` `cf1670`; `screenshot`.
 3. Assets: the same as 1 with `delete_asset("cf1670-grid-b.wav", workspace="regression-complete")` as the write.
 4. Assets, filter-hidden pick: re-keep GB as `cf1670-grid-b.wav`; pick both under `cf1670`; `fill` `grid-a`;
    `screenshot`; `fill` `cf1670`; `screenshot`.
+5. Assets: `goto /#/ws/regression-complete/assets?open=no-such-cf1703.wav`; `screenshot`.
 expected:
 - 1 and 3: within about 10 s of the write, the deleted file leaves the listing and the picks; the count reads 1 with
   no reload, and the bulk bar still acts on the survivor alone.
-- 2 (Gallery checks all files): the hidden pick stays; back on `cf1670`, both are still picked.
-- 4 (Assets checks the shown ones): the hidden pick is dropped; back on `cf1670`, only grid-a is picked.
+- 2 and 4: under the narrow filter the panel reads "1 selected"; back on `cf1670` it reads "2 selected".
+- 5: the note "no-such-cf1703.wav is not in this view any more." shows under the header, and the page is otherwise intact.
 No page errors. A deleted file still counted, or a page whose filter-hidden rule differs from the above, is a
 **finding** (the plan promises each page keeps today's rule).
 cleanup: as C-F1330.
