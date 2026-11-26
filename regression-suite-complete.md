@@ -32382,19 +32382,20 @@ Qwen/Qwen2.5-1.5B-Instruct]`; t2i `default_model` `Qwen/Qwen2.5-1.5B-Instruct`. 
 Idea I = `"Task: T2VA. Duration: 5.17 seconds. Idea: a red fox trotting through a snowy pine forest at dawn."`
 1. `list_enhancers`.
 2. `enhance_prompt(idea=I, preset="h3", acknowledged_cost=true)`; `wait_for_job`; `get_job`; `get_job_workflow`;
-   `get_output_text` on its text file.
+   `get_job_events(kinds=["log"])`; `get_output_text` on its text file.
 3. `enhance_prompt(idea=I, preset="h3", model_name="Qwen/Qwen2.5-1.5B-Instruct", acknowledged_cost=true)`; the same
    reads.
 4. `enhance_prompt(idea="a cat portrait in a sunlit window", preset="t2i", acknowledged_cost=true)`; the same reads.
 expected:
-- 2: succeeds with non-empty text. The model that ran (the realized workflow's `model_name` variable, or the step's
-  `model_name`, in `get_job_workflow`) equals the h3 `default_model` from step 1. `get_job.arguments` no longer carries
+- 2: succeeds with non-empty text. The model that ran (the `model_name` field of the `log` event with
+  `command: "text_generation"` in `get_job_events`) equals the h3 `default_model` from step 1. `get_job.arguments` no longer carries
   a `model_name` the caller did not pass (the plan's change: the builtin's own variable decides). A different model
   running, or a failure, is a **finding**; `model_name` still present in `arguments` with the default's value means
   the call still passes it, a **finding** against the stage (the outcome is the same today, but the advertised value can
   then drift from the one that runs unseen).
-- 3: succeeds; the model that ran is `Qwen/Qwen2.5-1.5B-Instruct`, and `arguments.model_name` says so.
-- 4: t2i is unchanged: succeeds, runs its `default_model` (`Qwen/Qwen2.5-1.5B-Instruct`).
+- 3: succeeds; the model that ran (that event's `model_name`) is `Qwen/Qwen2.5-1.5B-Instruct`, and the realized step's
+  `arguments.model_name` in `get_job_workflow` says so.
+- 4: t2i is unchanged: succeeds, runs its `default_model` (`Qwen/Qwen2.5-1.5B-Instruct`), read from the same event.
 - No new warning on any of the three jobs.
 cleanup: `delete_output(job_id=<id>)` for the three jobs.
 metrics: none.
