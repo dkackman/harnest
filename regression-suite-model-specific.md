@@ -12505,7 +12505,6 @@ cleanup: `delete_output(job_id=<id>)`, and delete step 5's downloaded copy.
 metrics: none.
 
 ### M-F500 — the #1680 mps probe's two bench workflows validate clean on mini-ai: two steps, components by path, no 64 GiB download
-pending: #1729
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageBlocks`), text encoder from
 `MiniMaxAI/MiniMax-H3`. Server: **mini-ai** (mps), workspace `bench` (pass `workspace="bench"` on every call). The
@@ -12537,7 +12536,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F501 — a rerun of the #1680 mps t2i probe on mini-ai gives one 2048×2048 PNG under `final`
-pending: #1729
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `bench/h3-image-mps-t2i` (M-F500), mini-ai (mps), workspace `bench`. **Spends mini-ai time**: one
 2048×2048 still, plausibly 10-20+ min (dequantize-on-use), near 64 GB of unified memory: run nothing beside it.
@@ -12562,7 +12560,6 @@ cleanup: `delete_output(job_id=<new id>)`.
 metrics: none.
 
 ### M-F502 — the #1680 mps rerun's events show step 1's pipeline released before step 2 loads, and a host peak within 10% of the record
-pending: #1729
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the M-F501 rerun job, mini-ai (mps), workspace `bench`. **Free**: job reads. Skip when M-F501 skipped.
 Steps: `get_job_events(<M-F501 job id>)` (page through all of them); `get_job(<id>)`.
@@ -12580,7 +12577,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F503 — the shipped H3-Image catalog templates stay refused at validate on a 64 GB mps host, naming `host_ram_gb`
-pending: #1729
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: every `templates/minimax-h3-image/*` entry (`text-to-image` at least). Server: mini-ai (mps, 64 GB);
 on a host with more than ~70 GB of RAM the refusal doesn't apply: record the host and skip. Workspace `bench`.
@@ -12598,7 +12594,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F504 — the #1680 mps record: every arm with job ids, phase timing, peak memory, swap and a still check; cut arms and failures named
-pending: #1729
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the #1729 probe. **Free**: issue reads and job reads. The record is the `## mini-ai (mps)` section
 of `bench/records/h3-image.md` in the dw repo; read it **as quoted on #1729 or #1680**, never from the checkout. If
@@ -12731,7 +12726,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### M-F510 — the #1680 mps probe reads its pre-quantized folders from the `bench` asset library with trust off, and its edit references resolve on mini-ai
-pending: #1729
 source: tester, spec for #1729 from #1680's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: `bench/h3-image-mps-t2i` and `bench/h3-image-mps-edit3` (M-F500's shape). Server: **mini-ai** (mps),
 workspace `bench` (pass `workspace="bench"` on every call). Plan v4 moved the folders: they are read from the `bench`
@@ -12767,7 +12761,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F511 — with trust off, the #1680 probe's workflow pointed at a pre-quantized folder outside the workspace's roots is still refused at validate on mini-ai
-pending: #1729
 source: tester, spec for #1729 from #1680's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: `bench/h3-image-mps-t2i` (M-F510), mini-ai (mps), workspace `bench`. Plan v4 keeps trust off and
 makes the probe pass the gate by copying the folders into the `bench` asset library; the spare original at
