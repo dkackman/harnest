@@ -28713,4 +28713,104 @@ expected:
 cleanup: `delete_output(job_id=<id>)` for all four jobs.
 metrics: none.
 
+### C-F1539 — `get_server_info` carries a `storage` block: job history's real row count, size and date span, and the log file's size and backups
+pending: #1766
+source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Before #1766, no tool or route reported the job-history database's size or row count, or anything
+about the log files, and `list_jobs`' `total` once stopped at 200 (#1466). Run it with no job queued or running.
+1. `get_server_info()`. Read `storage.job_history` and `storage.logs`.
+2. `list_jobs(limit=1)` (no `workspace`, so the default lists every job on the server). Note `total` and the
+   newest job's `created_at`.
+3. `get_server_info()` again, then `get_server_info(cache_entries=true)`.
+4. `use_workspace(name="regression-complete")`, `get_server_info()`, then `use_workspace(name="default")`.
+expected:
+1. Shape: `storage.job_history` has `path`, `size_bytes`, `rows`, `oldest`, `newest`; `storage.logs` has `path`,
+   `size_bytes`, `backups`, `total_bytes`. Each figure is its type (string path, non-negative integer
+   `size_bytes`/`rows`/`backups`/`total_bytes`, a timestamp for `oldest`/`newest`) or `null`. A missing key, or a
+   figure reported as an error string or an `error` member instead of `null`, is a **finding**. The rest of
+   `get_server_info` (`device`, `directories`, `caches`, `plugin`, …) is unchanged in shape.
+2. Job history is readable on a running server, so `rows` and `size_bytes` are not `null`: `size_bytes > 0`, and
+   `rows >= ` step 2's `total`. When `total` is above 200, `rows` above 200 too; `rows` of exactly 200 against a
+   larger `total` is a **finding** (the #1466 cap leaking into the count). `oldest <= newest`, and `newest` is at
+   or after the newest job's `created_at` read in the same unit (epoch seconds, or that instant as ISO-8601; the
+   two may differ by under a second of rounding). `rows > 0` with `oldest` or `newest` `null` is a **finding**.
+3. Logs: on a server that writes a log file (both lem and mini-ai do), `logs.size_bytes > 0`, `backups` is an
+   integer from 0 to 7 inclusive, and `total_bytes >= size_bytes`, equal when `backups` is 0. `backups` above 7 is
+   a **finding** (rotation keeps 7).
+4. Read-only and stable: steps 1, 3 and 4 report the same `job_history.rows`, `oldest`, `newest`, `logs.backups`
+   and paths (sizes may grow slightly from logging and WAL writes; they never shrink to 0). `cache_entries=true`
+   and the workspace pin don't change the `storage` block: job history is one server-wide database, so a smaller
+   `rows` under `regression-complete` is a **finding**.
+cleanup: `use_workspace(name="default")` (step 4 does it).
+metrics: none.
+
+### C-F1540 — `GET /api/server` serves the same `storage` block, and the OpenAPI document declares it
+pending: #1766
+source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check` `fetch` steps only (no page). Run with no job queued or
+running. Spec: `fetch {path: "/api/server"}`, `fetch {path: "/openapi.json"}`. Then `get_server_info()` over MCP.
+expected:
+1. `/api/server` answers 200 with `storage.job_history {path, size_bytes, rows, oldest, newest}` and
+   `storage.logs {path, size_bytes, backups, total_bytes}`. Its `rows`, `oldest`, `newest`, `backups` and both
+   `path`s equal `get_server_info`'s (MCP passes the block through; sizes may differ by a few log lines). A field
+   MCP has and REST lacks, or the reverse, is a **finding**.
+2. `/openapi.json`: the schema `GET /api/server` returns (`ServerInfo`, or whatever its 200 response `$ref`s)
+   declares a `storage` property whose schema reaches `job_history` and `logs` with each field above, and each
+   figure is nullable (`anyOf` with `null`, or `nullable: true`). A `storage` the route serves but the document
+   doesn't declare is a **finding** (stale OpenAPI). If the document is `truncated`, report that rather than a pass.
+cleanup: none.
+metrics: none.
+
+### C-F1541 — Server › Status shows job history (rows, size, date span) and logs (size, backups), read-only, and a `null` figure doesn't break it
+pending: #1766
+source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`. Run once `get_server_info` reports a commit containing the
+stage's merge. Spec A: `fetch {path: "/api/server"}` (note `storage`); `record {url_glob: "**/api/**"}`; `goto /`;
+open the Server page and its Status section with the UI's own nav (`click {role: "link", name: "Server"}`, then the
+Status tab or heading if it is not the default; find the names from a first `screenshot` if these miss);
+`wait_text {regex: "(?i)job history"}`; `inspect {regex: "(?i)job history"}`; `inspect {regex: "(?i)\\blogs?\\b"}`;
+`screenshot server_storage`; `recorded {url_glob: "**/api/**"}`. Spec B, a fresh run: `mock {url_glob:
+"**/api/server"}` from the real answer setting `storage.job_history.rows`, `storage.job_history.oldest`,
+`storage.job_history.newest`, `storage.logs.size_bytes` and `storage.logs.backups` to `null`; the same navigation
+and `wait_text`; `screenshot server_storage_nulls`. Spec C, a fresh run: `mock` setting `storage.logs` to `null`;
+same navigation; `wait_text {regex: "(?i)job history"}`; `screenshot server_storage_nolog`. Read every screenshot.
+expected:
+1. Spec A: a job-history line shows the row count (Spec A's `rows`, possibly with thousands separators or
+   abbreviated, e.g. `2.1k`, as long as it matches), a size consistent with `size_bytes` (human units), and the
+   date span from `oldest` to `newest`; a logs line shows a size consistent with `logs.size_bytes` or
+   `total_bytes` and the backup count. They sit in the Status section beside the disk-caches panel. A missing
+   line, or a figure that disagrees with `/api/server`, is a **finding**.
+2. Read-only: neither line carries a button, link-styled action or input (from `inspect` and the screenshot), and
+   `recorded` shows only GETs from loading the page: a POST, PUT or DELETE is a **finding**.
+3. Spec B and C: the page renders the rest of Status, the null figures show as a placeholder (a dash, "unknown",
+   or the line omitted), and no text reads `null`, `undefined`, `NaN` or `Invalid Date`. Spec C still shows the
+   job-history line. A page error or a blank Status section in any spec is a **finding**.
+cleanup: none (nothing queued).
+metrics: none.
+
+### C-F1542 — `storage.job_history.rows` and `newest` move with each admitted job, in step with `list_jobs`' `total`
+pending: #1766
+source: tester, spec for #1766 from #1457's plan v2 (claude-opus-5-5 via anthropic)
+GPU: one short z-image job (C-F1538's Z(seed) run, about 30 s on lem; any fixture-free run the server admits will
+do, named in the record). Workspace `regression-complete`. Nothing else may be queued or running during the case:
+check `list_jobs(status="queued,running")` first and wait for another session's job to finish before starting.
+1. `get_server_info()`: note `storage.job_history.rows` R0, `newest` N0, `size_bytes`. `list_jobs(limit=1)`: note
+   `total` T0.
+2. Control, not admitted: `run_workflow(inline_workflow={"id": "zz-rows", "steps": [Z(7)]},
+   workspace="regression-complete")` with no `acknowledged_cost`. It is refused for want of acknowledgement.
+   `get_server_info()`: note `rows` R1. `list_jobs(limit=1)`: `total` T1.
+3. `validate_workflow` the same inline workflow, then `run_workflow(..., workspace="regression-complete",
+   acknowledged_cost=<plan>, wait_seconds=55)` → `succeeded` (follow `still_running: true` with `wait_for_job`).
+   `get_server_info()`: `rows` R2, `newest` N2. `list_jobs(limit=1)`: `total` T2 and the job's `created_at`.
+expected:
+1. R1 = R0 and T1 = T0: a refused call adds no history row. A rise is a **finding**, and names which of the two
+   moved.
+2. R2 = R1 + 1 and T2 = T1 + 1 (the case's own job is the only one admitted). R2 − R1 ≠ T2 − T1 is a **finding**:
+   the count and the listing disagree. If another session's job slipped in, both rise by the same larger amount;
+   record it and judge the equality, not the "+1".
+3. N2 is later than N0 and at or after the new job's `created_at` (same unit rule as C-F1539). `size_bytes` is not
+   smaller than step 1's.
+cleanup: `delete_output(job_id=<id>)` for the job.
+metrics: none.
+
 ## Performance
