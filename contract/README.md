@@ -8,6 +8,7 @@ and gets the same result every time.
 contract/run.py                    # every case in contract/cases/
 contract/run.py S-F028 S-F036      # just these
 contract/run.py --level smoke
+contract/run.py --cases-dir DIR    # cases kept somewhere else, such as drafts
 ```
 
 `run.py` prints a JSON report and exits 0 if everything passed, 1 if any case
@@ -43,6 +44,12 @@ where `expect` is a list of assertions on paths into the result (`eq`,
 `any_contains`, `none_contains`). Cases are data, so writing one needs no
 code execution.
 
+A step can keep a value from its answer for later steps, with
+`"capture": {"fp": "plan.fingerprint"}`. `"${fp}"` is then filled in anywhere
+in a later step's `args` and in the value an assertion compares against, so
+"the second call's fingerprint equals the first's" is
+`{"path": "plan.fingerprint", "eq": "${fp}"}`. The docstring has the rules.
+
 ## Keeping the asymmetry
 
 The implementer never writes or edits anything here. The runner sees only
@@ -51,25 +58,41 @@ the tester verified it, not what the code currently does.
 
 ## Written so far
 
-17 cases, all passing on lem on 2026-11-22 (dw 0.23.0-alpha.1) in 3.5 s together:
-S-F002, S-F010, S-F018, S-F026, S-F028, S-F032, S-F035, S-F036, S-F085, S-F108, S-F110,
-S-F124, S-F125, S-F128, S-F130, S-F132, S-F145. Each was mutation-checked: one expectation
-per step changed, and every changed step failed with a readable message.
+22 cases, every one marked `runner: script` in its suite block.
 
-Only S-F002 and S-F028 are marked `runner: script` in the suite; the rest wait on approval.
+- 17 smoke cases, all passing on lem on 2026-11-22 (dw 0.23.0-alpha.1) in 3.5 s together:
+  S-F002, S-F010, S-F018, S-F026, S-F028, S-F032, S-F035, S-F036, S-F085, S-F108, S-F110,
+  S-F124, S-F125, S-F128, S-F130, S-F132, S-F145. Each was mutation-checked: one expectation
+  per step changed, and every changed step failed with a readable message. All 17 have
+  carried `runner: script` since harnest#280 (2026-11-22).
+- 5 added on 2026-11-26 from that day's pilot: SE-F022 and SE-F034 (security), C-F255,
+  C-F615 and C-F915 (complete). **These five have not yet been run against a server**, and
+  neither have the steps S-F145 gained the same day (the job total before and after its
+  `run_workflow`). They were replayed offline against the answers the pilot recorded, with
+  one answer changed per case.
 
 Things a case author should know:
 
-- **A case stops at its first failed step.** Five cases (S-F010, S-F026, S-F108, S-F128,
-  S-F145) send a `run_workflow` the server must refuse, with `acknowledged_cost: true`
+- **A case stops at its first failed step.** Six cases (S-F010, S-F026, S-F108, S-F128,
+  S-F145, C-F255) send a `run_workflow` the server must refuse, with `acknowledged_cost: true`
   because the server checks cost before arguments. Each follows a validate step asserting
   the same refusal, so a server that stops refusing fails there and the run is never sent.
   If a refusal step is handed a `job_id` anyway, the runner cancels the job.
-- **"The same message" is pinned.** The runner cannot compare two steps, so where the prose
-  says a second call returns the same message as the first, both steps assert the full
-  text. A rewording on the server fails both and needs the JSON updated.
-- **No starts-with, ends-with, pattern or cross-step assertion.** S-F060 and S-F116 stay
-  with the agent for that reason; S-F147 because it needs a paid run.
+- **"The same as the earlier call" is a capture.** S-F145 and C-F915 compare against a
+  value an earlier step returned. The cases written before capture existed (S-F010, S-F026,
+  S-F035, S-F085, S-F108, S-F128) still pin the full text in both steps: a rewording on the
+  server fails both and needs the JSON updated.
+- **"No new job" is the job total before and after.** S-F145, C-F255 and C-F915 capture
+  `list_jobs`' `total` and assert it has not moved. A job another session queues in the same
+  scope between the two calls fails the case, and the report shows the two totals.
+- **No starts-with, ends-with, pattern, number or either-or assertion, and no following a
+  job.** S-F060 and S-F116 stay with the agent for that reason, and S-F147 because it needs
+  a paid run. Two cases here approximate: S-F032 asserts a warning *containing* `shots[0]:`
+  where its prose says *beginning*, and S-F124 an error *containing* the suggestion where
+  its prose says *ending*.
 - **Fixtures.** The cases use the common `qa-cast` assets, the stored prompt
-  `flux/weighted_portrait` and the `regression-smoke` workspace. S-F110 assumes the SDXL
-  repo is not downloaded on lem, as its prose does.
+  `flux/weighted_portrait` and the `regression-smoke` workspace; the complete cases name
+  `regression-complete` on each call that takes a workspace. S-F110 assumes the SDXL repo is
+  not downloaded on lem, as its prose does. SE-F022 writes out 33 `for_each` entries, one
+  more than the documented cap of 32, behind a step that checks the cap is still 32.
+  C-F615 reads the catalog in whatever workspace the runner's session lands in.
