@@ -66,10 +66,10 @@ the tester verified it, not what the code currently does.
   per step changed, and every changed step failed with a readable message. All 17 have
   carried `runner: script` since harnest#280 (2026-11-22).
 - 5 added on 2026-11-26 from that day's pilot: SE-F022 and SE-F034 (security), C-F255,
-  C-F615 and C-F915 (complete). **These five have not yet been run against a server**, and
-  neither have the steps S-F145 gained the same day (the job total before and after its
-  `run_workflow`). They were replayed offline against the answers the pilot recorded, with
-  one answer changed per case.
+  C-F615 and C-F915 (complete). All 22 cases passed on lem on 2026-11-26
+  (dw 0.23.0-alpha.3) in 7.2 s together, including the steps S-F145 gained the same day (the
+  job total before and after its `run_workflow`). The five new ones were mutation-checked
+  only offline, against the answers the pilot recorded, with one answer changed per case.
 
 Things a case author should know:
 
