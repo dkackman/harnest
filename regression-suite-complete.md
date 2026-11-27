@@ -26829,14 +26829,14 @@ metrics: none.
 ### C-F1437 — a video saved with no declared or carried frame rate warns `video_fps_defaulted` and is 8 fps; a declared or carried rate does not warn
 source: tester, spec for #1727 from #1643's plan v1 (claude-opus-5-5 via anthropic)
 Task-only, no model load: seconds of GPU-free work. Workspace `regression-complete`. Fixture
-`asset:qa-cast/ep3-shot1-incident.mp4` (24 fps, 124 frames). `video_frames` returns a bare `(frames, h, w, c)` uint8
-array, so its saved mp4 has no rate unless the step declares one. Before the stage such a file was written at 8 fps with
-no warning anywhere (`job.warnings` empty, nothing in the events).
-Inline workflow W, `id` `cf1437-fps`, five steps, each `"result": {"content_type": "video/mp4", "save": true}` unless
+`asset:qa-cast/ep3-shot1-incident.mp4` (24 fps, 124 frames). `video_frames` carries the source's rate (#673), so its saved mp4 keeps 24 fps with nothing declared. A still looped with `loop_frames` carries no rate, so its saved mp4 has none unless the step declares one. Before the stage such a file was written at 8 fps with no warning anywhere (`job.warnings` empty, nothing in the events).
+Inline workflow W, `id` `cf1437-fps`, six saved steps (plus the unsaved stills below), each `"result": {"content_type": "video/mp4", "save": true}` unless
 said otherwise:
-- `bare1`: `task.command` `video_frames`, `video` the fixture. No `fps` anywhere.
+- `still`: `get_first_frame` on the fixture, `"result": {"content_type": "image/png"}` (unsaved).
+- `bare1`: `task.command` `loop_frames`, `video` `previous_result:still`, `num_frames` 16. No `fps` anywhere.
 - `bare2`: the same as `bare1` again (a second step that falls back, to read the per-step warning).
-- `declared`: the same task, with `"result": {"content_type": "video/mp4", "save": true, "fps": 24}`.
+- `declared`: the same `loop_frames` task, with `"result": {"content_type": "video/mp4", "save": true, "fps": 24}`.
+- `carried_video_frames`: `task.command` `video_frames`, `video` the fixture. No `fps` declared; its rate is carried from the source.
 - `carried_task`: `stills_to_video` with `images` two stills taken from the fixture (`video_processors`
   `get_first_frame` / `get_last_frame` in two earlier unsaved steps, or any two same-size image assets), `durations`
   1, `fps` 12. Its rate is carried by the task, not declared on the result.
@@ -26846,16 +26846,17 @@ said otherwise:
    acknowledged_cost=<from validate>, wait_seconds=55, note="#1727 C-F1437", workspace="regression-complete")`.
 2. `get_job(<id>)`; `get_job_events(<id>)`; `get_gallery_metadata` on each saved mp4.
 expected:
-- Completes. `bare1` and `bare2`: `fps` 8, `frame_count` 124, `duration_seconds` about 15.5. `job.warnings` holds a
+- Completes. `bare1` and `bare2`: `fps` 8, `frame_count` 16, `duration_seconds` 2.0. `job.warnings` holds a
   `video_fps_defaulted` warning for **each** of the two steps (the per-step de-duplication keeps one per step, not one per
   job; two warnings for one step is noise, a finding only if it repeats per file), and each appears as a `warning`
   event with `kind: "video_fps_defaulted"` in `get_job_events`. Each message names the step (or its file), says 8 fps
   was assumed, and says how to set a rate (`result.fps`). Either step missing its warning is a **finding**; a warning on
   only one channel (job but not events, or the reverse) is a **finding** (C-F001's rule).
 - `declared`: `fps` 24, `duration_seconds` about 5.17, and **no** `video_fps_defaulted` naming it.
+- `carried_video_frames`: `fps` 24, `frame_count` 124, `duration_seconds` about 5.17, and no `video_fps_defaulted` naming it.
 - `carried_task`: `fps` 12 and no `video_fps_defaulted` naming it.
 - `carried_src`: no `video_fps_defaulted` naming it **if** its file is 24 fps. If its file is 8 fps, the fallback fired
-  and the warning **must** name it. The invariant across all five steps: a file written at the 8 fps fallback carries the
+  and the warning **must** name it. The invariant across all six saved steps: a file written at the 8 fps fallback carries the
   warning, and a file at any other rate does not. Breaking it either way is a **finding**.
 - No `device_adjusted` warning anywhere (lem is CUDA).
 cleanup: `delete_output(job_id=<id>)`.
