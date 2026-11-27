@@ -24403,15 +24403,17 @@ Arm C (the defaults' frame counts; its second quote is step 1's):
 expected:
 - Step 1: `basis: "observed"`, `runs` ≥ 1. This is the bucket that steps 2 and 3 must use.
 - Steps 2 and 3: `basis: "derived"`. `scaled` names an observed figure, in minutes, and the frame count it was measured
-  at. For example, `scaled from the observed 9.2 min at 124 frames: num_frames`. Call these X and N. N is the bucket's
+  at. For example, `scaled from the observed 9.2 min at 124 frames: num_frames`, optionally followed by #1764's
+  first-pass clause (`; plus 6 min first pass at 1 shape this card hasn't run (…)`, C-F1533's wording). Call the term's
+  minutes T (0 when there is no clause; 6 × the shapes the clause names). Call these X and N. N is the bucket's
   median summed frames, so it can differ from 124 if the bucket holds runs at other counts. X is the bucket's own
   figure, within 0.1 of X0 when `runs` ≥ 3.
-- With `runs` ≥ 3: `minutes` is within 5% of X × M / N, where M is 175 or 260. On the 2026-11-25 history that is about
+- With `runs` ≥ 3: `minutes` − T is within 5% of X × M / N, where M is 175 or 260. On the 2026-11-25 history that is about
   13.0 and 19.3. This assumes the cost row has no `fixed_minutes` (none on 2026-11-25). If it ever gains one, F, the
   figure is F + (X − F) × M / N.
 - With `runs` 1 or 2: the thin bucket is tempered toward the curated figure scaled to the same frames, so `tempered: true`
-  is present with `curated_minutes`. `minutes` is within 5% of (runs/3) × X × M / N + (1 − runs/3) × `curated_minutes`.
-- In neither case is `minutes` the curated-scaled figure: 21.2 × M / 637, which is 5.8 at 175 and 8.7 at 260.
+  is present with `curated_minutes`. `minutes` − T is within 5% of (runs/3) × X × M / N + (1 − runs/3) × `curated_minutes`.
+- In neither case is `minutes` − T the curated-scaled figure: 21.2 × M / 637, which is 5.8 at 175 and 8.7 at 260.
 - Step 4: the curated-scaled quote, as before #1696. That is `basis: "derived"`, with `scaled` beginning
   `scaled from the curated` and naming steps 12 vs 9, and `minutes` ≈ 21.2 × (12/9) × (175/637) ≈ 7.8 (7.8 on
   2026-11-25). If this workspace has since run a 12-step one-shot bucket, step 4 instead rescales that bucket's own
@@ -24446,7 +24448,7 @@ values below assume N = 124. With another N, pick the valid counts (17k + 5, 124
 4. `{"shots": [<shot(345)>]}`: ratio 2.78, the template's maximum.
 expected:
 - Steps 1 and 2: `basis: "derived"`, rescaled per C-F1298, with no `low_confidence` key, or `low_confidence: false`.
-- Steps 3 and 4: `basis: "derived"`, rescaled per C-F1298, with `low_confidence: true`. Step 4's `minutes` is still
+- Steps 3 and 4: `basis: "derived"`, rescaled per C-F1298, with `low_confidence: true`. Step 4's `minutes` − T (C-F1298) is still
   within 5% of X × 345 / N. The flag marks the reach; it doesn't drop the figure. A `valid: false` from the VRAM
   ceiling at 345 is not this case's finding: skip step 4 and say so.
 It is a **finding** if 1 or 2 is flagged, or if 3 or 4 is not. This case uses only today's defaults, so nothing else
