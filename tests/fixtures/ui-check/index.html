@@ -18,6 +18,7 @@
   <button type="button" id="d">Delete model</button>
   <button type="button" id="u">Update diffusers</button>
   <button type="button" id="s">Save workflow</button>
+  <button type="button" id="pr">Patch request</button>
   <button type="button" id="rr">Again</button>
   <button type="button" id="rb">Restart batch</button>
   <button type="button" id="ld">Load</button>
@@ -82,6 +83,7 @@
   admin('d', 'DELETE', '/api/models?repo=org/x');
   admin('u', 'POST', '/api/system/diffusers/update');
   admin('s', 'PUT', '/api/workflows/mine');
+  admin('pr', 'PATCH', '/api/workspaces/w/requests/r1');
   // Window flags for window_flag: primitives, and values it must refuse.
   window.__APP_READY = true;
   window.__count = 3;

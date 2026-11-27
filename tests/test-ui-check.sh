@@ -258,10 +258,16 @@ eq "unmock counts the stub's hits" 1 "$(j '.steps[9].result.hits')"
 eq "the stubbed POST never reached the server (one POST there, after unmock)" $((c0 + 1)) "$(grep -c 'POST /api/jobs?sizes=false' "$T/srv.out")"
 run '{"steps": [{"step": "stub", "url_glob": "{**/api/validate,**/api/jobs/*/cancel}", "json": null}]}'
 eq "a stub on {validate, cancel} is valid" 0 "$rc"
-for g in '**' '**/api/**' '**/api/models' '**/api/jobs**' '**/api/jobs*' '**/api/jobs/*/rerun*' '**/api/jobs/*/rerun-restart-batch*' '{**/api/jobs/*/rerun-restart-batch,**/api/models}' '{**/api/jobs,**/api/models}' '**/api/jobs/**/cancel'; do
+for g in '**/api/models' '**/api/jobs/*/rerun*' '{**/api/jobs,**/api/models}'; do
   run '{"steps": [{"step": "stub", "url_glob": "'"$g"'", "json": {}, "method": "POST"}]}'
-  eq "a POST stub on $g (not only a POST_ALLOWED route) is an invalid spec" 2 "$rc"
+  eq "a POST stub on $g (any same-origin write: harnest#296) is valid" 0 "$rc"
 done
+for g in 'http://localhost:'$port'/api/workflows/*' '{**/api/x,http://evil.example/api/x}' '*://127.0.0.1:'$port'/api/x' 'api/x'; do
+  run '{"steps": [{"step": "stub", "url_glob": "'"$g"'", "json": {}, "method": "PUT"}]}'
+  eq "a write stub glob off the base origin ($g) is an invalid spec" 2 "$rc"
+done
+run '{"steps": [{"step": "stub", "url_glob": "http://127.0.0.1:'$port'/api/workflows/*", "json": {}, "method": "DELETE"}]}'
+eq "a write stub glob naming the base origin is valid" 0 "$rc"
 run '{"steps": [{"step": "stub", "url_glob": "{**/api/jobs/*/rerun,**/api/jobs/j-1/rerun?x=1}", "json": {}}]}'
 eq "a stub on /api/jobs/<id>/rerun is valid" 0 "$rc"
 run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs/*/rerun-restart-batch", "json": {}, "method": "POST"}]}'
@@ -270,8 +276,48 @@ run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "status"
 eq "a stub status outside 100-599 is an invalid spec" 2 "$rc"
 run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "status": 600}]}'
 eq "a stub status of 600 is an invalid spec" 2 "$rc"
-run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "method": "DELETE"}]}'
-eq "a stub method other than GET or POST is an invalid spec" 2 "$rc"
+run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "method": "HEAD"}]}'
+eq "a stub method other than GET, POST, PUT, PATCH or DELETE is an invalid spec" 2 "$rc"
+
+# --- harnest#296: a stub answers any same-origin write (PUT, PATCH, DELETE, POST) and never sends it
+w0="$(grep -cE '"(PUT|PATCH|DELETE|POST) /api/(workflows|workspaces|models|system)' "$T/srv.out")"
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "record", "url_glob": "**/api/workflows/*"},
+  {"step": "stub", "url_glob": "**/api/workflows/*", "method": "PUT", "json": {"saved": true}, "status": 200},
+  {"step": "click", "role": "button", "name": "Save workflow"},
+  {"step": "wait_text", "text": "admin: s answered 200"},
+  {"step": "recorded", "url_glob": "**/api/workflows/*"},
+  {"step": "stub", "url_glob": "**/api/workspaces/*/requests/*", "method": "PATCH", "json": {"error": "stale_revision"}, "status": 409},
+  {"step": "click", "role": "button", "name": "Patch request"},
+  {"step": "wait_text", "text": "admin: pr answered 409"},
+  {"step": "stub", "url_glob": "**/api/models?**", "method": "DELETE", "json": {"deleted": 1}, "status": 202},
+  {"step": "click", "role": "button", "name": "Delete model"},
+  {"step": "wait_text", "text": "admin: d answered 202"},
+  {"step": "stub", "url_glob": "**/api/system/diffusers/update", "method": "POST", "json": {}, "status": 204},
+  {"step": "click", "role": "button", "name": "Update diffusers"},
+  {"step": "wait_text", "text": "admin: u answered 204"}
+]}'
+eq "write-stub spec ok" true "$(j .ok)"
+eq "a PUT stub answers a workflow save" true "$(j '.steps[4].ok')"
+eq "and the stubbed PUT is recorded" PUT "$(j '.steps[5].result.requests[0].method')"
+eq "a PATCH stub answers with its status (409)" true "$(j '.steps[8].ok')"
+eq "a DELETE stub answers a delete" true "$(j '.steps[11].ok')"
+eq "a POST stub answers a non-allowlisted POST" true "$(j '.steps[14].ok')"
+eq "no stubbed write is reported blocked" 0 "$(j '[.blocked[] | select(test("^(PUT|PATCH|DELETE|POST) "))] | length')"
+eq "no stubbed write reached the server" "$w0" "$(grep -cE '"(PUT|PATCH|DELETE|POST) /api/(workflows|workspaces|models|system)' "$T/srv.out")"
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "stub", "url_glob": "**/api/workflows/*", "method": "DELETE", "json": {}},
+  {"step": "click", "role": "button", "name": "Save workflow"},
+  {"step": "wait_text", "text": "admin: s failed"},
+  {"step": "click", "role": "button", "name": "Patch request"},
+  {"step": "wait_text", "text": "admin: pr failed"}
+]}'
+eq "a stub of another method on the glob does not answer a write" true "$(j '.steps[3].ok')"
+has "that PUT is still aborted and reported" "PUT http://127.0.0.1:$port/api/workflows/mine" "$(j '.blocked | join(" ")')"
+has "an unstubbed PATCH is aborted and reported" "PATCH http://127.0.0.1:$port/api/workspaces/w/requests/r1" "$(j '.blocked | join(" ")')"
+eq "neither reached the server" "$w0" "$(grep -cE '"(PUT|PATCH|DELETE|POST) /api/(workflows|workspaces|models|system)' "$T/srv.out")"
 run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs"}]}'
 eq "a stub without json is an invalid spec" 2 "$rc"
 

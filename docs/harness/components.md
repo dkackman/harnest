@@ -341,10 +341,12 @@ $HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`, the exact line its runtime no
 step kinds and the output are in the file's header and `agents/tester/core.md` ("Web UI
 cases"). `record`/`recorded` capture the requests matching a glob (mocked or not) for the
 cases that check what the page sent; `stub {url_glob, json, status, method}` answers without
-sending: as a POST stub, a POST to one of the allowed write routes below (its glob is refused
-at validation unless every `{a,b}` alternative names only those paths, and a GET on it gets
-the real answer), so a Run click need not queue a GPU job; as a GET stub (the default on any
-other glob), a GET or HEAD on any same-origin path, which changes nothing on the server, to
+sending: as a write stub (`method` POST, PUT, PATCH or DELETE; harnest#296), a same-origin
+request of exactly that method on any path, fulfilled by the runner and never fetched, so
+the lock stays the last route (a glob naming an origin must name the base's; a GET on it gets
+the real answer). A Run click need not queue a GPU job, and a save, keep, move or delete flow
+can be driven; a stubbed write proves the request and the page's reaction, never what the
+server stored. As a GET stub (the default on any glob but the allowed write routes), a GET or HEAD on any same-origin path, which changes nothing on the server, to
 play a 404 or 500 page-data load. `mock` takes `status` too (the real answer's, replaced),
 and `abort {url_glob}` fails same-origin GETs as a network error; neither reaches a write the
 lock refuses. `stream {url_glob, events, status, once, delay_ms}` (harnest#295) answers a

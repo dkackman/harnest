@@ -201,12 +201,17 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   matching request, mocked or not; `recorded` returns them (`method`, `url` path and
   query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).
 - `stub` answers with your JSON (and `status`, default 200) and never sends the request;
-  `record` still sees it. `method` `POST` (the default when the glob names only those
-  routes): a POST to validate, submit a run, cancel or rerun one, or a rerun-restart-batch (stub-only: a real one is blocked) (its glob may name only
-  those, e.g. `**/api/jobs?**`, `**/api/jobs/*/rerun`). A real Run or rerun click queues a
-  GPU job: stub it to check the request body; if a case needs a real run, use the cheapest
-  workflow and cancel it. `method` `GET` (the default on any other glob): a GET on any
-  path of the server, e.g. a 404 or 500 for the page's data.
+  `record` still sees it. `method` `POST`, `PUT`, `PATCH` or `DELETE`: a request of exactly
+  that method on any path of the server (a save, star, keep, move or delete; a glob that
+  names an origin must name the server's). `POST` is the default when the glob names only
+  validate, a run submit, cancel, rerun or rerun-restart-batch (e.g. `**/api/jobs?**`). A
+  real Run or rerun click queues a GPU job: stub it to check the request body; if a case
+  needs a real run, use the cheapest workflow and cancel it. `method` `GET` (the default on
+  any other glob): a GET on any path of the server, e.g. a 404 or 500 for the page's data.
+- **A stubbed write proves the request the page sends and how it reacts to the answer,
+  never that the server stored it.** A fix whose bug is in what the server stores is not
+  verifiable by stub: it keeps the verifier its design named, so say so on the issue
+  rather than pass it.
 - `abort {url_glob}` fails matching GETs as a network error (the server unreachable).
 - `viewport {width, height}` (320-3840 by 240-2160) sizes the page from that step on; a run
   starts at 1280x720. A case at a phone width (390x844) sets it before its `goto`.
@@ -230,9 +235,9 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
 - The runner signs the page in with the session's own token; never put a token in a spec.
 - It prints one JSON document: per step `ok` and `result` or `error` (it stops at the
   first failure), `page_errors`, `console_errors`, `shots`, and `blocked` (`METHOD url`
-  of each request it aborted: off the server's origin, or a write other than validate,
-  submitting, cancelling or rerunning a run, so a delete, a diffusers update or a save in
-  the UI never reaches dw). A page error is a finding when the case says so.
+  of each request it aborted: off the server's origin, or an unstubbed write other than
+  validate, submitting, cancelling or rerunning a run, so a delete, a diffusers update or a
+  save in the UI never reaches dw). A page error is a finding when the case says so.
 - Judge styling from `inspect`: the element's tag, classes, computed `color`,
   `background_color`, `font_weight`, `aria-*` and `attributes` (`title`, `id`, `href`,
   `data-*`...; at most 40, values cut to 500 chars, an `on*` handler shown as

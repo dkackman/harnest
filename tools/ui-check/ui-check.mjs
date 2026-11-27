@@ -23,13 +23,18 @@
 //               answer that long after the real fetch, to play a slow server (the
 //               step does not wait; the step and run caps and SIGTERM still apply)
 //   stub        {url_glob, json, status?, method?, delay_ms?}   answer with this JSON (status
-//               100-599, default 200) and never send the request. method POST: a
-//               POST to a POST_ALLOWED route; the glob may name only those routes
-//               (refused otherwise), and a GET or HEAD on it gets the real answer.
-//               A real Run click queues a GPU job: stub it. method GET: a GET or
-//               HEAD on any same-origin path (a read changes nothing on the server),
-//               to play a 404 or 500 page-data load; a POST on it goes on. Default:
-//               POST when the glob names only POST_ALLOWED routes, else GET.
+//               100-599, default 200) and never send the request. method POST, PUT,
+//               PATCH or DELETE: a same-origin request of exactly that method, on any
+//               path (a save, star, keep, move or delete), is fulfilled by the runner
+//               and never fetched, so the write lock stays the last route; another
+//               method on the glob goes on. A glob naming an origin must name the
+//               base's (refused otherwise). A real Run click queues a GPU job: stub
+//               it. method GET: a GET or HEAD on any same-origin path (a read changes
+//               nothing on the server), to play a 404 or 500 page-data load; a write
+//               on it goes on. Default: POST when the glob names only POST_ALLOWED or
+//               rerun-restart-batch routes, else GET. A stubbed write proves the
+//               request the page sends and how it reacts to the answer, never that
+//               the server stored it.
 //               delay_ms (integer 0-10000) holds the answer that long, as for mock.
 //   stream      {url_glob, events, status?, once?, delay_ms?}   answer a matching
 //               same-origin GET with a text/event-stream body built from events
@@ -100,7 +105,8 @@
 // DELETE /api/models, update_diffusers' POST /api/system/diffusers/update,
 // cache clears, workflow and prompt saves...) are aborted and listed in
 // "blocked" as "METHOD url", so the UI is no side door past the tester's MCP
-// denylist; a mock cannot fetch them either. No downloads, no permissions, no
+// denylist; a mock cannot fetch them either. A stub of that method may answer
+// one (the runner fulfils it; it is never sent). No downloads, no permissions, no
 // service workers, no popups. Each step is capped at 30 s, the whole run at
 // 300 s, and the run stops at the first step that fails. SIGTERM (SIGINT,
 // SIGHUP) closes the browser and prints the partial result.
@@ -132,10 +138,10 @@ const RUN_MS = 300000;
 // rerun one (the MCP tools validate_workflow, run_workflow, cancel_job and rerun_job,
 // all the tester's). Not /rerun-restart-batch, /export, /move.
 const POST_ALLOWED = [/^\/api\/validate$/, /^\/api\/jobs$/, /^\/api\/jobs\/[^/]+\/(?:cancel|rerun)$/];
-// Routes a page may send only to a stub: the request is fulfilled without being fetched, so it
-// never reaches the server (a real restart batch re-queues many jobs). Not in POST_ALLOWED.
-const STUB_ONLY = [/^\/api\/jobs\/[^/]+\/rerun-restart-batch$/];
 const READ_METHODS = new Set(["GET", "HEAD"]);
+// What a stub may answer: a read, or a same-origin write of exactly its method. A write
+// stub fulfils and never fetches, so the request never reaches the server.
+const STUB_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const SPEC_PATH = /^\/tmp\/dw-ui-[A-Za-z0-9_-][A-Za-z0-9._-]*\.json$/;
 const BAD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const MAX_RECORDED = 200;
@@ -145,8 +151,9 @@ const MAX_ALTERNATIVES = 32;
 const MAX_CONFIG = 64 * 1024;
 // dw's UI keeps its bearer token here (ui/src/lib/storage.ts prefixes "dw-" and stores JSON).
 const TOKEN_KEY = "dw-api-token";
-// A POST stub's glob, each {a,b} alternative: any origin (** or one literal), then
-// exactly a POST_ALLOWED or STUB_ONLY path, then nothing or a query.
+// The globs a stub with no method answers as POST, each {a,b} alternative: any origin
+// (** or one literal), then exactly a POST_ALLOWED or rerun-restart-batch path, then
+// nothing or a query.
 const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/(?:cancel|rerun|rerun-restart-batch))(?:\?.*)?$/;
 const FLAG_NAME = /^__[A-Za-z0-9_]{1,40}$/;
 // stream: at most this many events and body bytes; event and id are one line.
@@ -332,7 +339,7 @@ function checkValue(kind, v, where) {
       if (!Number.isInteger(v) || v < 100 || v > 599) invalid(where + " must be an HTTP status from 100 to 599");
       return;
     case "method":
-      if (v !== "GET" && v !== "POST") invalid(where + " must be GET or POST");
+      if (!STUB_METHODS.has(v)) invalid(where + " must be GET, POST, PUT, PATCH or DELETE");
       return;
     case "read_method":
       if (!READ_METHODS.has(v)) invalid(where + " must be GET or HEAD (fetch only reads)");
@@ -449,12 +456,6 @@ function validate(spec) {
         break;
       case "stub":
         need(has("url_glob") && has("json"), "needs url_glob and json");
-        need(
-          stubMethod(s) !== "POST" || writeGlob(s.url_glob),
-          "a POST stub answers only the write routes a page may send (POST /api/validate, /api/jobs, " +
-            "/api/jobs/<id>/cancel, /api/jobs/<id>/rerun, /api/jobs/<id>/rerun-restart-batch): its url_glob must name only those, such as " +
-            "**/api/jobs?** or **/api/jobs/*/cancel",
-        );
         break;
       case "window_flag":
         need(has("name"), "needs name");
@@ -487,7 +488,7 @@ function validate(spec) {
   });
 }
 
-// A glob every {a,b} alternative of which names a POST_ALLOWED route.
+// A glob every {a,b} alternative of which names a POST_ALLOWED or rerun-restart-batch route.
 function writeGlob(glob) {
   return globAlternatives(glob).every((a) => STUB_GLOB.test(a));
 }
@@ -495,6 +496,18 @@ function writeGlob(glob) {
 // What a stub answers: its method, else POST on a write-route glob, else GET.
 function stubMethod(s) {
   return s.method || (writeGlob(s.url_glob) ? "POST" : "GET");
+}
+
+// A write stub's glob may name no origin but the base's: each {a,b} alternative starts
+// with ** or with the base origin and a /. (Off the origin the lock aborts it anyway.)
+function checkWriteStubs(spec, base) {
+  spec.steps.forEach((s, i) => {
+    if (s.step !== "stub" || READ_METHODS.has(stubMethod(s))) return;
+    for (const a of globAlternatives(s.url_glob)) {
+      if (a.startsWith("**/") || a.startsWith(base + "/")) continue;
+      invalid("step " + i + " (stub): a " + stubMethod(s) + " stub's url_glob must start with **/ or " + base + "/, not " + short(a, 200));
+    }
+  });
 }
 
 // The text/event-stream body for a stream step: each event's fields, data split on line
@@ -661,6 +674,7 @@ async function main() {
   const spec = readSpec(argv);
   validate(spec);
   const base = baseOf(spec);
+  checkWriteStubs(spec, base);
   const token = tokenFor(base);
   const out = { ok: false, base, token: token !== null, steps: [], page_errors: [], console_errors: [], blocked: [], shots: [] };
   let shotDir = null; // this run's own, made at the first screenshot
@@ -729,10 +743,6 @@ async function main() {
     if (m !== "POST") return true;
     return !POST_ALLOWED.some((re) => re.test(new URL(u).pathname));
   };
-  // What a stub may answer: same-origin, and a read, a POST_ALLOWED write or a STUB_ONLY one.
-  const stubbable = (req) =>
-    !denied(req) || (!offOrigin(req.url()) && req.method().toUpperCase() === "POST" &&
-      STUB_ONLY.some((re) => re.test(new URL(req.url()).pathname)));
   const block = (route) => {
     const req = route.request();
     out.blocked.push(short(req.method().toUpperCase() + " " + req.url(), 300));
@@ -839,17 +849,18 @@ async function main() {
         return { url_glob: s.url_glob, set: Object.keys(s.set || {}), status: s.status ?? null, once: s.once === true, delay_ms: s.delay_ms ?? 0 };
       }
       case "stub": {
-        // POST: answers a POST to a POST_ALLOWED route and never sends it; anything else
-        // on the glob (a GET, a path the leading ** let in) goes on to the real route and
-        // the lock. GET: answers a same-origin GET or HEAD (a read: nothing changes on the
-        // server either way); a write on the glob goes on.
+        // A write method: answers a same-origin request of exactly that method and never
+        // sends it (fulfil only: no route.continue or fetch here); another method on the
+        // glob, or anything off the origin, goes on to the real route and the lock. GET:
+        // answers a same-origin GET or HEAD (a read: nothing changes on the server either
+        // way); a write on the glob goes on.
         const method = stubMethod(s);
         const entry = { hits: 0, errors: [] };
         entry.handler = async (route) => {
           const req = route.request();
           const m = req.method().toUpperCase();
-          const mine = method === "POST" ? m === "POST" : READ_METHODS.has(m);
-          if (!mine || !stubbable(req)) return route.fallback();
+          const mine = method === "GET" ? READ_METHODS.has(m) : m === method;
+          if (!mine || offOrigin(req.url())) return route.fallback();
           entry.hits++;
           await hold(s);
           return route.fulfill({ status: s.status ?? 200, json: s.json }).catch(() => {});
