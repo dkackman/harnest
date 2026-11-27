@@ -26057,7 +26057,8 @@ expected:
   steps include `bed_slice`, `bed_resampled` and `bed`, in that order, before `mixed`.
   - The `list_workflows` entry names the three variables.
   - The description carries a sentence on the bed.
-  - `validate_workflow`'s estimate still prices the template at 0.2 min.
+  - `validate_workflow`'s `plan.estimate` is priced (positive `minutes`): 0.2 min when the basis is the curated row, or
+    the server's figure when the basis is `observed`.
 - **Step 5.** All three runs succeed.
 - **Step 6.** The three films agree on:
   - integrated loudness within 0.1 LU
