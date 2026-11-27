@@ -1,8 +1,8 @@
 
 ## Close-out
 
-A close-out makes a docs-only commit to `develop` (a branch merged, never
-`master`) and never deploys. There are two kinds.
+A close-out makes at most a docs-only commit to `develop` (a branch merged,
+never `master`) and never deploys. There are two kinds.
 
 ### Declined
 
@@ -38,24 +38,26 @@ All the parent's stage sub-issues are closed, and it carries `owner:lead` +
   filed after it:** the final check failed. See "Back from a failed final
   check".
 - **Fix-forward stages filed after the last bounce, all now closed:**
-  update the design record (the fix-forward and why), then step 3.
+  add a comment amending the design record (the fix-forward and why),
+  then step 3.
 
 ### Built, the first time
 
-1. **Make the design record.**
-   - Move the plan into `docs/proposals/complete/<slug>-complete.md`, the
-     format the existing `-complete.md` docs use.
-   - Record in it what was built, what was deferred and why, what each
-     stage cost (read `usage:` figures from the stage comments if they
-     name them; otherwise leave cost out rather than guess), and the
-     bounces per stage.
-   - Delete or retire the old partial doc it supersedes.
-   - Update any user-facing doc the stages left stale.
-2. **Commit on a branch**, merge to `develop`, and push. No deploy: these
-   are docs.
+1. **Make the design record: a comment on the parent**, headed "Design
+   record". Record what was built, what was deferred and why, what each stage
+   cost (read `usage:` figures from the stage comments if they name them;
+   otherwise leave cost out rather than guess), and the bounces per stage.
+   The issue is the record; the repo is not.
+2. **Tidy the docs.** Grep dw for the plan doc's path (code, skills,
+   templates, bench records). If anything cites it, move it into
+   `docs/proposals/complete/<slug>-complete.md` and fix the citations;
+   otherwise `git rm` it. Either way, delete the old partial doc it
+   supersedes, and update any user-facing doc the stages left stale. Commit
+   on a branch, merge to `develop`, and push. No deploy: these are docs. If
+   there is nothing to change, skip the commit.
 3. **Hand the parent to the tester for the feature's last check.** Comment
-   what closed, the design record's path, and "verify: run every case
-   whose `source:` names one of this feature's stages, and close the
+   what closed, a link to the design record comment, and "verify: run every
+   case whose `source:` names one of this feature's stages, and close the
    parent if they all pass". Then `gh issue edit <parent> --remove-label
    owner:lead --add-label owner:tester --add-label
    status:fixed-pending-verify`. Only the tester closes the parent.

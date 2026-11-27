@@ -482,7 +482,8 @@ single fix (handed to `owner:implementer`), a duplicate, or not worth doing.
    `develop`, deploys once, and hands off.
 6. **Verify** (`run-loop.sh`, tester). The tester checks the stage's repro plus its
    pending cases. A pass removes the `pending:` lines; a bounce goes back to the lead.
-7. **Close out.** Once every stage is closed, the lead writes the design record, and the
+7. **Close out.** Once every stage is closed, the lead writes the design record as a comment
+   on the parent (a file in dw only when something cites the plan), and the
    tester closes the parent after running every case the feature added.
 
 The lead can also stop mid-build and re-plan. That removes `status:plan-approved` and
