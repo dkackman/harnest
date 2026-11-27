@@ -8925,6 +8925,57 @@ absorbs: M-F494 (merged 2026-11-26, suite review), M-F483 (merged 2026-11-27, su
 - M-F494: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
 - M-F483: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 
+### M-F512 — `anchor: "keystone_face"` is a legal value refused only by the flag, a bad `anchor` names all three legal values, and the face anchor stays off the MCP surface
+pending: #1784
+source: tester, spec for #1784 from #1188's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate and reads, plus one `run_workflow` call that must be
+refused before it queues. Same server (flag off: the deployed default), workspace and W_hyb as M-F478; arm F (e) also
+needs the `qa-cast/priya-portrait.jpg` fixture. Plan v4 S6 (#1784), design 11-12: the legal `anchor` values are
+`"none"`, `"keystone"` and `"keystone_face"`, the face box comes from YuNet with no new download, and nothing new is
+added to the schema or the MCP tool text.
+Steps: W_hyb (NF 124, `num_inference_steps` 4), `validate_workflow(workspace="regression-model-specific",
+inline_workflow=W_hyb)` once per HW. Report a failure by arm and row (for example "V(c)").
+- **Arm F (the new value, legal):** HW = (a) `{"anchor": "keystone_face"}`; (b) `{"anchor": "keystone_face",
+  "switch_step": 0}` (S7's arm a+kf); (c) `{"anchor": "keystone_face", "switch_step": 3, "handoff": "finished"}`;
+  (d) `{"anchor": "keystone_face"}` with NF 690 (past the 345-frame ceiling); (e) `{"anchor": "keystone_face"}` with
+  `image: "asset:qa-cast/priya-portrait.jpg"` added to `gen`'s arguments; (f) HW `"variable:hw"` with
+  `variables: {"hw": {"anchor": "keystone_face"}}`. Then `run_workflow(workspace="regression-model-specific",
+  inline_workflow=W_hyb)` with (a)'s values and an `acknowledged_cost` built from the shape the refusal or `get_schema`
+  documents (any fingerprint: the flag refusal must come first).
+- **Arm V (near-misses of the new value):** HW = (a) `{"anchor": "Keystone_Face"}` (wrong case); (b)
+  `{"anchor": "keystone-face"}` (hyphen); (c) `{"anchor": "face"}`; (d) `{"anchor": "keystone_face "}` (trailing
+  space); (e) `{"anchor": ["keystone_face"]}`; (f) `{"anchor": "bogus"}`; (g) `{"anchor": "keystone_face_bogus",
+  "switch_step": 9}` (two bad fields).
+- **Arm S (no new surface):** `get_schema` with each section its index lists that covers pipeline arguments or steps,
+  the loaded `validate_workflow`, `run_workflow` and `get_pipeline_signature` tool descriptions, and
+  `get_guide("workflows")` with the long-take sections it lists. Search each for `keystone_face` and `keystone`.
+expected, arm F:
+- (a)–(f): `valid: false`, an error at `gen` naming `experimental_hybrid_windows` and `DW_EXPERIMENTAL_HYBRID_WINDOWS`.
+- (a)–(d), (f): no error names `anchor` as wrong, and (b), (c) carry no `switch_step` or `handoff` error (the new value
+  combines with both phases' settings). (d) may carry a 345-frame ceiling error beside the flag one; record whether
+  it does. A ceiling error *alone* is a finding.
+- (e): still refused. The face anchor does not open the key to a user image. Record whether the refusal names `image`
+  as a conflict or names only the flag.
+- The `run_workflow`: refused with the flag named, and no job id returned. If a job is queued, `cancel_job` it at once
+  and record it as a finding.
+expected, arm V:
+- (a)–(g): `valid: false`, an error naming `experimental_hybrid_windows` and `anchor` and listing all three allowed
+  values `none`, `keystone` and `keystone_face`. It is present whether or not the flag error also is: the key's own
+  rule runs before the flag check (plan v4 S6's unit test "a bad `anchor` value is still refused at validate before the
+  flag check").
+- (g): both the `anchor` and the `switch_step` error are reported (record if only one is; one at a time is not a
+  finding, a flag-only refusal is).
+expected, arm S:
+- No `keystone_face` and no `anchor`/keystone text for the hybrid key appears on the MCP surface (`keystone` may appear
+  elsewhere for an unrelated feature; record any hit and what it belongs to).
+It is a **finding** if any arm F row validates clean or carries an `anchor` error, if any arm V row validates clean, is
+refused only by the flag, or names the allowed values without `keystone_face`, or if arm S finds the face anchor on the
+MCP surface before a promotion plan is approved.
+Also run M-F478 arm C and M-F484 arm N as written: they still hold. An `anchor` error that lists `keystone_face` beside
+`none` and `keystone` meets M-F484 arm N's "listing the allowed values".
+cleanup: cancel any job the run queued (none expected).
+metrics: none.
+
 ### M-F485 — on a 23.6 GB card the Ref2VA ceilings at 1344x768 are 243/209/175/141 frames for 1/2/3/4 references, and the next 17-frame step is refused
 source: tester, verified in #1586 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA (`MiniMaxAI/MiniMax-H3`, `workflow: "ref2va"`) via
