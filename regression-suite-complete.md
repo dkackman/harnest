@@ -28831,7 +28831,6 @@ cleanup: `delete_output(job_id=<id>)` for all three jobs.
 metrics: none.
 
 ### C-F1544 — GET `/api/system/dw` carries `newer`, a PEP 440 compare of `latest` against `version`, and the OpenAPI document declares it
-pending: #1770
 source: tester, spec for #1770 from #1768's plan v1 (claude-opus-5-5 via anthropic)
 Free, read-only, no job, no update. **Web UI, black-box**, through `ui-check` `fetch` steps only (no page). At spec time
 the reply was `{version, latest, managed, command, status, error, log}` with `version` `"0.23.0-alpha.4"` and `latest`
@@ -28854,7 +28853,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1545 — the Models page offers a dw update exactly when `newer` is `true`, and never from its own string compare
-pending: #1770
 source: tester, spec for #1770 from #1768's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`. Before the stage, the Models page's dw line read `dw
 <version>` and, when it judged `latest` newer by its own heuristic, a muted span `<latest> is available - update with
