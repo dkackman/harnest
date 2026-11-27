@@ -26778,7 +26778,7 @@ metrics: none.
 
 ### C-F1435 — compose-workflows hands the parent's seed to its image child, and makes one still by default
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
-GPU: three compose runs (z-image still + MiniMax H3 image-to-video each), plus one z-image-only inline composition.
+GPU: one compose run (z-image still + MiniMax H3 image-to-video), plus four z-image-only inline compositions.
 Workspace `regression-complete`. Before the stage `models/z-image` declared `seed: 42`, and compose-workflows passed it
 no seed, so the child ran at 42 whatever the parent's seed was.
 Arguments S(s) = `{"seed": s, "width": 512, "height": 320, "image_num_inference_steps": 4,
@@ -26786,20 +26786,20 @@ Arguments S(s) = `{"seed": s, "width": 512, "height": 320, "image_num_inference_
 `num_images_per_prompt` left out on purpose, to read the Q3 default). Each run: `validate_workflow` with the same
 arguments first and pass its `acknowledged_cost`; `run_workflow(workflow_path="templates/compose-workflows", ...,
 wait_seconds=1500, workspace="regression-complete")`.
-1. Run S(7); run S(7) again; run S(8).
-2. For each: `get_job`, `get_job_workflow`, and the still from the image step.
-3. `compare_outputs` the run 1 still against run 2's, and run 1's against run 3's.
+1. Run S(7) once through compose-workflows; `get_job`, `get_job_workflow`, and the still from the image step.
+2. Run step 4's inline parent three times, with `"variables": {"seed": 7}`, `{"seed": 7}` and `{"seed": 8}` (wait_seconds=55 each, validate first); `get_job` and `get_job_workflow` for each, and its still.
+3. `compare_outputs` step 2's first seed-7 still against its second, and against the seed-8 still.
 4. `validate_workflow` then `run_workflow` an inline parent with `"seed": "variable:seed"` and `"variables": {"seed":
    null}` whose one step composes `models/z-image` with `{"prompt": "a lighthouse", "seed": "variable:seed",
    "num_images_per_prompt": 1, "num_inference_steps": 4, "width": 512, "height": 320}` (wait_seconds=55); `get_job`.
 expected:
-- 2: each run's image child reports seed 7, 7 and 8 respectively; seed 42 anywhere on the image child is a **finding**.
-  Each run makes exactly **one** still (Q3); four means z-image's own default leaked through.
-- 3: runs 1 and 2 give the same still (identical, or a match `compare_outputs` scores as the same image; if run 2 came
-  from the step cache, its events say so, and that is acceptable). Run 3's still differs.
+- 1: the image child reports seed 7; seed 42 anywhere on the image child is a **finding**. It makes exactly **one** still (Q3); four means z-image's own default leaked through.
+- 2: the three children report seed 7, 7 and 8; 42 is a **finding**.
+- 3: step 2's two seed-7 runs give the same still (identical, or a match `compare_outputs` scores as the same image; if run 2 came
+  from the step cache, its events say so, and that is acceptable). The seed-8 still differs.
 - 4: the job's seed is a drawn value, not null and not 42, and the child reports the same value as the parent (the
   plan's "seed hand-down" risk: `variable:seed` handing down `None`).
-cleanup: `delete_output(job_id=<id>)` for all four jobs.
+cleanup: `delete_output(job_id=<id>)` for all five jobs.
 metrics: none.
 
 ### C-F1436 — the workflow guide's composition section states the pass-through convention
