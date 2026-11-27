@@ -29,7 +29,7 @@ rather than in a separate log.
 | R17 | Loop scheduler: one event-loop driver for both servers, concurrent sessions by resource (`gpu:S`, `free`, `suite`, trees), driver-owned deploys, per-session suite worktrees, `logs/loop/state.json` and a dashboard loop card | phase 1 built on branch `r17-loop-scheduler` (`harness/drivers/loop.py`; bash item runner `lib/run-item.sh`); cutover on lem pending. Baseline, 14 days of the bash loop (`scripts/gpu-busy.py`, `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`): lem GPU slot 18.4% busy, $6.50 per closed dw issue ($1,443 over 222 closes), a standing task every 5,327 s on average. Target: the slot busy share up, cost per close not up. Phase 1b and 2 below | R8, R13, R16 |
 | R18 | Agent sessions run as a separate OS user (`harnest-agent`) with a restricted ssh key and no read access to source for the tester | proposed (Don, 2026-11-19) | R17 |
 | R19 | Escalation delegate: a role that rules on Don's queue (default, amend or pass through) and hands him only taste, trust, direction, large spend and his own earlier rulings; it may add `status:plan-approved` | built 2026-11-25 on Opus 5.5 after a replay of 103 of Don's closed rulings (pass-through recall 89%, $0.16 a ruling; `docs/superpowers/specs/2026-11-25-escalation-delegate-pilot.md`); on by default (`DELEGATE_IN_LOOP=0` turns it off); measure two weeks of overrides | R15, R17 |
-| R20 | UI code review: a `reviewer:ui` lane that checks a UI refactor's diff against the invariant its ticket names, with a driver-run mechanical check | proposed (harnest#297, 2026-11-25) | R17 |
+| R20 | UI code review: a `reviewer:ui` lane that checks a UI refactor's diff against the invariant its ticket names, with a driver-run mechanical check | approved, build deferred (harnest#297, 2026-11-26) | R17 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1907,7 +1907,12 @@ pass-through kind the delegate ruled on.
 
 ## R20 — UI code review: verify UI refactors by their stated invariant
 
-Status: proposed (harnest#297, 2026-11-25).
+Status: approved 2026-11-25, build deferred 2026-11-26 (harnest#297). The backlog that
+motivated it closed without the lane: of dw#1666–#1677 every ticket but the planned feature
+dw#1670 is closed, most `status:verified` through the tester and the batch lane, so the first
+step (hand-label each with an invariant and a check) has nothing to label. Build it when a new
+refactor-class UI ticket can name an invariant from the menu below and has no other verifier;
+until then such a ticket goes to the R15 batch lane.
 
 **Why.** A large share of the open dw UI backlog is code quality with no consumer-visible
 surface: token bypasses (dw#1666), a shared document-route helper (dw#1667), duplicated star,
