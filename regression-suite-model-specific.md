@@ -2038,12 +2038,21 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-inline`, to
 `regression-perf/M-F055.jsonl`.
 
-### M-F056 — an LTX-2.5 width/height not divisible by 32 is refused at validate, not after the pipeline load
-Before #505, `templates/ltx2/two-stage` with `height: 272` validated clean. The run then failed about 80 s
+### M-F056 — an LTX-2.5 or MiniMax-H3 width/height not divisible by 32 is refused at validate, not after the pipeline load
+Two arms, one per model family: the same rule, declared by two fixes.
+
+**Arm LTX.** Before #505, `templates/ltx2/two-stage` with `height: 272` validated clean. The run then failed about 80 s
 in, inside diffusers' own `check_inputs` ("have to be divisible by 32"). The fix declared the rule as a
 variable constraint on every LTX-2.5 template that takes `width`/`height`.
+
+**Arm H3.** Before #789, `templates/minimax/music-video` with `height: 272` validated clean. The run then loaded
+MiniMax-H3 for about 100 s and failed with "`height` and `width` must be multiples of 32". The fix
+declared the rule as a variable constraint (modulus 32, no snap) on every `templates/minimax/*`
+template that takes `width`/`height`.
+
 **Free**: validate and get_workflow only.
 expected:
+Arm LTX:
 - `get_workflow("templates/ltx2/two-stage", variables_only=true)` → `constraints.width` and
   `constraints.height` each have `modulus: 32`, `remainder: 0`.
 - `validate_workflow(name="templates/ltx2/two-stage", arguments={"prompt": "a lighthouse at dusk",
@@ -2052,11 +2061,25 @@ expected:
 - The same call with `height: 288` → `valid: true`.
 - `validate_workflow(name="templates/ltx2/text-to-video", arguments={"width": 950})` → `valid: false`,
   with the error at `arguments.width`.
-It is a **finding** if an off-grid size validates clean, or if an on-grid size is refused.
+Arm H3:
+- `get_workflow("templates/minimax/music-video", variables_only=true)` → `constraints.width` and
+  `constraints.height` each have `modulus: 32`, `remainder: 0`.
+- `validate_workflow(name="templates/minimax/music-video", arguments={"width": 480, "height": 272,
+  "num_inference_steps": 4})` → `valid: false`, with exactly one error, at `arguments.height`, naming
+  the 32 rule.
+- The same call with `height: 288` → `valid: true`, no errors.
+- The same call with `width: 500, height: 290` → two errors, at `arguments.width` and `arguments.height`.
+  Neither value is snapped.
+- `validate_workflow(name="templates/minimax/reference-to-video", arguments={"width": 960, "height": 540})`
+  → `valid: false`, with the error at `arguments.height`.
+It is a **finding**, in either arm, if an off-grid size validates clean, or if an on-grid size is refused.
 cleanup: none (nothing is queued or written).
 source: tester, verified in #505, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-27 against
 `lem` `develop @ 6a5cbd5`.
 metrics: none.
+
+absorbs: M-F127 (merged 2026-11-27, suite review, pass 2)
+- M-F127: tester, verified in #789, model `claude-opus-5-5` via provider `anthropic`, on 2026-10-08 against mini-ai (mps) `develop @ f7b15455`.
 
 ### M-F057 — an LTX-2.5 `for_each` entry's own `image` given as a `previous_result:` string reaches the pipeline, with per-entry `num_frames`
 source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic), ep76, job `39d59595d6fb`
@@ -3883,29 +3906,6 @@ It is a **finding** if the final tracks the frame-0 reference instead, or if a t
 cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
-### M-F127 — a MiniMax-H3 width/height that isn't a multiple of 32 is refused at validate, not after the model load
-Before #789, `templates/minimax/music-video` with `height: 272` validated clean. The run then loaded
-MiniMax-H3 for about 100 s and failed with "`height` and `width` must be multiples of 32". The fix
-declared the rule as a variable constraint (modulus 32, no snap) on every `templates/minimax/*`
-template that takes `width`/`height`. M-F056 is the LTX-2.5 counterpart.
-**Free**: validate and get_workflow only.
-expected:
-- `get_workflow("templates/minimax/music-video", variables_only=true)` → `constraints.width` and
-  `constraints.height` each have `modulus: 32`, `remainder: 0`.
-- `validate_workflow(name="templates/minimax/music-video", arguments={"width": 480, "height": 272,
-  "num_inference_steps": 4})` → `valid: false`, with exactly one error, at `arguments.height`, naming
-  the 32 rule.
-- The same call with `height: 288` → `valid: true`, no errors.
-- `width: 500, height: 290` → two errors, at `arguments.width` and `arguments.height`. Neither value
-  is snapped.
-- `validate_workflow(name="templates/minimax/reference-to-video", arguments={"width": 960, "height": 540})`
-  → `valid: false`, with the error at `arguments.height`.
-It is a **finding** if an off-grid size validates clean, or if an on-grid size is refused.
-cleanup: none (nothing is queued or written).
-source: tester, verified in #789, model `claude-opus-5-5` via provider `anthropic`, on 2026-10-08 against
-mini-ai (mps) `develop @ f7b15455`.
-metrics: none.
-
 ### M-F128 — on lem the H3 quantized cache is on and every `quantized_cache` event is well-formed; SDNQ components are cached on a miss and loaded from cache on the next run, with the same output; a skipped save is never a failed job
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs on lem only (`get_server_info` → `device: "cuda"`). Skip it on another target, as not a failure.
@@ -5268,9 +5268,10 @@ would.
 cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
-### M-F220 — `templates/minimax/regional-edit` is listed as a shot that needs input media and has audio, and validates over an uploaded take and mask with an estimate
+### M-F220 — `templates/minimax/regional-edit` is listed as a shot that needs input media and has audio, defaults `refine_strength` to 0.9, and validates over an uploaded take and mask with an estimate across the measured bands
 source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the stage B template (MiniMax H3 t2va regional edit). Free.
+Plan v2 moved the default `refine_strength` to 0.9, not 0.7 (the bands arm below).
 Setup: M-F215 (masks). Workspace `regression-model-specific`.
 Steps:
 1. `list_workflows(shape="shot")`. Find `templates/minimax/regional-edit`.
@@ -5281,19 +5282,30 @@ Steps:
    workspace="regression-model-specific")`.
 4. The same with `arguments` also setting `refine_strength` 0.5, then 1.0.
 5. The same as step 3 with `mask_image: "asset:h3-mask/region-480.png"`.
+6. Bands arm: the same as step 3 with `arguments` also setting `refine_strength` 0.85, then 0.95 (1.0 is
+   step 4's probe).
 expected:
 - The entry has shape `shot`, traits including `needs-input-media` and `has-audio`, and a non-null
   `cost`.
-- The variables include `source_video`, `mask_image`, `prompt`, `refine_strength` (default 0.9)
+- The variables include `source_video`, `mask_image`, `prompt`, `refine_strength` (default **0.9**)
   and `num_inference_steps` (default 5). The H3 step's `hold_audio` is `variable:source_video`,
   and its `source_video` and `mask_image` come from the variables.
 - Steps 3 and 4 are `valid: true`, with a `plan.estimate` quoted.
 - Step 5 is refused, naming the mask and both sizes (M-F216 (e) through the template).
+- Bands arm: step 6's probes (0.85 and 0.95) are each `valid: true`, each with a `plan.estimate`, as are
+  step 3 and step 4's 1.0 probe.
+- Bands arm: if the template's description or variable help mentions the strength, it uses the bands (0.9
+  replaces an object, 0.95 reworks clothing, 1.0 a fresh generation), not "0.5 light / 1.0 replace".
 It is a **finding** if the entry is missing, the traits or the cost are missing, the variables or
 defaults differ from the plan without a guide note, `hold_audio` isn't tied to `source_video`, or
 step 3 or 4 is refused.
+Bands arm: it is a **finding** if the default isn't 0.9, if any step 3, 4 (1.0) or 6 probe is refused, or
+if the template text gives strength guidance that contradicts the bands.
 cleanup: none.
 metrics: none.
+
+absorbs: M-F247 (merged 2026-11-27, suite review, pass 2)
+- M-F247: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F221 — the `minimax-h3` skill has a "fix one region of a good take" branch that covers the mask, `refine_strength` and the grain
 source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
@@ -5849,14 +5861,18 @@ metrics: none.
 absorbs: M-F214 (merged 2026-11-26, suite review)
 - M-F214: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 
-### M-F245 — a regional edit at `refine_strength` 0.9 replaces the held object while identity and pose hold, logs a regional-edit event, keeps the outside close, and keeps the take's audio
+### M-F245 — a regional edit at `refine_strength` 0.9 replaces the held object while identity and pose hold, logs a regional-edit event, keeps the outside close, and keeps the take's audio; the `regional-edit` template at its defaults, overriding only `source_video`, `mask_image` and `prompt`, does the same
 source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va regional edit at 960×544, 124 frames, with the turbo LoRA (about one
 `video-with-audio` pass). GPU on lem. Workspace `regression-model-specific`. This is plan v2's amended
 M-F218: the strength moves from 0.8 to 0.9, the inside check no longer needs the prompt's colour to land,
 and a job-event check is added.
+Template arm: `templates/minimax/regional-edit` at its defaults (`refine_strength` 0.9,
+`num_inference_steps` 5). GPU on lem, at the template's listed cost, a second job. This is plan v2's
+amended M-F222: the default is 0.9, and the inside check is the carrier arm's (object replaced, identity
+holds), not "the prompted change lands".
 Setup: M-F215 (masks and carrier RE, with the setup's record of what `region.png` covers).
-Steps:
+Steps, carrier arm:
 1. Take RE and set `refine_strength: 0.9`, `seed: 1062`, `mask_grow` absent (default 1). Set `prompt` to
    describe the take's scene as the setup saw it, with the masked person "wearing a bright red raincoat"
    (the prompt the plan's sweep used). `validate_workflow` it and bind `acknowledged_cost`.
@@ -5869,7 +5885,13 @@ Steps:
    wholly outside the grown box>)`, then again with `crop` = the region's own (ungrown) box.
 7. `get_output_audio(<mp4>)`, and `get_output_frames(..., hear=1)` on the output and the source at the
    same times.
-expected:
+Steps, template arm:
+8. `validate_workflow` on `templates/minimax/regional-edit` with `arguments` holding only
+   `source_video: "asset:qa-cast/ep6-cold-open.mp4"`, `mask_image: "asset:h3-mask/region.png"` and
+   `prompt` (step 1's prompt). Bind `acknowledged_cost`.
+9. `run_workflow(..., note="M-F249 regional-edit template 0.9", wait_seconds=55)`, then `wait_for_job`.
+10. Run steps 3–7 on this job's output.
+expected, carrier arm:
 - The job succeeds. The output is 960×544, 124 frames at 24 fps, with one audio stream lasting the clip.
 - **Events:** exactly one regional-edit `log` event for the step. It names a regenerated cell count and a
   kept cell count (both above 0 and summing to the total; `mask_grow` 1 grows the region by a cell on each side, so regenerated can exceed the share `region.png` covers), `mask_grow` 1 and `refine_strength` 0.9. No error event.
@@ -5883,13 +5905,26 @@ expected:
 - The region crop measures clearly further from the source than the outside crop (the sweep measured
   about 0.78); an inside SSIM ≥ 0.9 means the region didn't change.
 - The audio is the take's own track at the same times, not new sound.
-It is a **finding** if the run fails, the event is missing or misreports the strength or `mask_grow`, the
-region comes back unchanged, the person's identity or pose is lost (a fresh generation inside the mask at
-0.9), the outside visibly shifts or measures under the threshold, a hard seam shows at the mask boundary,
-or the audio isn't the source's. The seed is pinned, so a judgment that differs on a rerun is worth
-reporting.
-cleanup: `delete_output(job_id=...)`.
-metrics: none.
+expected, template arm:
+- The job succeeds. Wall time is within 25% of the template's listed `cost`, with a cold load stated.
+- The output is 960×544, 124 frames at 24 fps, with the take's audio.
+- The regional-edit event names `refine_strength` 0.9 and `mask_grow` 1.
+- Inside the mask the content changed while the person's face, hair and pose hold; outside, the crop
+  meets the carrier arm's threshold; no seam at the mask boundary.
+It is a **finding**, carrier arm, if the run fails, the event is missing or misreports the strength or
+`mask_grow`, the region comes back unchanged, the person's identity or pose is lost (a fresh generation
+inside the mask at 0.9), the outside visibly shifts or measures under the threshold, a hard seam shows at
+the mask boundary, or the audio isn't the source's. The seed is pinned, so a judgment that differs on a
+rerun is worth reporting.
+It is a **finding**, template arm, if the run fails, needs any argument beyond the three, runs at a
+strength other than 0.9, loses the person's identity, changes the unmasked area or the audio, or is far
+outside its listed cost.
+cleanup: `delete_output(job_id=...)` on both jobs. After the last #1062 case, `delete_asset` each
+`h3-mask/` asset.
+metrics: template arm: `wall_minutes`, to `regression-perf/M-F249.jsonl` on each run. Carrier arm: none.
+
+absorbs: M-F249 (merged 2026-11-27, suite review, pass 2)
+- M-F249: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F246 — a `source_video` step with no mask validates as a whole-take re-denoise and its event says so
 source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
@@ -5917,27 +5952,6 @@ fresh generation unrelated to the take.
 cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
-### M-F247 — the `regional-edit` template defaults `refine_strength` to 0.9 and validates across the measured bands
-source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/regional-edit` (stage B). Free. This is plan v2's change to M-F220: the
-default `refine_strength` is 0.9, not 0.7; M-F220's other checks stand.
-Setup: M-F215 (masks). Workspace `regression-model-specific`.
-Steps:
-1. `get_workflow("templates/minimax/regional-edit", variables_only=true)`.
-2. `validate_workflow(workflow_name="templates/minimax/regional-edit",
-   arguments={"source_video": "asset:qa-cast/ep6-cold-open.mp4", "mask_image": "asset:h3-mask/region.png",
-   "prompt": "<as M-F245>"}, workspace="regression-model-specific")`.
-3. Step 2 with `refine_strength` set to 0.85, then 0.95, then 1.0.
-expected:
-- `refine_strength` defaults to **0.9**; `num_inference_steps` defaults to 5.
-- Steps 2 and 3 are all `valid: true`, each with a `plan.estimate`.
-- If the template's description or variable help mentions the strength, it uses the bands (0.9 replaces
-  an object, 0.95 reworks clothing, 1.0 a fresh generation), not "0.5 light / 1.0 replace".
-It is a **finding** if the default isn't 0.9, if any step 2–3 probe is refused, or if the template text
-gives strength guidance that contradicts the bands.
-cleanup: none.
-metrics: none.
-
 ### M-F248 — the `minimax-h3` skill's regional-edit branch picks `refine_strength` from the measured bands and says a big recolour isn't a regional edit's job
 source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3` skill as loaded from `develop`. Free. This is plan v2's change to
@@ -5956,30 +5970,6 @@ It is a **finding** if the branch still gives 0.5 / 1.0 guidance, omits the band
 or disagrees with the guide.
 cleanup: none.
 metrics: none.
-
-### M-F249 — a `regional-edit` run at its defaults (0.9) overriding only `source_video`, `mask_image` and `prompt` replaces the region's object, keeps identity, the outside and the audio
-source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/regional-edit` at its defaults (`refine_strength` 0.9,
-`num_inference_steps` 5). GPU on lem, at the template's listed cost. Workspace
-`regression-model-specific`. This is plan v2's amended M-F222: the default is 0.9, and the inside check
-is M-F245's (object replaced, identity holds), not "the prompted change lands".
-Setup: M-F215 (masks), and M-F245's prompt.
-Steps:
-1. `validate_workflow` with `arguments` holding only `source_video: "asset:qa-cast/ep6-cold-open.mp4"`,
-   `mask_image: "asset:h3-mask/region.png"` and `prompt`. Bind `acknowledged_cost`.
-2. `run_workflow(..., note="M-F249 regional-edit template 0.9", wait_seconds=55)`, then `wait_for_job`.
-3. Run M-F245's steps 3–7 on the output.
-expected:
-- The job succeeds. Wall time is within 25% of the template's listed `cost`, with a cold load stated.
-- The output is 960×544, 124 frames at 24 fps, with the take's audio.
-- The regional-edit event names `refine_strength` 0.9 and `mask_grow` 1.
-- Inside the mask the content changed while the person's face, hair and pose hold; outside, the crop
-  meets M-F245's threshold; no seam at the mask boundary.
-It is a **finding** if the run fails, needs any argument beyond the three, runs at a strength other than
-0.9, loses the person's identity, changes the unmasked area or the audio, or is far outside its listed
-cost.
-cleanup: `delete_output(job_id=...)`. After the last #1062 case, `delete_asset` each `h3-mask/` asset.
-metrics: `wall_minutes`, to `regression-perf/M-F249.jsonl` on each run.
 
 ### M-F252 — `restore_to_source` writes the rate the caller picks: the fit record's source rate with `"source"`, the input's rate when omitted, a number when given, and never changes the frame count
 source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
@@ -6527,19 +6517,21 @@ absorbs: M-F255, M-F286 (merged 2026-11-26, suite review)
 - M-F255: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 - M-F286: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 
-### M-F275 — `refine-in-place` on a 30 fps source with audio writes at 30 fps by default with the fitted frame count and the source's audio paired to it, and at 24 fps with the same frames when `frame_rate=24`
+### M-F275 — `refine-in-place` and `upscale-clip` on a 30 fps source with audio each write at 30 fps by default with the fitted frame count and the source's audio paired to it, and at 24 fps with the same frames when `frame_rate=24`
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/ltx2/refine-in-place`. Paid: two LTX-2.5 jobs at the default 960×544,
-121 frames, on lem (RTX 3090). Workspace `regression-model-specific`, `"seed": 1090`.
+Model/pipeline: `templates/ltx2/refine-in-place` (arm group **refine**) and `templates/ltx2/upscale-clip`
+(arm group **upscale**). Paid: four LTX-2.5 jobs, two per template, at the defaults (960×544 working
+size, 121 frames), on lem (RTX 3090). Workspace `regression-model-specific`, `"seed": 1090`.
 Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` (Fixtures). Confirm with `get_gallery_metadata`:
 124 frames at 30 fps, with audio.
-Arms (validate, bind `acknowledged_cost`, `run_workflow(..., note="M-F275 <arm>", wait_seconds=55)`,
-then `wait_for_job`):
+Arms, for each template (validate, bind `acknowledged_cost`, `run_workflow(..., note=<note>,
+wait_seconds=55)`, then `wait_for_job`); the note is `"M-F275 <arm>"` for `refine-in-place` and
+`"M-F275 upscale <arm>"` for `upscale-clip`:
 - **follow**: `arguments={"source_video": S30, "seed": 1090}`, no `frame_rate`.
 - **override**: the same plus `"frame_rate": 24`.
 Read each job with `get_job` (its `warnings`) and `get_job_events`; `get_gallery_metadata` and
-`assess_output` on each final.
-expected:
+`assess_output` on each final. Report a failure by group and arm (for example "upscale/override").
+expected, refine (`templates/ltx2/refine-in-place`):
 - Both jobs succeed.
 - **follow.** 960×544, **121 frames at 30 fps** (the 124-frame source trimmed to `num_frames`), about
   4.033 s. It has an audio stream whose length matches the picture within one frame (`assess_output`'s
@@ -6553,22 +6545,7 @@ expected:
   measures them identical or near it (same seed, the model held at 24): only the label differs.
 - Refined, same scene: at `frame:60` the follow final shows the source's subject, framing and pose
   (`get_output_frames` beside `S30` at the same index).
-It is a **finding** if the follow arm isn't 30 fps or 121 frames, its audio and picture lengths
-disagree by more than a frame, either arm warns `video_fps_defaulted` or the follow arm warns
-`fps_mismatch`, the override arm isn't 24 fps or changes the frame count, or the arms' frames differ
-beyond encoding noise.
-cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Keep the
-fixture.
-metrics: none.
-
-### M-F276 — `upscale-clip` on a 30 fps source with audio writes at 30 fps by default with the fitted frame count and paired audio, and at 24 fps with the same frame count when `frame_rate=24`
-source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/ltx2/upscale-clip`. Paid: two LTX-2.5 jobs at the defaults (960×544 working
-size, 121 frames) on lem. Workspace `regression-model-specific`, `"seed": 1090`.
-Setup: `S30` as M-F275.
-Arms (as M-F275, note `"M-F276 <arm>"`): **follow** `{"source_video": S30, "seed": 1090}`; **override**
-the same plus `"frame_rate": 24`.
-expected:
+expected, upscale (`templates/ltx2/upscale-clip`):
 - Both jobs succeed. The final's size is whatever `upscale-clip`'s description promises for a
   960×544 source; this case doesn't pin it, but both arms give the same size.
 - **follow.** **121 frames at 30 fps**, about 4.033 s, with the source's audio paired to that length
@@ -6577,10 +6554,16 @@ expected:
   and recorded.
 - `compare_outputs` between the two finals at `frame:0`, `frame:60` and `frame:120` measures them
   identical or near it.
-It is a **finding** on the same conditions as M-F275.
-cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Keep the
-fixture.
+It is a **finding**, in either group, if the follow arm isn't 30 fps or 121 frames, its audio and
+picture lengths disagree by more than a frame, either arm warns `video_fps_defaulted` or the follow
+arm warns `fps_mismatch`, the override arm isn't 24 fps or changes the frame count, or the arms'
+frames differ beyond encoding noise.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for all four jobs. Keep
+the fixture.
 metrics: none.
+
+absorbs: M-F276 (merged 2026-11-27, suite review, pass 2)
+- M-F276: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F277 — the fit-shaped templates on a 24 fps source are unchanged: 24 fps out, the fitted count, the same warnings as before #1107
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
@@ -7489,32 +7472,15 @@ compile figure or still says "unverified", or if a cited compile job is missing,
 cleanup: none.
 metrics: none.
 
-### M-F312 — `turbo_lead_in` validates clean at 0, 1 and the last legal value on both the 4- and 8-evaluation turbo chains, with an estimate
+### M-F313 — `turbo_lead_in` at validate and at `run_workflow`: refusals for the out-of-range and non-integer values, no `turbo` adapter, a non-H3 step, the `first_block` cache; and 0, 1 and the last legal value validate clean on both the 4- and 8-evaluation turbo chains, with an unchanged estimate
 source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 `fl2va` with the turbo LoRA, through `templates/minimax/chained-segments` (5 steps, 4
-evaluations, adapter `turbo`) and `templates/minimax/chain-video-continuity` (9 steps, 8 evaluations). Free:
-validates only.
+evaluations, adapter `turbo`) and `templates/minimax/chain-video-continuity` (9 steps, 8 evaluations), plus one
+non-H3 pipeline (LTX-2.5, `templates/ltx2/text-to-video`). Free: validates, plus run attempts that must queue nothing.
 Setup: the plan adds no template variable, so the argument goes on the H3 step itself. `get_workflow` each template,
 and make an inline copy with `turbo_lead_in` added to the H3 step's `arguments` (beside `guide_noise`'s place). If
 the build did add a template variable after all, passing it through `arguments` is equally acceptable; note which
-route was used.
-Steps (workspace `regression-model-specific`, `arguments={"segments": 2, "num_frames": 124, "seed": 42}` on every call):
-1. `chained-segments` copy: validate with `turbo_lead_in` absent, `0`, `1`, `2` and `3`.
-2. `chain-video-continuity` copy: validate with `turbo_lead_in` `0`, `2`, `3` and `7`.
-expected:
-- Every validate is `valid: true` with no error and a `plan.estimate`. No warning names `turbo_lead_in` (a warning
-  that was already there with it absent is fine).
-- The estimates with the argument equal the estimate without it: the lead-in adds no steps.
-It is a **finding** if any of these values is refused, so the legal range is narrower than the plan states (3 is the
-last legal value on 4 evaluations and 7 on 8), or if the estimate moves.
-cleanup: none (validates only).
-metrics: none.
-
-### M-F313 — `turbo_lead_in` refusals at validate and at `run_workflow`: the out-of-range and non-integer values, no `turbo` adapter, a non-H3 step, the `first_block` cache
-source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3 turbo chains as in M-F312, plus one non-H3 pipeline (LTX-2.5,
-`templates/ltx2/text-to-video`). Free: validates, plus run attempts that must queue nothing.
-Setup: the inline copies of M-F312, with `arguments={"segments": 2, "num_frames": 124, "seed": 42}`.
+route was used. `arguments={"segments": 2, "num_frames": 124, "seed": 42}` on every call.
 Steps (workspace `regression-model-specific`):
 1. `chained-segments` copy (4 evaluations): validate with `turbo_lead_in` `4`, `5`, `-1`, `"1"`, `1.5` and `true`.
 2. `chain-video-continuity` copy (8 evaluations): validate with `turbo_lead_in: 8`.
@@ -7525,6 +7491,8 @@ Steps (workspace `regression-model-specific`):
    Then the same cache with `turbo_lead_in` absent, as a control.
 6. `run_workflow` the step 1 copy with `turbo_lead_in: 4`, and the step 3 copy with `"fast"`, each with a bound
    `acknowledged_cost` from a clean validate of the same copy at `turbo_lead_in: 1`. Then `list_jobs`.
+7. Legal values, `chained-segments` copy: validate with `turbo_lead_in` absent, `0`, `1`, `2` and `3`.
+8. Legal values, `chain-video-continuity` copy: validate with `turbo_lead_in` `0`, `2`, `3` and `7`.
 expected:
 - Steps 1–2: each refused, naming `turbo_lead_in`. `4`, `5` and `8` name the evaluation count (4 or 8) and say no
   turbo evaluation would be left. `-1` names the lower bound. `"1"`, `1.5` and `true` say an integer is required: a
@@ -7535,10 +7503,18 @@ expected:
 - Step 5: refused, naming both `turbo_lead_in` and the `first_block` cache. The control's outcome is whatever it is
   today: if it is refused too, the lead-in refusal must still name `turbo_lead_in`.
 - Step 6: both refused with the same causes as at validate, and `list_jobs` shows no new job.
-It is a **finding** if any of these validates or queues a job, if a refusal doesn't name its cause, or if the
+- Steps 7–8: every validate is `valid: true` with no error and a `plan.estimate`. No warning names `turbo_lead_in` (a
+  warning that was already there with it absent is fine).
+- Steps 7–8: the estimates with the argument equal the estimate without it: the lead-in adds no steps.
+It is a **finding** if any of steps 1–6 validates or queues a job, if a refusal doesn't name its cause, or if the
 no-`turbo` refusal doesn't list the adapter names present.
+It is a **finding** if any of the step 7–8 values is refused, so the legal range is narrower than the plan states (3
+is the last legal value on 4 evaluations and 7 on 8), or if the estimate moves.
 cleanup: none (no job is queued; if step 6 queued one, `cancel_job` it and `delete_output(job_id=...)`).
 metrics: none.
+
+absorbs: M-F312 (merged 2026-11-27, suite review, pass 2)
+- M-F312: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 
 ### M-F314 — `turbo_lead_in: 0` gives the same output as no argument; `1` differs, with one lead-in event per segment saying 1 of 4
 source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
@@ -8894,34 +8870,19 @@ promotion plan is approved.
 cleanup: none.
 metrics: none.
 
-### M-F483 — a `switch_step` out of range is refused at validate by its own rule, before the flag check
-source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
-M-F478. The legal range is read as 0..S, S being the run's denoise passes, `num_inference_steps - 1` on H3: 0 is the
-blended-only arm and S is plain sequential windows (the plan's S2 unit tests).
-Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow` with HW = (a)
-`{"switch_step": -1}`; (b) `{"switch_step": 5}`; (c) `{"switch_step": 3.5}`; (d) `{"switch_step": "3"}` (a string
-that is not a `variable:` reference); (e) `{"switch_step": 0}`; (f) `{"switch_step": 3}`; (g2) `{"switch_step": 4}`.
-Then with `num_inference_steps` 5: (g) `{"switch_step": 4}`.
-Then with `num_inference_steps` 8: (h) `{"switch_step": 6}`; (i) `{"switch_step": 9}`.
-expected:
-- (a)–(d), (g2), (i): `valid: false`, an error naming `experimental_hybrid_windows` and `switch_step` and saying what is
-  wrong (out of range, ideally naming the range or the step count; not an integer). This error is present whether or
-  not the flag error also is: the tester sees the key's own rule. (g2)'s error names "runs 3".
-- (e), (f), (g), (h): no `switch_step` error; the only refusal is the flag one (as M-F478). (h) shows the range
-  follows `num_inference_steps`, not a fixed 4.
-It is a **finding** if any of (a)–(d), (g2), (i) is refused only by the flag (no `switch_step` error), or any of (e)–(h)
-carries a `switch_step` error.
-cleanup: none.
-metrics: none.
-
-### M-F484 — a bad `handoff` or a bad `anchor` is refused at validate by its own rule, naming `finished` and `x0`, or `none` and `keystone`, before the flag check
+### M-F484 — a `switch_step` out of range, a bad `handoff` or a bad `anchor` is refused at validate by its own rule, naming `finished` and `x0`, or `none` and `keystone`, before the flag check
 source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
 M-F478; arm N (j) also needs the `qa-cast/priya-portrait.jpg` fixture. Plan v3 S4 (#1572), on `anchor`: "anything else
-is refused at validate before the flag check, like `switch_step`".
+is refused at validate before the flag check, like `switch_step`". The legal `switch_step` range is read as 0..S, S
+being the run's denoise passes, `num_inference_steps - 1` on H3: 0 is the blended-only arm and S is plain sequential
+windows (the plan's S2 unit tests).
 Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow` once per HW. Report a failure by arm
 and row (for example "N(d)").
+- **Arm S (`switch_step`):** HW = (a) `{"switch_step": -1}`; (b) `{"switch_step": 5}`; (c) `{"switch_step": 3.5}`;
+  (d) `{"switch_step": "3"}` (a string that is not a `variable:` reference); (e) `{"switch_step": 0}`; (f)
+  `{"switch_step": 3}`; (g2) `{"switch_step": 4}`. Then with `num_inference_steps` 5: (g) `{"switch_step": 4}`.
+  Then with `num_inference_steps` 8: (h) `{"switch_step": 6}`; (i) `{"switch_step": 9}`.
 - **Arm H (`handoff`):** HW = (a) `{"handoff": "finish"}`; (b)
   `{"handoff": "X0"}` (wrong case); (c) `{"handoff": 1}`; (d) `{"handoff": ""}`; (e) `{"handoff": "finished"}`;
   (f) `{"handoff": "x0"}`; (g) `{"switch_step": 3, "handoff": "x0"}`; (h) `{"switch_step": 9, "handoff": "nope"}`.
@@ -8930,6 +8891,14 @@ and row (for example "N(d)").
   cut, design 10); (e) `{"anchor": 1}`; (f) `{"anchor": true}`; (g) `{"anchor": ["keystone"]}`; (h)
   `{"anchor": null}`; (i) `{"anchor": "bogus", "switch_step": 9}` (two bad fields); (j) `{"anchor": "keystone"}` with
   `image: "asset:qa-cast/priya-portrait.jpg"` added to `gen`'s arguments (a user image beside the internal anchor).
+expected, arm S:
+- (a)–(d), (g2), (i): `valid: false`, an error naming `experimental_hybrid_windows` and `switch_step` and saying what is
+  wrong (out of range, ideally naming the range or the step count; not an integer). This error is present whether or
+  not the flag error also is: the tester sees the key's own rule. (g2)'s error names "runs 3".
+- (e), (f), (g), (h): no `switch_step` error; the only refusal is the flag one (as M-F478). (h) shows the range
+  follows `num_inference_steps`, not a fixed 4.
+In arm S it is a **finding** if any of (a)–(d), (g2), (i) is refused only by the flag (no `switch_step` error), or any
+of (e)–(h) carries a `switch_step` error.
 expected, arm H:
 - (a)–(d): `valid: false`, an error naming `experimental_hybrid_windows` and `handoff` and listing the allowed values
   `finished` and `x0`, present whether or not the flag error also is.
@@ -8952,8 +8921,9 @@ name the allowed values, or any arm N row validates clean.
 cleanup: none.
 metrics: none.
 
-absorbs: M-F494 (merged 2026-11-26, suite review)
+absorbs: M-F494 (merged 2026-11-26, suite review), M-F483 (merged 2026-11-27, suite review, pass 2)
 - M-F494: tester, spec for #1572 from #1188's plan v3 (claude-opus-5-5 via anthropic)
+- M-F483: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 
 ### M-F485 — on a 23.6 GB card the Ref2VA ceilings at 1344x768 are 243/209/175/141 frames for 1/2/3/4 references, and the next 17-frame step is refused
 source: tester, verified in #1586 (claude-opus-5-5 via anthropic)
@@ -9179,13 +9149,14 @@ validates clean or only warns, any on-grid arm is refused, or a Turbo download i
 cleanup: none.
 metrics: none.
 
-### M-F499 — one seeded run of `templates/qwen/transparent` gives a 1024×1024 RGBA PNG of the subject on a transparent ground, with the wrapper in the recorded prompt
+### M-F499 — one seeded run of `templates/qwen/transparent` gives a 1024×1024 RGBA PNG of the subject on a transparent ground, with the wrapper in the recorded prompt; `get_gallery_metadata` reports `media.alpha` coverage on that PNG and on a cut-out, and no `alpha` on an RGB image
 source: tester, spec for #1709 from #1681's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `Qwen/Qwen-Image-2.1` (base, `QwenImage21Pipeline`, ~32 GB). **Spends GPU time**: one image at
-1024×1024 × 40 steps. Run it only on a server where the base is already cached: if M-F497's `validate_workflow`
+Model/pipeline: `Qwen/Qwen-Image-2.1` (base, `QwenImage21Pipeline`, ~32 GB) and the `remove_background` image
+processor. **Spends GPU time**: one image at 1024×1024 × 40 steps, plus a seconds-long task. Run the Qwen image
+only on a server where the base is already cached: if M-F497's `validate_workflow`
 lists `Qwen/Qwen-Image-2.1` in `downloads_required`, record "base not cached, skipped" and do not take the
-download in this case (plan v2: the one real run goes where the base is cached, on lem). Workspace
-`regression-model-specific`.
+download in this case (plan v2: the one real run goes where the base is cached, on lem); then skip steps 1–6 and
+run steps 7–8 alone. Workspace `regression-model-specific`.
 Steps:
 1. `validate_workflow(name="templates/qwen/transparent", arguments=A, workspace="regression-model-specific")` with
    A = `{"subject": "a red apple with a green leaf", "seed": 1709}` (if the template declares no `seed` variable,
@@ -9197,6 +9168,11 @@ Steps:
 4. `get_output_image(<the png>)`, then the four 96×96 corner crops (`crop` `[0,0,96,96]`, `[928,0,96,96]`,
    `[0,928,96,96]`, `[928,928,96,96]`) and one centre crop `[384,384,256,256]`.
 5. If step 3's `media` names no channel count, mode or alpha field: `download_output` the png and run `file` on it.
+6. `get_gallery_metadata(<the png>, include_workflow=false)`.
+7. Inline workflow `{"id": "mf508_rembg", "steps": [{"name": "cut", "task": {"command": "remove_background",
+   "arguments": {"image": "asset:bench/runner.png"}}, "result": {"content_type": "image/png"}}]}`: validate, run it
+   with the acknowledgement bound, then `get_gallery_metadata(<its png>, include_workflow=false)`.
+8. `get_gallery_metadata("asset:bench/runner.png", include_workflow=false)` (an RGB PNG).
 expected:
 - Step 2/3: the job `succeeded`, with one output whose name ends `.png`; `job.warnings` carries no
   jpeg-flatten or alpha-dropped warning.
@@ -9212,10 +9188,22 @@ expected:
   or backdrop). The corner crops show no painted background: transparent, or the flat colour the viewer renders
   transparency as (record which). The centre crop shows the apple. A fully opaque scene behind the apple is a
   finding even if the PNG carries an alpha channel.
+- Steps 6 and 7 (alpha coverage): `media.mode` is `RGBA`, and `media.alpha` has `min`, `max`,
+  `transparent_fraction`, `partial_fraction` and `opaque_fraction`. The three fractions sum to 1 (±1e-5). `min` is 0
+  and `opaque_fraction` is below 0.9. `findings` holds no `alpha_opaque`. Most of the Qwen ground is partial alpha,
+  not alpha 0, so this case does not assert any `transparent_fraction` for step 6.
+- Step 7: `transparent_fraction` is above 0.5, because the runner cut-out is mostly background.
+- Step 8: `media` has no `alpha` key, and `findings` holds no `alpha_opaque`.
 It is a **finding** if the job fails, the output is not a 1024×1024 PNG with alpha, the recorded prompt lacks the
 wrapper, or (seeded) the background is painted rather than transparent.
-cleanup: `delete_output(job_id=<id>)`, and delete step 5's downloaded copy.
+It is a **finding**, in steps 6–8, if an RGBA output has no `media.alpha`, if a transparent output is flagged
+`alpha_opaque` or reports `min` 255, or if an RGB image carries `alpha`.
+cleanup: `delete_output(job_id=<id>)` for each job this case ran (the Qwen run and `mf508_rembg`), and delete step
+5's downloaded copy.
 metrics: none.
+
+absorbs: M-F508 (merged 2026-11-27, suite review, pass 2)
+- M-F508: tester, verified in #1735 (claude-opus-5-5 via anthropic)
 
 ### M-F501 — a rerun of the #1680 mps t2i probe on mini-ai gives one 2048×2048 PNG under `final`; its events show step 1's pipeline released before step 2 loads, and a host peak within 10% of the record
 source: tester, spec for #1729 from #1680's plan v2 (claude-opus-5-5 via anthropic)
@@ -9319,32 +9307,6 @@ It is a **finding** if any says "untested"/"by rule" for H3-Image on mps, or a f
 cleanup: none.
 metrics: none.
 amended: 2026-11-26, suite review: named the record and where it is read in place of the pointer to M-F504, which is retired; nothing else changed.
-
-### M-F508 — `get_gallery_metadata` reports `media.alpha` coverage on a `templates/qwen/transparent` PNG and on a cut-out, and no `alpha` on an RGB image
-source: tester, verified in #1735 (claude-opus-5-5 via anthropic)
-Model/pipeline: `Qwen/Qwen-Image-2.1` (`templates/qwen/transparent`, ~32 GB) and the `remove_background` image
-processor. **Spends GPU time**: one 1024×1024 × 40-step image, plus a seconds-long task. Workspace
-`regression-model-specific`. If M-F499 ran this pass, reuse its PNG for step 1 rather than running it again. Skip
-step 1 when the Qwen base is not cached (M-F499's rule) and run steps 2–3 alone.
-Steps:
-1. `run_workflow("templates/qwen/transparent", arguments={"subject": "a red apple with a green leaf", "seed": 1709})`
-   (validate first, bind `acknowledged_cost`, `wait_seconds=55`), then
-   `get_gallery_metadata(<the png>, include_workflow=false)`.
-2. Inline workflow `{"id": "mf508_rembg", "steps": [{"name": "cut", "task": {"command": "remove_background",
-   "arguments": {"image": "asset:bench/runner.png"}}, "result": {"content_type": "image/png"}}]}`: validate, run it
-   with the acknowledgement bound, then `get_gallery_metadata(<its png>, include_workflow=false)`.
-3. `get_gallery_metadata("asset:bench/runner.png", include_workflow=false)` (an RGB PNG).
-expected:
-- Steps 1 and 2: `media.mode` is `RGBA`, and `media.alpha` has `min`, `max`, `transparent_fraction`,
-  `partial_fraction` and `opaque_fraction`. The three fractions sum to 1 (±1e-5). `min` is 0 and `opaque_fraction`
-  is below 0.9. `findings` holds no `alpha_opaque`. Most of the Qwen ground is partial alpha, not alpha 0, so this
-  case does not assert any `transparent_fraction` for step 1.
-- Step 2: `transparent_fraction` is above 0.5, because the runner cut-out is mostly background.
-- Step 3: `media` has no `alpha` key, and `findings` holds no `alpha_opaque`.
-It is a **finding** if an RGBA output has no `media.alpha`, if a transparent output is flagged `alpha_opaque` or
-reports `min` 255, or if an RGB image carries `alpha`.
-cleanup: `delete_output(job_id=<id>)` for each job this case ran.
-metrics: none.
 
 ### M-F509 — in an H3 encode → refine → decode chain with no `release_models`, the encode VAE is off the card before the refine loads, and the job succeeds
 source: tester, verified in #1737 (claude-opus-5-5 via anthropic)

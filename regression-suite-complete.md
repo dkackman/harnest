@@ -1746,42 +1746,6 @@ blended shape C-F055 exists to demonstrate, not this bullet's. Re-verified live 
 `runs: 1`, `minutes: 5.7`, `low_confidence: true`, with no `tempered`/`curated_minutes`
 field present.
 
-### C-F052 — a partial plan estimate names what was unpriced, and an all-priced one names nothing
-`validate_workflow`'s `plan.estimate` sums curated `cost` blocks across a composed workflow
-(#242); when some contributor has none, `partial: true` alone cannot tell a caller whether
-the gap is a trivial step or a 12-shot loop. `unpriced` (#252) names each contributor: the
-parent by its own `id` when the parent's own steps carry no `cost`, each composed child by
-its `workflow.path`. Free, no
-model, no job — two inline `validate_workflow` calls against stock templates whose cost
-state is fixed: `templates/ltx2/text-to-video` has a curated cost (2.2 min on cuda at the
-time of writing; it has moved once already, so read the current figure from
-`list_workflows(shape="shot")` rather than the numbers here), `templates/ltx2/extend-clip`
-has none. Each inline workflow is one step, `{"name": "clip", "workflow": {"path":
-<template>, "arguments": {"prompt": "variable:prompt"}}, "result": {"content_type":
-"video/mp4", "subfolder": "final"}}`, with `"variables": {"prompt": "a lighthouse at
-dusk"}`, except where an arm says to add a second step.
-expected:
-- Arms for pure-composition and mixed parents: see C-F042 (curation 2026-09-22, harnest#2).
-- `id: "qa-252-priced-parent"`, `"cost": [{"device": "cuda", "name": "RTX 3090",
-  "vram_gb": 24, "minutes": 0.5}]`, composing `templates/ltx2/extend-clip` → `valid: true`;
-  `partial: true`; `unpriced == ["templates/ltx2/extend-clip"]` — the child alone, by path;
-  `basis: "catalog"`, `minutes: 0.5`.
-- `id: "qa-252-all-priced"`, the same `cost` block, composing `templates/ltx2/text-to-video`
-  → `valid: true`; `partial: false`; `unpriced == []` (present and empty, not absent);
-  `minutes` is the parent's 0.5 plus the child's current catalog figure.
-It becomes a **finding** if `unpriced` is missing from either reply, if it
-names a priced contributor or omits an unpriced one, or if `partial` disagrees with whether
-`unpriced` is empty. A change in the templates' curated costs (text-to-video losing its
-block, extend-clip gaining one) moves which arm names what — re-check `list_workflows
-(shape="shot")` `cost` before calling that a finding.
-cleanup: none — nothing is created.
-source: moved from S-F075 (curation 2026-09-22, harnest#2); tester, verified in #252 on 2026-09-19 over MCP as model `opus` via provider
-`anthropic` — the original three replies exactly as above. Arm 1 was rewritten and the
-mixed-parent arm added in #307 (2026-09-21) after #268 made a pure-composition parent
-inherit its child's history: the regression agent's run that day answered `observed`,
-2.2 min, 13 runs, `partial: false`, `unpriced: []` for the one-step parent, and arms 2
-and 3 as written (text-to-video's curated figure had moved from 1.8 to 2.2).
-
 ### C-F053 — `plan.estimate.cached_minutes` accounts for `cached_steps`
 Before #255 `plan.estimate.minutes` was the whole-workflow observed time regardless of
 `plan.cached_steps` — 14.2 min quoted for a run that would touch no GPU at all — and the
@@ -1940,41 +1904,65 @@ setup against the #301 tempering feature, free and read-only): verified in #319 
 minutes: 31.9`; `templates/minimax/dialogue-short` 5 runs → no marker fields;
 `templates/step-caching` 2 runs, no cost → `low_confidence: true`, no marker fields).
 
-### C-F056 — a priced parent's composed estimate uses the child's catalog figure, and says so
-#315: C-F052 arm 4's `minutes` was the parent's `cost` plus the child's *observed* median
+### C-F056 — a priced parent's composed estimate uses the child's catalog figure, and says so; a partial estimate names what was unpriced, and an all-priced one names nothing
+#315: the all-priced arm's `minutes` (arm 1 here) was the parent's `cost` plus the child's *observed* median
 (0.5 + 2.11 → 2.6) while `basis` read `"catalog"` and `measured_on` the short catalog
 device string — the figure and its label disagreed. Since the fix, a child's observed
 history is only folded in when the parent has no priced figure of its own (the only case
 where the total can honestly be `basis: "observed"`); a priced parent prices its children
-from their own `cost` block. C-F052 pins the arithmetic; this pins the label. Free, no
-model, no job — three inline `validate_workflow` calls, each one step `{"name": "clip",
+from their own `cost` block. Arms 1 and 4's `partial`/`unpriced`/`minutes` bullets pin the
+arithmetic; arms 1–3 pin the label.
+`validate_workflow`'s `plan.estimate` sums curated `cost` blocks across a composed workflow
+(#242); when some contributor has none, `partial: true` alone cannot tell a caller whether
+the gap is a trivial step or a 12-shot loop. `unpriced` (#252) names each contributor: the
+parent by its own `id` when the parent's own steps carry no `cost`, each composed child by
+its `workflow.path`. The stock templates' cost state is fixed: `templates/ltx2/text-to-video`
+has a curated cost (2.2 min on cuda at the time of writing; it has moved once already, so
+read the current figure from `list_workflows(shape="shot")` rather than the numbers here),
+`templates/ltx2/extend-clip` has none. Free, no
+model, no job — four inline `validate_workflow` calls, each one step `{"name": "clip",
 "workflow": {"path": <template>, "arguments": {"prompt": "variable:prompt"}}, "result":
 {"content_type": "video/mp4", "subfolder": "final"}}` with `"variables": {"prompt": "a
 lighthouse at dusk"}`. Read the children's current `cost`/`observed_minutes` from
 `list_workflows(shape="shot")` first; the arithmetic below uses that, not the numbers here.
 expected:
-- `"cost": [{"device": "cuda", "name": "RTX 3090", "vram_gb": 24, "minutes": 0.5}]`
-  composing `templates/ltx2/text-to-video` (curated cost, run on this box) → `basis:
+- Arm 1 (all-priced): `id: "qa-252-all-priced"`, `"cost": [{"device": "cuda", "name": "RTX 3090",
+  "vram_gb": 24, "minutes": 0.5}]`
+  composing `templates/ltx2/text-to-video` (curated cost, run on this box) → `valid: true`; `basis:
   "catalog"`, `measured_on: "RTX 3090"` (the catalog block's `name`, not the observed
   device string), `runs: null`, `minutes == 0.5 + <child's catalog minutes>` to one decimal
-  — **not** `0.5 + observed_minutes`, when the two differ.
-- The same parent `cost` composing `templates/ltx2/two-stage` (curated cost, also observed
+  — **not** `0.5 + observed_minutes`, when the two differ; `partial: false`; `unpriced == []`
+  (present and empty, not absent).
+- Arm 2: the same parent `cost` composing `templates/ltx2/two-stage` (curated cost, also observed
   here) → the same shape: `basis: "catalog"`, `minutes == 0.5 + <its catalog minutes>`.
-- **No** parent `cost`, composing `templates/ltx2/text-to-video` → `basis: "observed"`,
+- Arm 3: **no** parent `cost`, composing `templates/ltx2/text-to-video` → `basis: "observed"`,
   `runs` = the child's `observed_runs`, `measured_on` the long observed device name (e.g.
   `"NVIDIA GeForce RTX 3090"`), `minutes ≈ observed_minutes` — the pure-composition arm
   still inherits observed data (#268), so the fix did not over-correct.
+- Arm 4 (priced parent, unpriced child): `id: "qa-252-priced-parent"`, the same `cost` block as
+  arm 1, composing `templates/ltx2/extend-clip` → `valid: true`; `partial: true`;
+  `unpriced == ["templates/ltx2/extend-clip"]` — the child alone, by path; `basis: "catalog"`,
+  `minutes: 0.5`.
+- Arms for pure-composition and mixed parents' `unpriced`: see C-F042 (curation 2026-09-22, harnest#2).
 It is a **finding** if any priced-parent arm's `minutes` equals `0.5 + observed_minutes`
 rather than `0.5 + cost.minutes` (when those differ), or if `basis` and `measured_on` are
 not the catalog forms alongside a catalog-summed figure. If a box has never run the child,
 arm 1 and arm 3 both legitimately read `catalog` — the arms only discriminate when
 `observed_minutes` is present and differs from `cost.minutes`.
+It becomes a **finding** if `unpriced` is missing from arm 1's or arm 4's reply, if it
+names a priced contributor or omits an unpriced one, or if `partial` disagrees with whether
+`unpriced` is empty. A change in the templates' curated costs (text-to-video losing its
+block, extend-clip gaining one) moves which arm names what — re-check `list_workflows
+(shape="shot")` `cost` before calling that a finding.
 cleanup: none — nothing is created.
 metrics: none.
 source: moved from S-F105 (curation 2026-09-22, harnest#2); tester, verified in #315 on 2026-09-22 over MCP as model `opus` via provider
 `anthropic` against `develop @ d5e3725`: text-to-video catalog 1.8 / observed 2.11 (14
 runs) → priced parent `2.3`/`catalog`/`"RTX 3090"`; two-stage catalog 8.2 / observed 3.12
 → `8.7`/`catalog`; no-cost parent → `2.1`/`observed`/`runs: 14`.
+
+absorbs: C-F052 (merged 2026-11-27, suite review, pass 2)
+- C-F052: moved from S-F075 (curation 2026-09-22, harnest#2); tester, verified in #252 on 2026-09-19 over MCP as model `opus` via provider `anthropic` — the original three replies exactly as above. Arm 1 was rewritten and the mixed-parent arm added in #307 (2026-09-21) after #268 made a pure-composition parent inherit its child's history: the regression agent's run that day answered `observed`, 2.2 min, 13 runs, `partial: false`, `unpriced: []` for the one-step parent, and arms 2 and 3 as written (text-to-video's curated figure had moved from 1.8 to 2.2).
 
 ### C-F057 — `dissolve_videos` resamples shots at different sample rates instead of failing
 #287: `dissolve_videos` died at the first step of `templates/dissolve-between-shots` with
@@ -4021,14 +4009,20 @@ It is a **finding** if any name in the manifest or a probe body reads `video N`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
-### C-F109 — rescoring a kept cut with `pair_audio` keeps its shots, from an `asset:` and from an `output:`
+### C-F109 — rescoring a kept cut with `pair_audio` keeps its shots, from an `asset:` and from an `output:`; rescoring a kept *dissolve* cut keeps each shot's `overlap_frames`, so its seams stay dissolves
 source: tester, verified in #398
+
+absorbs: C-F110 (merged 2026-11-27, suite review, pass 2)
+- C-F110: tester, found while running TESTER_TASK.agent.md
+
 This is the "rescore a kept episode" flow: lay a bed under a finished cut, then pair the
 new track back onto the same picture. `pair_audio` loaded a `video` given as a file path
 with no shot records. The rescored film had `media.shots: null`, and `analyze_seams` on
 it warned that it found no shot boundaries. The shots are still exactly right, because
 the picture is unchanged. C-F106 covers the step before this one (keeping the shots).
-The case is CPU only and takes two short jobs. `asset:qa-cast/ep42-episode.mp4` is a
+The case is CPU only and takes three short jobs: two in arm A, one of about 10 s in arm B.
+
+**Arm A, a hard-cut episode.** `asset:qa-cast/ep42-episode.mp4` is a
 two-shot cut (248 f, 24 fps, 32 kHz) whose `media.shots` are `shot@accuse` 0/124 and
 `shot@deflect` 124/124.
 1. `run_workflow(inline_workflow={"id": "qa-c-f109", "seed": 1, "variables": {"episode":
@@ -4048,31 +4042,15 @@ two-shot cut (248 f, 24 fps, 32 kHz) whose `media.shots` are `shot@accuse` 0/124
 2. Repeat with the `output:` form: a job with `pair_audio(video="output:<step 1's film
    file>", audio="asset:qa-cast/ep11-bed.wav", fit="video")` → `analyze_seams(video=
    "previous_result:film")`.
-expected:
-- Step 1: the `film` manifest entry and `get_gallery_metadata`'s `media.shots` both list
-  `shot@accuse` (start_frame 0, num_frames 124, start_sample 0, num_samples 165333) and
-  `shot@deflect` (124, 124, 165333, 165334). Frame boundaries are unchanged, and samples
-  are re-measured at 32 kHz. The job has no `seams: … found no shot boundaries` warning.
-  The seams body has `shots_source` other than `"none"` (it was `"artifact"` when this case
-  was verified), `rules_skipped: []`, and one seam at about 5.17 s.
-- Step 2: the `film` manifest entry has the same two shots, and there is no
-  no-shot-boundaries warning.
-It is a **finding** if either film has no `shots` / `media.shots: null`, or if a seams
-probe on it reports `shots_source: "none"`.
-cleanup: `delete_output(job_id=…)` for both jobs, step 2's first (it reads step 1's
-output).
-metrics: none.
 
-### C-F110 — rescoring a kept *dissolve* cut keeps each shot's `overlap_frames`, so its seams stay dissolves
-source: tester, found while running TESTER_TASK.agent.md
-C-F109 covers rescoring a hard-cut episode. This case covers a cut joined by
-`dissolve_videos`, whose shot records also carry `overlap_frames`. If a rescore drops that
-field, `analyze_seams` would place the seams as hard cuts at the wrong time. It is CPU only
-and takes one job of about 10 s. `asset:qa-cast/ep45-episode.mp4` is three shots dissolved
+**Arm B, a dissolve episode.** Arm A covers rescoring a hard-cut episode. This arm covers a
+cut joined by `dissolve_videos`, whose shot records also carry `overlap_frames`. If a rescore
+drops that field, `analyze_seams` would place the seams as hard cuts at the wrong time.
+`asset:qa-cast/ep45-episode.mp4` is three shots dissolved
 with `dissolve_frames: 12` (348 f, 24 fps, 32 kHz stereo). Its `media.shots` start at 0 /
 112 / 224 with num_frames 112 / 112 / 124, and the second and third shots carry
 `overlap_frames: 12`. `asset:uploads/qa-cast/room-bed.wav` is 4.96 s, 16 kHz mono.
-1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f110", "seed": 1,
+3. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f110", "seed": 1,
    "steps": [{"name": "bed", "task": {"command": "loop_audio", "arguments": {"audio":
    "asset:uploads/qa-cast/room-bed.wav", "target_frames": 348, "fps": 24}}, "result":
    {"content_type": "audio/wav", "save": false}}, {"name": "mix", "task": {"command":
@@ -4089,18 +4067,28 @@ with `dissolve_frames: 12` (348 f, 24 fps, 32 kHz stereo). Its `media.shots` sta
    validate>, wait_seconds=55)`. Then call `get_gallery_metadata` on the `film` file and
    `get_output_text` on the `seams` file.
 expected:
-- `succeeded`. Its only warning is `mix_audio`'s sample-rate mismatch (32000 vs 16000 Hz,
+- Arm A, step 1: the `film` manifest entry and `get_gallery_metadata`'s `media.shots` both list
+  `shot@accuse` (start_frame 0, num_frames 124, start_sample 0, num_samples 165333) and
+  `shot@deflect` (124, 124, 165333, 165334). Frame boundaries are unchanged, and samples
+  are re-measured at 32 kHz. The job has no `seams: … found no shot boundaries` warning.
+  The seams body has `shots_source` other than `"none"` (it was `"artifact"` when this case
+  was verified), `rules_skipped: []`, and one seam at about 5.17 s.
+- Arm A, step 2: the `film` manifest entry has the same two shots, and there is no
+  no-shot-boundaries warning.
+- Arm B: `succeeded`. Its only warning is `mix_audio`'s sample-rate mismatch (32000 vs 16000 Hz,
   resampled to 32000).
-- The `film` manifest entry and `media.shots` list the same three shots. Frames are
+- Arm B: the `film` manifest entry and `media.shots` list the same three shots. Frames are
   0/112, 112/112 and 224/124. The second and third shots carry `overlap_frames: 12`.
-- The film is 348 frames, 24 fps, 14.5 s and 32 kHz stereo. `peak_dbfs` is at or below
+- Arm B: the film is 348 frames, 24 fps, 14.5 s and 32 kHz stereo. `peak_dbfs` is at or below
   −2.5.
-- The seams body has `shots_source` other than `"none"` (it was `"artifact"` when this case
-  was written) and `rules_skipped: []`. It has exactly two seams, both `"kind":
+- Arm B: the seams body has `shots_source` other than `"none"` (it was `"artifact"` when this
+  case was written) and `rules_skipped: []`. It has exactly two seams, both `"kind":
   "dissolve"` and `"hard_cut": false`, at about 4.917 s and 9.583 s, and `findings: []`.
-It is a **finding** if a film shot loses `overlap_frames`, if either seam is not
-`dissolve`, or if either seam moves more than 0.05 s.
-cleanup: `delete_output(job_id=…)`.
+It is a **finding** in arm A if either film has no `shots` / `media.shots: null`, or if a seams
+probe on it reports `shots_source: "none"`. It is a **finding** in arm B if a film shot loses
+`overlap_frames`, if either seam is not `dissolve`, or if either seam moves more than 0.05 s.
+cleanup: `delete_output(job_id=…)` for all three jobs, step 2's before step 1's (it reads
+step 1's output).
 metrics: none.
 
 ### C-F111 — a dissolve's shot samples survive a `pair_audio` rescore unchanged
@@ -4448,12 +4436,19 @@ because the two tools disagree again. It is a **finding** if step 3 queues a job
 cleanup: `delete_output(job_id=…)` for step 2's job.
 metrics: none.
 
-### C-F123 — scoring one kept joined cut through `templates/assemble-and-score` keeps every inner shot and its dissolve overlaps
+### C-F123 — scoring one kept joined cut through `templates/assemble-and-score` keeps every inner shot and its dissolve overlaps; `templates/dissolve-between-shots` over a kept dissolve-and-cut join keeps its inner shots and adds its own dissolve
 source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+
+absorbs: C-F124 (merged 2026-11-27, suite review, pass 2)
+- C-F124: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+
+Two arms, one job each, CPU only: about 10 s for arm A and about 20 s for arm B.
+
+**Arm A, `templates/assemble-and-score`, one input.**
 A composed template given a *single* input that is itself a join of cuts and dissolves must
 carry that input's inner shots through its `film` step, `overlap_frames` included, so a
 probe still sees dissolves as dissolves. The bed comes from a `previous_result:` passed
-into the child (#404). CPU only, one job of about 10 s.
+into the child (#404).
 1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f123", "seed": 1,
    "steps": [{"name": "bed", "task": {"command": "loop_audio", "arguments": {"audio":
    "asset:qa-cast/ep51-bed.wav", "target_frames": 956, "fps": 24}}, "result":
@@ -4463,27 +4458,13 @@ into the child (#404). CPU only, one job of about 10 s.
    "match_levels": "rms", "match_levels_dbfs": -24, "score_gain": 0.251}}}]},
    acknowledged_cost=<bound from validate>, wait_seconds=55)`.
 2. `assess_output(name=<the film file>, probe="analyze_seams")`.
-expected:
-- `succeeded`; its only warning is the `bed` step's quiet-overall note.
-- The `film` manifest entry lists eight shots at start_frame 0/124/248/372/496/608/720/832,
-  num_frames 124/124/124/124/112/112/112/124, the last three with `overlap_frames: 12`
-  (the same list `get_gallery_metadata` gives for `ep53-episode.mp4`).
-- The film is 956 frames, 24 fps, 39.833 s, 44.1 kHz stereo, peak about −3 dBFS.
-- The probe says `shots_source: "manifest"`, seven seams: 1–4 `cut`, 5–7 `dissolve`. When
-  this case was written it had no findings, every `level_step_db` ≤ 1.16.
-It is a **finding** if the film lists one shot (the input as a whole), drops
-`overlap_frames`, or the probe reports seams 5–7 as cuts.
-cleanup: `delete_output(job_id=…)`.
-metrics: none.
 
-### C-F124 — `templates/dissolve-between-shots` over a kept dissolve-and-cut join keeps its inner shots and adds its own dissolve
-source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
-This is C-F123's nesting on the other assembly template, with two inputs at different
+**Arm B, `templates/dissolve-between-shots`, two inputs.**
+This is arm A's nesting on the other assembly template, with two inputs at different
 rates: a 44.1 kHz join of 8 shots and a 32 kHz join of 2. The new dissolve must shorten
 only the last inner shot of input 1. It must mark only the first inner shot of input 2
-`overlap_frames`, and it must leave input 1's own dissolves alone. CPU only, one job of
-about 20 s.
-1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f124", "seed": 1,
+`overlap_frames`, and it must leave input 1's own dissolves alone.
+3. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f124", "seed": 1,
    "steps": [{"name": "bed", "task": {"command": "loop_audio", "arguments": {"audio":
    "asset:qa-cast/ep51-bed.wav", "target_frames": 1192, "fps": 24}}, "result":
    {"content_type": "audio/wav", "save": true, "subfolder": "intermediate"}}, {"name": "cut",
@@ -4492,9 +4473,16 @@ about 20 s.
    "previous_result:bed", "total_frames": 1192, "dissolve_frames": 12, "match_levels": "rms",
    "match_levels_dbfs": -24, "score_gain": 0.251}}}]}, acknowledged_cost=<bound from
    validate>, wait_seconds=55)`.
-2. `assess_output(name=<the film file>, probe="analyze_seams")`.
+4. `assess_output(name=<the film file>, probe="analyze_seams")`.
 expected:
-- `succeeded`. Its warnings are the `bed` step's quiet-overall note, and two that follow from
+- Arm A: `succeeded`; its only warning is the `bed` step's quiet-overall note.
+- Arm A: the `film` manifest entry lists eight shots at start_frame 0/124/248/372/496/608/720/832,
+  num_frames 124/124/124/124/112/112/112/124, the last three with `overlap_frames: 12`
+  (the same list `get_gallery_metadata` gives for `ep53-episode.mp4`).
+- Arm A: the film is 956 frames, 24 fps, 39.833 s, 44.1 kHz stereo, peak about −3 dBFS.
+- Arm A: the probe says `shots_source: "manifest"`, seven seams: 1–4 `cut`, 5–7 `dissolve`. When
+  this case was written it had no findings, every `level_step_db` ≤ 1.16.
+- Arm B: `succeeded`. Its warnings are the `bed` step's quiet-overall note, and two that follow from
   this input: a `match_levels_held` line on `edit` for each shot whose peak at the rms target
   would pass −3.0 dBFS (dw#1248; video 1 here, −2.3 dBFS peak, held 0.7 dB short), and a
   `shot_name_collision` line ("joined shots share a name", prefixed `film:`), because both
@@ -4502,20 +4490,22 @@ expected:
   `shot@accuse` and `shot@deflect` (#508). There is **no** `sample_rate_mismatch` warning: the
   template pins `sample_rate`, so the 32000 → 44100 resample is a `log` event from
   `dissolve_videos` ("resampling tracks at … Hz to the requested 44100 Hz"), not a warning (#594).
-- The `film` entry is in subfolder `final` and lists ten shots, at start_frame
+- Arm B: the `film` entry is in subfolder `final` and lists ten shots, at start_frame
   0/124/248/372/496/608/720/832/944/1068 with num_frames 124/124/124/124/112/112/112/112/124/124.
   Shots 6–9 carry `overlap_frames: 12`. Shot 8 (ep37-shot1-receipt, 124 frames in
   `ep54-episode`) is now 112, because the new dissolve takes its tail.
-- The film is 1192 frames (956 + 248 − 12), 24 fps, 49.667 s, 44.1 kHz stereo, with a peak
+- Arm B: the film is 1192 frames (956 + 248 − 12), 24 fps, 49.667 s, 44.1 kHz stereo, with a peak
   of about −3 dBFS.
-- The probe gives `shots_source: "manifest"` and nine seams: 1–4 `cut`, 5–8 `dissolve`,
+- Arm B: the probe gives `shots_source: "manifest"` and nine seams: 1–4 `cut`, 5–8 `dissolve`,
   9 `cut`. When this case was written it had no findings, and every `level_step_db` was
   ≤ 1.39.
-It is a **finding** if an input collapses to one shot, input 1's dissolves (seams 5–7) come
+It is a **finding** in arm A if the film lists one shot (the input as a whole), drops
+`overlap_frames`, or the probe reports seams 5–7 as cuts.
+It is a **finding** in arm B if an input collapses to one shot, input 1's dissolves (seams 5–7) come
 back as cuts, the new seam 8 is not a dissolve, or shot 8 keeps 124 frames (#405).
-cleanup: `delete_output(job_id=…)`.
+cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
-amended: 2026-11-26, suite review: dw#1285 was closed wontfix as suite drift on all three points and lists the warnings the case should expect: clip-hold (#1248), shot_name_collision (#508), and no sample_rate_mismatch under a pinned rate (#594)
+amended: 2026-11-26, suite review (C-F124, now arm B): dw#1285 was closed wontfix as suite drift on all three points and lists the warnings the case should expect: clip-hold (#1248), shot_name_collision (#508), and no sample_rate_mismatch under a pinned rate (#594)
 
 ### C-F125 — `analyze_seams`' own `shots` argument overrides the manifest and carries `hard_cut` to its seam
 source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
@@ -6843,9 +6833,11 @@ six arguments is missing or named otherwise, or if the guide or skill has no ent
 cleanup: none.
 metrics: none.
 
-### C-F206 — `analyze_beats` on a click track of known tempo returns that tempo and its beats
+### C-F206 — `analyze_beats` on a click track of known tempo returns that tempo and its beats, and on a Music 3 song returns a tempo and beats spanning the song
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
-CPU only, one job per tempo. No fixture holds a click track, so build one per run inside the
+CPU only, five short jobs: a click arm (steps 1–2, one job per tempo) and a song arm (steps 3–4).
+
+**Click arm.** No fixture holds a click track, so build one per run inside the
 same workflow. Take a 0.5 s slice of the song, fade most of it out so a short burst leads
 each period, then loop it with no crossfade. That gives an onset exactly every 0.5 s (120
 BPM).
@@ -6861,38 +6853,36 @@ BPM).
    wait_seconds=55)`. Read the json with `get_output_text`. Listen to the click output with
    `get_output_audio` once if the result is surprising, to confirm the build made clicks.
 2. The same with `duration_seconds: 0.6` on `cut` and `fade_out_ms: 550` (100 BPM).
-expected:
-- Both jobs succeed with `method: "onset"`.
-- `bpm` is within ±1 of 120, then of 100. A half or double tempo (60/240, 50/200) is a
-  finding, not a tolerance.
-- `beats` is strictly ascending, spans the clip (first beat ≤ 0.6 s, last ≥ 19.0 s), and
-  consecutive gaps are 0.5 s (then 0.6 s) ±20 ms. There are about 40 (then 33) of them, ±2.
-- `warnings` is empty or names nothing about the tempo.
-It is a **finding** if either job fails, if the tempo is wrong, or if beats are missing,
-duplicated or out of order.
-cleanup: `delete_output(job_id=…)` for both jobs.
-metrics: none.
 
-### C-F207 — `analyze_beats` on a Music 3 song returns a tempo and beats spanning the song
-source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
-CPU only, one short job. `asset:qa-cast/ep15-song.mp3` is a 30 s Music 3 output (Fixtures).
-1. `run_workflow(inline_workflow={"id": "qa-c-f207", "steps": [{"name": "beats", "task":
+**Song arm.** `asset:qa-cast/ep15-song.mp3` is a 30 s Music 3 output (Fixtures).
+3. `run_workflow(inline_workflow={"id": "qa-c-f207", "steps": [{"name": "beats", "task":
    {"command": "analyze_beats", "arguments": {"audio": "asset:qa-cast/ep15-song.mp3"}},
    "result": {"content_type": "application/json", "subfolder": "final"}}]},
    acknowledged_cost=true, wait_seconds=55)`. Read it with `get_output_text`.
-2. The same with `min_bpm: 60, max_bpm: 90`, then with `min_bpm: 140, max_bpm: 200`.
+4. The same as step 3 with `min_bpm: 60, max_bpm: 90`, then with `min_bpm: 140, max_bpm: 200`.
 expected:
-- Step 1 succeeds with `method: "onset"` and a numeric `bpm` within the defaults' range.
-- `beats` is strictly ascending and every value is in `[0, 30.03]`. The first is under 2 s,
-  the last over 28 s, and no gap is more than 2.5 × 60/`bpm`. That rules out a beat list
+- **Click arm (steps 1–2).** Both jobs succeed with `method: "onset"`.
+- Click arm: `bpm` is within ±1 of 120, then of 100. A half or double tempo (60/240, 50/200) is a
+  finding, not a tolerance.
+- Click arm: `beats` is strictly ascending, spans the clip (first beat ≤ 0.6 s, last ≥ 19.0 s), and
+  consecutive gaps are 0.5 s (then 0.6 s) ±20 ms. There are about 40 (then 33) of them, ±2.
+- Click arm: `warnings` is empty or names nothing about the tempo.
+- **Song arm.** Step 3 succeeds with `method: "onset"` and a numeric `bpm` within the defaults' range.
+- Song arm, step 3: `beats` is strictly ascending and every value is in `[0, 30.03]`. The first is
+  under 2 s, the last over 28 s, and no gap is more than 2.5 × 60/`bpm`. That rules out a beat list
   covering only part of the song.
-- `calibration` is present with `anchors_used: 0`.
-- In step 2, each run's `bpm` lies inside its own `[min_bpm, max_bpm]`. Folding the tempo by
+- Song arm, step 3: `calibration` is present with `anchors_used: 0`.
+- Song arm, step 4: each run's `bpm` lies inside its own `[min_bpm, max_bpm]`. Folding the tempo by
   a factor of two into the range is the expected way to get there.
-It is a **finding** if a job fails, if `bpm` falls outside the range asked for, or if the
+It is a **finding** (click arm) if either job fails, if the tempo is wrong, or if beats are missing,
+duplicated or out of order.
+It is a **finding** (song arm) if a job fails, if `bpm` falls outside the range asked for, or if the
 beats are unordered or don't span the song.
-cleanup: `delete_output(job_id=…)` for all three jobs.
+cleanup: `delete_output(job_id=…)` for both click jobs and all three song jobs.
 metrics: none.
+
+absorbs: C-F207 (merged 2026-11-27, suite review, pass 2)
+- C-F207: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F208 — `analyze_beats` on silence and on aperiodic noise warns and returns no confident grid, never a crash
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
@@ -7531,7 +7521,7 @@ default, or if the crop caveat is undocumented.
 cleanup: none.
 metrics: none.
 
-### C-F238 — letterbox round trip: a 640×480 50-frame clip fits to 512×288×57 with side bars and restores to exactly 640×480, 50 frames, 24 fps; a source longer than `num_frames` is cut to its first `num_frames` frames and comes back at that length
+### C-F238 — letterbox round trip: a 640×480 50-frame clip fits to 512×288×57 with side bars and restores to exactly 640×480, 50 frames, 24 fps; a source longer than `num_frames` is cut to its first `num_frames` frames and comes back at that length; boundaries: bars top and bottom, no bars or padding when the source already fits, and an exact-length source
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only.
 
@@ -7554,7 +7544,7 @@ Then make the other two:
 
 Confirm each with `get_gallery_metadata`. Delete the FX jobs.
 
-**Workflow RT** (reused by C-F239–C-F244). Variables are `src`, `w`, `h`, `n` and `mode`.
+**Workflow RT** (reused by the boundary arms below and by C-F240–C-F244). Variables are `src`, `w`, `h`, `n` and `mode`.
 Steps:
 - `fit`: `fit_to_model(video: "variable:src", width: "variable:w", height: "variable:h",
   num_frames: "variable:n", mode: "variable:mode")`, no result.
@@ -7574,6 +7564,13 @@ Steps:
 frames, 960×544, 24 fps. Set `w` 512, `h` 288, `n` 57, `mode` `letterbox`. Read the record,
 `get_gallery_metadata` on `fitted` and on `restore`, and compare frame 56 of `fitted` with
 the source's frame 56.
+
+**Boundary arms.** RT again on `src: "asset:qa-fit/src-640x480-50f.mp4"`, with `mode`
+`letterbox` throughout, one run per arm:
+1. `w` 512, `h` 512, `n` 57. The source is wider than the target, so the bars go top and
+   bottom.
+2. `w` 640, `h` 480, `n` 50. Same size and same length as the source.
+3. `w` 320, `h` 240, `n` 50. Same aspect, smaller.
 expected:
 - Run A: the job succeeds.
 - Run A: `fitted` is 512×288, 57 frames, 24 fps.
@@ -7595,43 +7592,33 @@ expected:
 - Run B: `content_box` is near-full width, since 960×544 is about 16:9: 508×288 or so, with
   bars ≤ 3 px.
 - Run B: `restore` is 960×544, **57** frames (min(124, 57)), 24 fps.
-It is a **finding** if any size, count or fps differs, if bars survive the restore, if the
-padding laps to frame 0, or if the record lacks a named field. For run B it is a finding if
-`fitted` or `restore` has any other frame count, or if the kept frames aren't the source's
-head.
-cleanup: `delete_output(job_id=…)` for both runs. Keep the `qa-fit/` assets.
-metrics: none.
-
-absorbs: C-F242 (merged 2026-11-26, suite review)
-- C-F242: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
-
-### C-F239 — letterbox boundaries: bars top and bottom, no bars or padding when the source already fits, and an exact-length source
-source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
-CPU only. Uses C-F238's RT and `src-640x480-50f.mp4`, with `mode` `letterbox` throughout.
-Arms:
-1. `w` 512, `h` 512, `n` 57. The source is wider than the target, so the bars go top and
-   bottom.
-2. `w` 640, `h` 480, `n` 50. Same size and same length as the source.
-3. `w` 320, `h` 240, `n` 50. Same aspect, smaller.
-expected:
-- **Arm 1.**
+- **Boundary arm 1.**
   - `fitted` is 512×512.
   - `content_box` is `{x: 0, y: 64, w: 512, h: 384}`, with black bars 64 px tall at the top
     and bottom.
   - `restore` is 640×480 and 50 frames.
-- **Arm 2.**
+- **Boundary arm 2.**
   - `content_box` covers the whole frame `{0, 0, 640, 480}`, with no bars.
   - `fitted` has 50 frames: no padding.
   - `restore` is 640×480 and 50 frames, matching the source by eye.
-- **Arm 3.**
+- **Boundary arm 3.**
   - `content_box` is `{0, 0, 320, 240}`, with no bars.
   - `restore` is 640×480, 50 frames.
-- Every arm's `restore` keeps 24 fps.
-It is a **finding** if any arm adds bars where the aspect matches, or pads a source already
-`n` frames long. A refusal of `n` 50 for not being 8n+1 is also a finding: the task reads any
-positive integer, and the grid is the templates' rule.
-cleanup: `delete_output(job_id=…)` per arm.
+- Every boundary arm's `restore` keeps 24 fps.
+It is a **finding** if any size, count or fps differs, if bars survive the restore, if the
+padding laps to frame 0, or if the record lacks a named field. For run B it is a finding if
+`fitted` or `restore` has any other frame count, or if the kept frames aren't the source's
+head.
+For the boundary arms it is a **finding** if any arm adds bars where the aspect matches, or pads
+a source already `n` frames long. A refusal of `n` 50 for not being 8n+1 is also a finding: the
+task reads any positive integer, and the grid is the templates' rule.
+cleanup: `delete_output(job_id=…)` for both runs and per boundary arm. Keep the `qa-fit/` assets.
 metrics: none.
+
+absorbs: C-F242 (merged 2026-11-26, suite review)
+- C-F242: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+absorbs: C-F239 (merged 2026-11-27, suite review, pass 2)
+- C-F239: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F240 — restore infers a 2× scale from its input's size and restores to 1280×960
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
@@ -12473,30 +12460,6 @@ cleanup: `delete_output(job_id=J1, acknowledged_cost=true)`, then `delete_workfl
 acknowledged_cost=true)`.
 metrics: none.
 
-### C-F481 — Unscalable drivers off their default keep the figure but flag `low_confidence` and `differs`
-source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free. Each call is `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed:
-42, ...})`. Take values from the variables' descriptions, as in C-F498.
-1. Defaults only. This gives M0.
-2. `weights_dtype: "{int8}"`.
-3. `attention_backend`: a non-null value.
-4. `cache`: a non-null cache object, e.g. `{"type": "first_block", "threshold": 0.05}` (a string is refused).
-5. `lora_model_name: null`, with `num_inference_steps: 30`.
-6. `weights_dtype: "{int8}"`, with `num_inference_steps: 30`.
-expected:
-- Call 1 returns M0 with `low_confidence` absent or false, and an empty `differs`.
-- Calls 2 to 4 each return a number close to M0, not `unknown`, with `low_confidence: true`. Each
-  call's `differs` names the one driver it moved: `weights_dtype`, `attention_backend` or `cache`.
-- Calls 5 and 6 return the steps-scaled figure, ≈ K×30/9 as in C-F500, with `low_confidence: true`.
-  Their `differs` names `lora_model_name` and `weights_dtype` respectively.
-It is a **finding** if:
-- any of calls 2 to 6 returns `unknown`;
-- any returns the figure with no `low_confidence`;
-- `differs` misses the moved driver;
-- call 1 carries `low_confidence`.
-cleanup: none.
-metrics: none.
-
 ### C-F482 — A native-attention run gets its own bucket and isn't pooled into the default one
 source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about 8 minutes (one H3 reference-to-video at defaults). Workspace `regression-complete`.
@@ -12534,7 +12497,7 @@ It is a **finding** if call 3 returns M0 with neither `scaled` nor `low_confiden
 cleanup: none.
 metrics: none.
 
-### C-F484 — An inline workflow's inherited estimate scales by steps and canvas (`basis: "inherited"`), and off an unscalable driver it lists it in `differs` and sets `low_confidence`
+### C-F484 — An inline workflow's inherited estimate scales by steps and canvas (`basis: "inherited"`), and off an unscalable driver it lists it in `differs` and sets `low_confidence`; by name, unscalable drivers off their default keep the figure and flag the same
 source: tester, spec for #908 from #866's plan v2 (claude-opus-5-5 via anthropic)
 Free. Setup: take `get_workflow("templates/minimax/reference-to-video")` and set `variables.seed` to
 42. Call that W.
@@ -12553,6 +12516,15 @@ the one variable named (call 1, W as is, is this arm's control):
 5. `attention_backend` set to the native SDPA value.
 6. `cache` set to a non-null value.
 7. `lora_model_name` (and `lora_weight_name`) set to `null`.
+
+By-name arm. Each call is `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed:
+42, ...})`. Take values from the variables' descriptions, as in C-F498.
+8. Defaults only. This gives N0, this arm's own baseline (the by-name figure, kept apart from call 1's M0).
+9. `weights_dtype: "{int8}"`.
+10. `attention_backend`: a non-null value.
+11. `cache`: a non-null cache object, e.g. `{"type": "first_block", "threshold": 0.05}` (a string is refused).
+12. `lora_model_name: null`, with `num_inference_steps: 30`.
+13. `weights_dtype: "{int8}"`, with `num_inference_steps: 30`.
 expected:
 - Call 1 returns `basis: "inherited"`, `inherited_from: "templates/minimax/reference-to-video"`,
   and no `scaled`.
@@ -12563,17 +12535,28 @@ expected:
 - Call 4 returns ≈ M0×192/124 (±5%), with `scaled` naming frames.
 - Calls 5 to 7 each keep `basis: "inherited"` with a number, set `low_confidence: true`, and name the
   moved variable in `differs`: `attention_backend`, `cache` or `lora_model_name`.
+- (By name) Call 8 returns N0 with `low_confidence` absent or false, and an empty `differs`.
+- (By name) Calls 9 to 11 each return a number close to N0, not `unknown`, with `low_confidence: true`.
+  Each call's `differs` names the one driver it moved: `weights_dtype`, `attention_backend` or `cache`.
+- (By name) Calls 12 and 13 return the steps-scaled figure, ≈ K×30/9 as in C-F500, with
+  `low_confidence: true`. Their `differs` names `lora_model_name` and `weights_dtype` respectively.
 It is a **finding** if:
 - calls 2 or 4 return the unscaled M0;
 - either returns `unknown`;
 - they lose `inherited_from`;
 - inline and template paths differ by more than 10%;
-- any of calls 5 to 7 returns an empty `differs`, no `low_confidence`, or `unknown`.
+- any of calls 5 to 7 returns an empty `differs`, no `low_confidence`, or `unknown`;
+- (by name) any of calls 9 to 13 returns `unknown`;
+- (by name) any of calls 9 to 13 returns the figure with no `low_confidence`;
+- (by name) `differs` misses the moved driver;
+- (by name) call 8 carries `low_confidence`.
 cleanup: none.
 metrics: none.
 
 absorbs: C-F485 (merged 2026-11-26, suite review)
 - C-F485: tester, spec for #908 from #866's plan v2 (claude-opus-5-5 via anthropic)
+absorbs: C-F481 (merged 2026-11-27, suite review, pass 2)
+- C-F481: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F486 — a run feeds `plan.host_memory` (`basis: "observed"`), shared by an inline and a renamed copy, split by offload
 source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
@@ -13071,9 +13054,9 @@ cleanup: `delete_workflow("c-f502-b4", acknowledged_cost=true)` and
 `delete_workflow("c-f502-b3", acknowledged_cost=true)`.
 metrics: none.
 
-### C-F503 — `check-script` flags a line spoken twice in its shot as `unscripted_speech`, on a two-shot and on a longer cut, and stays quiet when both takes are scripted
+### C-F503 — `check-script` flags a line spoken twice in its shot as `unscripted_speech`, on a two-shot and on a longer cut, and stays quiet when both takes are scripted; a single-shot take with no `shots` still flags it
 source: tester, verified in #920 (claude-opus-5-5 via anthropic)
-Cheap (Whisper, about 10 s per run; four runs). Workspace `regression-complete`.
+Cheap (Whisper, about 10 s per run; six runs). Workspace `regression-complete`.
 
 **Arm A: two-shot cut.** The input is the shared asset
 `asset:qa-cast/ep198-episode.mp4`: two 124-frame H3 shots, `shot@freezer` (0–5.167 s) and
@@ -13097,6 +13080,16 @@ not a pass.
    whistling, Hal.","shot":"steam"},{"text":"I taught it a song.","shot":"whistle"}]})`, then
    `get_output_text` on its JSON.
 4. The same call as 3, with line 2 scripted as `"Then wear socks. Wear socks."`.
+
+**Arm C: single-shot take with no `shots`.** The input is the shared asset
+`asset:qa-cast/ep345-shot2-breadbin.mp4`. It is one shot in which the line "Rolling pins are
+unreliable witnesses." is spoken twice (about 0.4–2.8 s and 3.0–5.5 s). No manifest sits beside it.
+If the asset is gone, report this arm as blocked, not as a finding. Use
+`workspace="regression-complete"` on every call.
+5. `validate_workflow(name="templates/check-script", arguments={"input_audio": "asset:qa-cast/ep345-shot2-breadbin.mp4",
+   "lines": ["Rolling pins are unreliable witnesses."]})`, bind the plan, `run_workflow(..., wait_seconds=55)`,
+   then `get_output_text` on the step's JSON. Pass no `shots`.
+6. The same as 5, with `lines: [{"text": "Rolling pins are unreliable witnesses.", "shot": "breadbin"}]` and again no `shots`.
 expected:
 - Run 1: `findings` holds exactly one `unscripted_speech` finding, severity `warn`, `value` 5, and
   `at` with `line: null`, `shot: "shot@freezer"`, `repeats_line: true`, `seconds` ≈0.44 and
@@ -13109,17 +13102,26 @@ expected:
   finding with `at.shot: "shot@socks"`, `repeats_line: true`, `seconds` ≈9.16 and `value` 2.
 - Run 4: line 2 matches with similarity ≥0.6 and spans ≈6.3–9.98. `unmatched` is `[]`, and
   there is no `unscripted_speech` finding.
+- Runs 5 and 6: in both, `shots_source` is `"none"`, `unscripted_speech` appears in `rules_applied`
+  and not in `rules_skipped`, and `findings` holds an `unscripted_speech` warn over the first reading
+  (about 0.4–2.8 s), with the line matched to the second (about 3.0–5.5 s), per #1360, and with
+  `at.repeats_line: true`. In run 6 that finding also carries `at.shot: "breadbin"`.
 It is a **finding** if run 1 has no `unscripted_speech` finding (the #920 regression), names
 another shot, or has `repeats_line` false, or if run 2 reports any finding.
 It is a **finding** if run 3 has no `unscripted_speech` finding in `shot@socks` (the #965
 regression), or if its line 2 swallows the repeat (span to ≈9.98, similarity below 1.0). It is
 also a finding if run 4 releases scripted words as unscripted. In arm B (runs 3 and 4), other
 findings, such as `speech_not_transcribed` in `shot@kettle`, are not part of this case.
-cleanup: `delete_output(job_id=…)` on all four runs. Never delete the shared assets.
+It is a **finding** if run 5 or run 6 returns `findings: []`, or if `unscripted_speech` is skipped
+with "no shots are known". That is #1117's silent clean verdict: the repeated words appear only in
+`unmatched`.
+cleanup: `delete_output(job_id=…)` on all six runs. Never delete the shared assets.
 metrics: none.
 
 absorbs: C-F509 (merged 2026-11-26, suite review)
 - C-F509: tester, verified in #965 (claude-opus-5-5 via anthropic)
+absorbs: C-F594 (merged 2026-11-27, suite review, pass 2)
+- C-F594: tester, verified in #1117 (claude-opus-5-5 via anthropic)
 
 ### C-F504 — `validate_workflow` warns on an unbraced `weights_dtype` name, with the braced spelling, and is quiet once braced
 source: tester, verified in #926 (claude-opus-5-5 via anthropic)
@@ -14501,7 +14503,7 @@ metrics: none.
 absorbs: C-F627 (merged 2026-11-26, suite review)
 - C-F627: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
 
-### C-F585 — `plan_cuts` fed phrases gives one scene per phrase with `lyric: null` when no lyrics are given, maps matching lyrics one-to-one onto phrases, and warns with both counts and the `min_gap_seconds` direction when they don't match
+### C-F585 — `plan_cuts` fed phrases gives one scene per phrase with `lyric: null` when no lyrics are given, maps matching lyrics one-to-one onto phrases, and warns with both counts and the `min_gap_seconds` direction when they don't match; with fewer phrases than lines the warning also says to raise `floor_db` and to check by ear, with more phrases it doesn't
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Author a one-step json workflow, saved `application/json` final: `plan_cuts` with
 `transcript: variable:transcript`, `fps: 24`, `duration_s: 20`, `segment_by: "line"`,
@@ -14515,7 +14517,11 @@ Three arms:
 a. 4 lines: `"Alpha line one\nBravo line two\nCharlie line three\nDelta line four"`;
 b. 3 lines (drop Delta), fewer lines than phrases;
 c. 5 lines (add `"Echo line five"`), more lines than phrases.
-Run each with `wait_seconds=55` and read it.
+d. A fused verse: arm a's 4 lines, with
+   `transcript = {"phrases":[{"start":1.44,"end":33.0}],"duration_seconds":33.03,"method":"centre","warnings":[]}`
+   and `duration_s: 33` (the other settings as arm n-a: `fps: 24`, `segment_by: "line"`,
+   `min_scene_s: 1.0`, `include_instrumental_gaps: false`): 1 phrase for 4 lines.
+Run each with `wait_seconds=55` and read it with `get_output_text`.
 expected:
 - n-a and n-b: both succeed. In n-a, the vocal shots are exactly four, in order, with `lyric: null` and
   `start_frame`s 0, 108, 156, 288 (with gaps off the first shot tiles from frame 0 and absorbs the
@@ -14533,18 +14539,34 @@ expected:
   2.0/7.0/12.0 s (frames 48/168/288 ± the scene minimums), in order, each lyric whole.
 - c: a warning naming 4 phrases and 5 lines that says to lower `min_gap_seconds`. The 5 lines are
   spread evenly over 2.0–17.0 s (starts near 2/5/8/11/14 s), in order.
-- No arm has a suspect-transcript warning or a "none of the lyrics' words were heard" warning.
+- (`floor_db`) c and d, the arms with fewer phrases than lines: one mismatch warning naming both counts
+  (4 and 5; 1 and 4), saying to lower `analyze_phrases`' `min_gap_seconds`, **and** naming `floor_db`:
+  raise it (less negative, e.g. −30) when the voice never drops between lines (legato or reverberant
+  singing). The `floor_db` advice says to check the phrases by ear (`get_output_audio`) before
+  trusting a one-to-one pairing.
+- (`floor_db`) d: the 4 lines are spread evenly over 1.44–33.0 s (starts near 1.4/9.3/17.2/25.1 s ± the
+  scene minimums), in order, each lyric whole, on frames the existing rules give.
+- (`floor_db`) b, the arm with more phrases than lines: the warning names 4 and 3 and says to raise
+  `min_gap_seconds`, as above. It does **not** say to raise `floor_db` (that would split more phrases,
+  the wrong way). Mentioning `floor_db` in another direction is not a finding by itself; report the
+  wording.
+- No arm (d included) has a suspect-transcript warning or a "none of the lyrics' words were heard" warning.
 It is a **finding** (n-a, n-b) if the phrase dict is refused as a transcript, a phrase is merged, split or
 dropped, a vocal shot carries a non-null lyric, a start other than the first is off its phrase, or a
 transcription-only warning fires.
 It is a **finding** (a, b, c) if a matching count isn't one-to-one in order, a mismatch is silent or lacks a
 count or the direction (or gives the wrong direction), the spread runs outside the first-start to
 last-end span, a line is split into words, or a transcription-only warning fires.
-cleanup: `delete_output(job_id=…)` for every arm (n-a, n-b, a, b, c).
+It is a **finding** (`floor_db`) if c or d lacks either count, either knob, the direction for either, or
+the check-by-ear caution; if b advises raising `floor_db`; or if the spread leaves the first-start to
+last-end span.
+cleanup: `delete_output(job_id=…)` for every arm (n-a, n-b, a, b, c, d).
 metrics: none.
 
 absorbs: C-F584 (merged 2026-11-26, suite review)
 - C-F584: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+absorbs: C-F624 (merged 2026-11-27, suite review, pass 2)
+- C-F624: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
 
 ### C-F586 — phrase-fed `plan_cuts` honours `segment_by: stanza`, the render grid and `max_scene_s`, and a split phrase keeps its whole lyric
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
@@ -14713,25 +14735,6 @@ expected:
   inside one list.
 It is a **finding** if both messages appear, only #813's appears, or the copy validates clean.
 cleanup: none (validate only, nothing saved).
-metrics: none.
-
-### C-F594 — check-script on a single-shot take with no `shots` still flags a line spoken twice
-source: tester, verified in #1117 (claude-opus-5-5 via anthropic)
-Input: the shared asset `asset:qa-cast/ep345-shot2-breadbin.mp4`. It is one shot in which the line
-"Rolling pins are unreliable witnesses." is spoken twice (about 0.4–2.8 s and 3.0–5.5 s). No manifest
-sits beside it. If the asset is gone, report the case as blocked, not as a finding. Use
-`workspace="regression-complete"` on every call.
-1. `validate_workflow(name="templates/check-script", arguments={"input_audio": "asset:qa-cast/ep345-shot2-breadbin.mp4",
-   "lines": ["Rolling pins are unreliable witnesses."]})`, bind the plan, `run_workflow(..., wait_seconds=55)`,
-   then `get_output_text` on the step's JSON. Pass no `shots`.
-2. The same, with `lines: [{"text": "Rolling pins are unreliable witnesses.", "shot": "breadbin"}]` and again no `shots`.
-expected:
-- In both runs, `shots_source` is `"none"`, `unscripted_speech` appears in `rules_applied` and not in
-  `rules_skipped`, and `findings` holds an `unscripted_speech` warn over the first reading (about 0.4–2.8 s), with the
-  line matched to the second (about 3.0–5.5 s), per #1360, and with `at.repeats_line: true`. In step 2 that finding also carries `at.shot: "breadbin"`.
-It is a **finding** if either run returns `findings: []`, or if `unscripted_speech` is skipped with
-"no shots are known". That is #1117's silent clean verdict: the repeated words appear only in `unmatched`.
-cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F596 — `generate_speech` documents `reference_audio` / `reference_text` for Audio8, and the catalog lists `voice-clone` as audio needing input media
@@ -15207,32 +15210,6 @@ expected:
 It is a **finding** if the run fails on mps, the output's shape differs, or it ran in a 16-bit dtype by
 default.
 cleanup: `delete_output(job_id=…)` for the job.
-metrics: none.
-
-### C-F624 — with fewer phrases than lyric lines, the mismatch warning also says to raise `floor_db` and to check by ear; with more phrases it doesn't
-source: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
-CPU only. C-F584's one-step `plan_cuts` workflow (arm a's settings: `fps: 24`, `segment_by: "line"`,
-`min_scene_s: 1.0`, `include_instrumental_gaps: false`), with a `lyrics` argument. Run each arm with
-`wait_seconds=55` and read it with `get_output_text`.
-a. C-F584's 4-phrase `transcript`, `duration_s: 20`, 5 lines (C-F585 arm c's lyrics): fewer phrases.
-b. A fused verse: `transcript = {"phrases":[{"start":1.44,"end":33.0}],"duration_seconds":33.03,"method":"centre","warnings":[]}`,
-   `duration_s: 33`, 4 lines (C-F585 arm a's lyrics): 1 phrase for 4 lines.
-c. C-F584's 4-phrase `transcript`, `duration_s: 20`, 3 lines (C-F585 arm b's lyrics): more phrases.
-expected:
-- a and b: one mismatch warning naming both counts (4 and 5; 1 and 4), saying to lower
-  `analyze_phrases`' `min_gap_seconds`, **and** naming `floor_db`: raise it (less negative, e.g. −30)
-  when the voice never drops between lines (legato or reverberant singing). The `floor_db` advice
-  says to check the phrases by ear (`get_output_audio`) before trusting a one-to-one pairing.
-- b: the 4 lines are spread evenly over 1.44–33.0 s (starts near 1.4/9.3/17.2/25.1 s ± the scene
-  minimums), in order, each lyric whole, on frames the existing rules give.
-- c: the warning names 4 and 3 and says to raise `min_gap_seconds`, as C-F585 b. It does **not** say
-  to raise `floor_db` (that would split more phrases, the wrong way). Mentioning `floor_db` in another
-  direction is not a finding by itself; report the wording.
-- No arm has a suspect-transcript or "none of the lyrics' words were heard" warning.
-It is a **finding** if a or b lacks either count, either knob, the direction for either, or the
-check-by-ear caution; if c advises raising `floor_db`; or if the spread leaves the first-start to
-last-end span.
-cleanup: `delete_output(job_id=…)` for every arm.
 metrics: none.
 
 ### C-F625 — `analyze_phrases` on a dense full mix warns when one phrase covers over 90% of the track, and the warning names both remedies: the vocal stem on a mix, a higher `floor_db` on a stem
@@ -16296,7 +16273,7 @@ the seam (the noise reached the held audio).
 cleanup: `delete_output(job_id=…)` on both; `delete_workflow("c-f679-noise")`.
 metrics: none.
 
-### C-F694 — a `presets` bundle fills the variables the caller didn't pass, and a bad bundle is refused at validate
+### C-F694 — a `presets` bundle fills the variables the caller didn't pass, and a bad bundle is refused at validate; a realized workflow from a `presets` run re-runs with no arguments to the same values, and the bundle can't override them
 source: tester, verified in #1203 (claude-opus-5-5 via anthropic)
 A task-only probe, a few seconds per run. W is `{"id":"preset_probe","variables":{"quality":"fast","num_inference_steps":20,
 "width":1024,"height":1024,"quant":"none","label":"x"},"variable_constraints":{"num_inference_steps":{"modulus":2,
@@ -16305,18 +16282,33 @@ A task-only probe, a few seconds per run. W is `{"id":"preset_probe","variables"
 "qr_code","arguments":{"qr_code_contents":"variable:label"}},"result":{"content_type":"image/png"}}]}`. All calls use
 `workspace="default"`.
 1. For each of `{num_inference_steps: 30}`, `{}` and `{quality: "slow", width: 640}`: `validate_workflow(workflow=W,
-   arguments=...)`, then `run_workflow` with its `acknowledged_cost` and `wait_seconds=55`, then `get_job_workflow`.
+   arguments=...)` (note its fingerprint), then `run_workflow` with its `acknowledged_cost` and `wait_seconds=55`, then
+   `get_job_workflow`.
 2. `validate_workflow(workflow=W, arguments={"quality": "ultra"})`.
 3. `validate_workflow` of W with `fast` given an extra key `guidance_scale: 1.0`, and of W with `slow` given
    `num_inference_steps: 5`.
+4. Re-run, the realized workflows: the same three calls as step 1 for `{quality: "slow", width: 1600}`. Call step 1's
+   `{num_inference_steps: 30}` run's `get_job_workflow` reply R1 and this run's R2.
+5. Re-run: for each of R1 and R2: `validate_workflow(workflow=R, arguments={})`, then
+   `run_workflow(inline_workflow=R, arguments={})` and `get_job_workflow` on that job.
+6. Re-run: `rerun_job` of step 1's `{num_inference_steps: 30}` job, then `get_job_workflow` on it.
 expected:
 - Step 1's realized `variables`: steps 30 / 960x544 / int4; then steps 4 / 960x544 / int4; then steps 40 / 640x720 / none.
   No run gets a 409 on its bound fingerprint.
 - Step 2 is refused at `arguments.quality`, naming `fast, slow`.
 - Step 3 is refused at `presets.quality.fast.guidance_scale` (not a declared variable) and at
   `presets.quality.slow.num_inference_steps` (the modulus rule). A bundle that isn't the default is checked too.
-cleanup: `delete_output(job_id=<id>)` for each of step 1's three runs.
+- Re-run, step 4: R1 and R2 each have `realized: true` and no `presets` key. R1's variables are steps 30 / 960x544 /
+  int4; R2's are `quality slow`, steps 40 / 1600x720 / none (the argument beats the bundle's 1280).
+- Re-run, step 5: each fingerprint equals the fingerprint noted at validate for the same run (step 1's for R1, step
+  4's for R2), and each re-run's realized variables equal its R's. The regression is the first re-run going back to
+  steps 4 (the `fast` bundle refilling the values).
+- Re-run, step 6: the realized variables are steps 30 / 960x544 / int4.
+cleanup: `delete_output(job_id=<id>)` for every run: step 1's three, step 4's, step 5's two and step 6's.
 metrics: none.
+
+absorbs: C-F697 (merged 2026-11-27, suite review, pass 2)
+- C-F697: tester, verified in #1234 (claude-opus-5-5 via anthropic)
 
 ### C-F695 — Music 3 refuses an empty lyric at validate, warns on an over-long section lyric, and prices by `audio_duration`
 source: tester, verified in #1210 (claude-opus-5-5 via anthropic)
@@ -16360,24 +16352,6 @@ The regression is steps 2–4 failing like step 1: the escape is lost when a chi
 template such as `templates/minimax/chained-segments` composed with `weights_dtype: "{int8}"` fails at model load
 after validating clean.
 cleanup: `delete_output(job_id=...)` for each run, and `delete_workflow` for the three probes.
-metrics: none.
-
-### C-F697 — a realized workflow from a `presets` run re-runs with no arguments to the same values; the bundle can't override them
-source: tester, verified in #1234 (claude-opus-5-5 via anthropic)
-A task-only probe, a few seconds per run. W is C-F694's `preset_probe` workflow. All calls use `workspace="default"`.
-1. For each of `{num_inference_steps: 30}` and `{quality: "slow", width: 1600}`: `validate_workflow(workflow=W,
-   arguments=...)` (note its fingerprint), `run_workflow` with its `acknowledged_cost` and `wait_seconds=55`, then
-   `get_job_workflow` → R.
-2. For each R: `validate_workflow(workflow=R, arguments={})`, then `run_workflow(inline_workflow=R, arguments={})`
-   and `get_job_workflow` on that job.
-3. `rerun_job` of the first step-1 job, then `get_job_workflow` on it.
-expected:
-- Every R has `realized: true` and no `presets` key. The first R's variables are steps 30 / 960x544 / int4; the
-  second's are `quality slow`, steps 40 / 1600x720 / none (the argument beats the bundle's 1280).
-- Step 2: each fingerprint equals the step-1 fingerprint for the same run, and each re-run's realized variables
-  equal its R's. The regression is the first re-run going back to steps 4 (the `fast` bundle refilling the values).
-- Step 3: the realized variables are steps 30 / 960x544 / int4.
-cleanup: `delete_output(job_id=<id>)` for every run.
 metrics: none.
 
 ### C-F698 — a seeded SD 1.5 image is pixel-identical on a quiet host, while the other card loads a model, and on a fresh worker
@@ -16814,11 +16788,16 @@ expected:
 cleanup: `delete_output(job_id=...)` for each of the three jobs.
 metrics: none.
 
-### C-F724 — every one of the 13 camera moves in the `cinematography` vocabulary carries a `static`/`moving` class, and only `static` is `static`
+### C-F724 — every one of the 13 camera moves in the `cinematography` vocabulary carries a `static`/`moving` class, and only `static` is `static`; the shot document still names move ids from the vocabulary only, with no copied list or copied class
 source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
-Free: reading the plugin only. Invoke `dw:cinematography` (Skill tool) and read
-`references/vocabulary.md` under the base directory it reports, at its `move` section.
+Free: reading the plugin only.
+- Arm A (the vocabulary): invoke `dw:cinematography` (Skill tool) and read
+  `references/vocabulary.md` under the base directory it reports, at its `move` section.
+- Arm B (no copies): invoke `dw:script-to-video` (Skill tool) and read
+  `references/shot-document.md` under its base directory. Also read the `long-form` SKILL.md's
+  *Per chain* section.
 expected:
+Arm A:
 - The `move` table has exactly these 13 rows, no more and no fewer (the plan adds no ids):
   `static`, `dolly-in`, `dolly-out`, `truck-left`, `truck-right`, `crane-up`, `crane-down`, `orbit`,
   `tracking`, `whip-pan`, `push-in`, `handheld`, `crash-zoom`. Each row's id is still its first backticked
@@ -16834,10 +16813,23 @@ expected:
 - The `cinematography` SKILL.md's measured-move table is unchanged. The seven unmeasured ids
   (`truck-right`, `crane-down`, `tracking`, `whip-pan`, `push-in`, `handheld`, `crash-zoom`) are still
   marked unmeasured, so the class column claims no measurement.
-It is a **finding** if any row has no class or another value, a move other than `static` is `static`,
+It is a **finding** in arm A if any row has no class or another value, a move other than `static` is `static`,
 the row count isn't 13, the definition is missing, or an unmeasured move now reads as measured.
+
+Arm B:
+- `shot-document.md` gives a shot's `move` as an id from `cinematography`'s `references/vocabulary.md`
+  and points there. It does not list the 13 move ids itself, and it does not copy the `static`/`moving`
+  class next to any of them.
+- The `long-form` SKILL.md doesn't hold its own copy of the static/moving list either. Naming `static`
+  as the only static move, or using `push-in`/`handheld` as examples, is fine. A full table or list of
+  move ids with their classes is not.
+It is a **finding** in arm B if either file carries a copy of the move list or of its classes. That copy would
+drift from the vocabulary the next time a move changes.
 cleanup: none.
 metrics: none.
+
+absorbs: C-F727 (merged 2026-11-27, suite review, pass 2)
+- C-F727: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F725 — every `moving` id carries the H3 `last_frame` + `look_hold`/`carry_pick` warning, says it was measured on the arc only, and `static` does not carry it
 source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
@@ -16889,23 +16881,6 @@ expected:
 It is a **finding** if either file still names #1200 as pending, the pointer doesn't name the
 vocabulary's column, a `push-in` or `handheld` shot lands on `shot: static`, the long-form text keeps
 its own list of which moves are moving, or `shot: moving` fails validation.
-cleanup: none.
-metrics: none.
-
-### C-F727 — the shot document still names move ids from the vocabulary only, with no copied list or copied class
-source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
-Free: reading the plugin only. Invoke `dw:script-to-video` (Skill tool) and read
-`references/shot-document.md` under its base directory. Also read the `long-form` SKILL.md's
-*Per chain* section.
-expected:
-- `shot-document.md` gives a shot's `move` as an id from `cinematography`'s `references/vocabulary.md`
-  and points there. It does not list the 13 move ids itself, and it does not copy the `static`/`moving`
-  class next to any of them.
-- The `long-form` SKILL.md doesn't hold its own copy of the static/moving list either. Naming `static`
-  as the only static move, or using `push-in`/`handheld` as examples, is fine. A full table or list of
-  move ids with their classes is not.
-It is a **finding** if either file carries a copy of the move list or of its classes. That copy would
-drift from the vocabulary the next time a move changes.
 cleanup: none.
 metrics: none.
 
@@ -18684,17 +18659,26 @@ metrics: none.
 absorbs: C-F874 (merged 2026-11-26, suite review)
 - C-F874: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 
-### C-F875 — `detect_cuts` refuses a `max_frames` above 345 before the run
+### C-F875 — `detect_cuts` refuses a `max_frames` above 345, and a still or an audio file as `video`, at validate, before the run
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Free. `validate_workflow` on a one-step workflow `qa-c-f875`:
-`detect_cuts(video="asset:qa-cast/ep6-cold-open.mp4", max_frames=X)` for X = 346, 1000, 0 and 345.
+Free.
+- Arm A (`max_frames`): `validate_workflow` on a one-step workflow `qa-c-f875`:
+  `detect_cuts(video="asset:qa-cast/ep6-cold-open.mp4", max_frames=X)` for X = 346, 1000, 0 and 345.
+- Arm B (`video`): `validate_workflow` on `detect_cuts(video="asset:qa-cast/priya-portrait.jpg")` and then on
+  `detect_cuts(video="asset:qa-cast/priya-voice.wav")`, workflow `qa-c-f877`.
 expected:
-- 346 and 1000 are refused at validate with a message that names `max_frames` and 345.
-- 0 is refused at validate naming `max_frames`, because a cut can't be split into pieces of zero frames.
-- 345 validates clean.
-- `list_jobs` shows nothing queued by this case.
+- A: 346 and 1000 are refused at validate with a message that names `max_frames` and 345.
+- A: 0 is refused at validate naming `max_frames`, because a cut can't be split into pieces of zero frames.
+- A: 345 validates clean.
+- A: `list_jobs` shows nothing queued by this case.
+- B: both are refused at validate, before any run, with a message naming the `video` argument and saying it needs a video.
+- B: `list_jobs` shows nothing queued.
+- B: it is a **finding** if either validates clean and fails only at run time.
 cleanup: none.
 metrics: none.
+
+absorbs: C-F877 (merged 2026-11-27, suite review, pass 2)
+- C-F877: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F876 — a cut under 22 frames is flagged `too_short`, and the flag follows the reported length
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
@@ -18709,17 +18693,6 @@ expected:
   is < 22. A flag that disagrees with its own `num_frames` is a **finding**.
 - A `too_short` cut still carries `render_frames` 124.
 cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
-### C-F877 — `detect_cuts` refuses a still or an audio file as `video` at validate
-source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Free. `validate_workflow` on `detect_cuts(video="asset:qa-cast/priya-portrait.jpg")` and then on
-`detect_cuts(video="asset:qa-cast/priya-voice.wav")`, workflow `qa-c-f877`.
-expected:
-- Both are refused at validate, before any run, with a message naming the `video` argument and saying it needs a video.
-- `list_jobs` shows nothing queued.
-- It is a **finding** if either validates clean and fails only at run time.
-cleanup: none.
 metrics: none.
 
 ### C-F878 — `trim_video` `pad_to` holds the last frame and pads the audio with silence; `pad_to` equal to `num_frames` changes nothing, and omitting it is today's trim
@@ -18916,19 +18889,6 @@ absorbs: C-F917 (merged 2026-11-26, suite review)
 - C-F917: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
 amended: 2026-11-26, suite review: inlined the argument names from C-F882, which is retired, in place of the pointer to it; nothing else changed.
 
-### C-F892 — `track_people` is listed and documented, and the prep template gains `track`
-source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Free. `list_tasks`, `get_task("track_people")`, `get_guide("tasks")` and its `track_people` section, then
-`get_workflow("replace-performer-cuts")`.
-expected:
-- `get_task` lists `video` (required), `prompt` default `"person"`, `max_people` default 4 and `threshold`
-  default 0.3.
-- The tasks guide has a `track_people` section. It says the task returns one mask video per person, named
-  `person-1`, `person-2`, … in order of screen area, plus a numbered contact sheet.
-- `replace-performer-cuts` has a `track` option, and its description says it gives per-person masks.
-cleanup: none.
-metrics: none.
-
 ### C-F893 — `track_people` on a two-person clip returns one mask per person and a matching contact sheet; `max_people` 1 returns only the largest; masks span a multi-cut clip; the default backend is unchanged after #1404 and loads no SAM 3
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Needs no new download. Validate each workflow first.
@@ -19024,28 +18984,11 @@ expected:
 cleanup: `delete_output(job_id=…)` for this case's jobs, then for C-F893's and C-F897's.
 metrics: none.
 
-### C-F912 — the `cinematography` SKILL.md move table lists all 13 moves, and its H3 and LTX words agree with the compile tables
-source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
-Free: plugin reading. Invoke `dw:cinematography` and read its move table, plus both compile tables.
-expected:
-- The table has 13 move rows, the vocabulary's ids, with `minimax-h3`, `ltx-2.5` and `kandinsky-6` columns.
-- For each move, the H3 and LTX words agree with that move's cell in `compile-h3.md` and `compile-ltx-2.5.md`.
-  "Agree" means the same two verdicts, or, if the table was cut to one word per family for the 12 KiB cap:
-  - the same word as the compile cell, when its two seeds agree;
-  - when they disagree, a word no stronger than the weaker seed (or "varies"), and the prose names the move as
-    varying by seed.
-  A hint-only move reads hint-only.
-- The K6 column is as #1148 measured it: `honoured` for static, dolly-in and dolly-out, `partial` for truck-left,
-  crane-up and orbit, and `not measured` (or no claim) for the other seven. No K6 cell holds a second seed's verdict.
-It is a **finding** if a move is missing, a word claims more than its compile cell, or the table still has 6 rows.
-cleanup: none.
-metrics: none.
-amended: 2026-11-26, suite review: inlined the Kandinsky 6 column's expected words from C-F904, which is retired; nothing else changed.
-
-### C-F913 — the `cinematography` skill's prose says two seeds and 13 moves, still says "a hint, not a promise", and cites the new audit; its `compile-h3.md` and `compile-ltx-2.5.md` move tables carry two verdicts per move, seed 42 first, matching the #1260 record
+### C-F913 — the `cinematography` skill's prose says two seeds and 13 moves, still says "a hint, not a promise", and cites the new audit; its `compile-h3.md` and `compile-ltx-2.5.md` move tables carry two verdicts per move, seed 42 first, matching the #1260 record; the SKILL.md move table lists all 13 moves, and its H3 and LTX words agree with the compile tables
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: plugin reading of the `cinematography` SKILL.md (arm A); of `references/compile-h3.md`'s move table under
-`dw:cinematography`'s base directory (arm B); and of `references/compile-ltx-2.5.md`'s move table (arm C).
+`dw:cinematography`'s base directory (arm B); of `references/compile-ltx-2.5.md`'s move table (arm C); and of the
+SKILL.md's own move table (invoke `dw:cinematography` and read it), against both compile tables (arm D).
 expected:
 Arm A (SKILL.md):
 - The "A hint, not a promise" section still says every value is a hint, not a promise.
@@ -19082,12 +19025,26 @@ Arm C (`compile-ltx-2.5.md`'s move table):
 - Every one of the 13 sentences still contains `<viewpoint>`.
 - `compile-h3.md`'s cells still match the #1260 H3 record (stage B didn't disturb them).
 It is a **finding** if a cell disagrees with the record, a row lost `<viewpoint>`, or the row count isn't 13.
+
+Arm D (the SKILL.md move table):
+- The table has 13 move rows, the vocabulary's ids, with `minimax-h3`, `ltx-2.5` and `kandinsky-6` columns.
+- For each move, the H3 and LTX words agree with that move's cell in `compile-h3.md` and `compile-ltx-2.5.md`.
+  "Agree" means the same two verdicts, or, if the table was cut to one word per family for the 12 KiB cap:
+  - the same word as the compile cell, when its two seeds agree;
+  - when they disagree, a word no stronger than the weaker seed (or "varies"), and the prose names the move as
+    varying by seed.
+  A hint-only move reads hint-only.
+- The K6 column is as #1148 measured it: `honoured` for static, dolly-in and dolly-out, `partial` for truck-left,
+  crane-up and orbit, and `not measured` (or no claim) for the other seven. No K6 cell holds a second seed's verdict.
+It is a **finding** if a move is missing, a word claims more than its compile cell, or the table still has 6 rows.
 cleanup: none.
 metrics: none.
 
 absorbs: C-F903, C-F910 (merged 2026-11-26, suite review)
 - C-F903: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 - C-F910: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+absorbs: C-F912 (merged 2026-11-27, suite review, pass 2)
+- C-F912: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic); amended: 2026-11-26, suite review: inlined the Kandinsky 6 column's expected words from C-F904, which is retired; nothing else changed.
 amended: 2026-11-26, suite review: inlined the 13 move ids, the rerun rule and where the #1260 record is read, in place of the pointers to C-F899 and C-F902, which are retired; nothing else changed.
 
 ### C-F914 — `replace-performer` declares its frame and size constraints, states its limits in words, and wires the v3 per-cut steps
@@ -19449,9 +19406,10 @@ absorbs: C-F959 (merged 2026-11-26, suite review)
 - C-F959: tester, spec for #1403 from #1399's plan v2 (claude-opus-5-5 via anthropic)
 amended: 2026-11-26, suite review: said where the bench's arm jobs and record are read in place of the pointers to C-F956 and C-F957, which are retired; nothing else changed.
 
-### C-F961 — `track_people` lists `backend` (default `grounding-dino`) and `sam3_model_name`, and the tasks guide documents the sam3 arm
+### C-F961 — `track_people` is listed, and lists `backend` (default `grounding-dino`) and `sam3_model_name`; the tasks guide documents the per-person masks and the sam3 arm; and the prep template has `track`
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
-Free. `get_task("track_people")`, then `get_guide("tasks")` and its `track_people` section.
+Free. `list_tasks`, `get_task("track_people")`, then `get_guide("tasks")` and its `track_people` section, then
+`get_workflow("replace-performer-cuts")`.
 expected:
 - `get_task` lists `backend`, default `"grounding-dino"`, whose description or domain names exactly two values,
   `grounding-dino` and `sam3`. It lists `sam3_model_name`, default `facebook/sam3` (or a null default whose
@@ -19459,14 +19417,21 @@ expected:
 - `video`, `prompt` (default `"person"`), `max_people` (default 4), `threshold` (default 0.3), `model_name`,
   `sam_model_name` and `device` are still listed with today's defaults. A changed default is a **finding**: the plan
   promises no default change.
+- `get_task` lists `video` as required.
 - `threshold`'s description says its scale differs between the backends (DINO's detection score vs SAM 3's). The
   `prompt` description no longer says Grounding-DINO alone does the finding, or else says what the prompt does on sam3.
+- The tasks guide has a `track_people` section. It says the task returns one mask video per person, named
+  `person-1`, `person-2`, … in order of screen area, plus a numbered contact sheet.
 - The guide's `track_people` section names the `sam3` backend as opt-in, says `facebook/sam3` is gated (the user must
   accept its licence on Hugging Face), names its licence as the SAM License (not Apache), says the threshold scale
   differs, and says sam3 needs transformers 5.21 or later. Each one missing is a **finding**.
 - The guide still says the default backend is Grounding-DINO + SAM2.
+- `replace-performer-cuts` has a `track` option, and its description says it gives per-person masks.
 cleanup: none.
 metrics: none.
+
+absorbs: C-F892 (merged 2026-11-27, suite review, pass 2)
+- C-F892: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F962 — validate quotes only `facebook/sam3`, gated, for `backend: "sam3"`, today's two repos without it, and refuses `bogus`
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
@@ -19495,7 +19460,7 @@ expected:
 cleanup: none (nothing runs).
 metrics: none.
 
-### C-F963 — `backend: "sam3"` masks a person who enters after frame 0, with `first_frame` > 0, numbered after the first-frame people, and keeps people apart: no pixel in two masks
+### C-F963 — `backend: "sam3"` masks a person who enters after frame 0, with `first_frame` > 0, numbered after the first-frame people, and keeps people apart: no pixel in two masks; `max_people` on the sam3 arm caps by first-frame area, then entry order, and 0 loads nothing
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Runs only after Don lifts the `facebook/sam3` download hold (#1397); its first run
 downloads the weights, which is slow for that reason alone.
@@ -19508,6 +19473,11 @@ Then two runs, each validated first with its `acknowledged_cost` bound:
 - B: workflow `qa-c-f963-dino`, the same with no `backend`.
 Then, for the "apart" bullets: `get_output_frames` on every one of A's masks and on the source at `frame:0`,
 `frame:30`, `frame:60`, `frame:90` and `frame:120`.
+Then the `max_people` runs, each validated first:
+- C: `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4", backend="sam3", max_people=1)`, workflow
+  `qa-c-f965-one`.
+- D: the same with `max_people=0`, workflow `qa-c-f965-zero`.
+- E: the same as D with no `backend`, workflow `qa-c-f965-zero-dino`.
 expected:
 - A succeeds. Every mask video has 121 frames, 24 fps and 960×544 (`get_gallery_metadata`).
 - A's `people` record has one entry per mask, each with an integer `first_frame`. Every person on frame 0 has
@@ -19531,29 +19501,21 @@ expected:
   person within a cut.
 - Apart (A): each mask has at least one light area on a sampled frame where its person is in shot. An all-dark mask
   is a **finding**.
-cleanup: `delete_output(job_id=…)` on both jobs, once the "apart" bullets are read.
+- C gives exactly one mask, `person-1`, with 121 frames. Its `people` record has one entry with `first_frame: 0`, the
+  largest first-frame person: `compare_outputs` against run A's `person-1` at `frame:60` is near-identical
+  (SSIM ≥ 0.9), when run A's job still exists. If not, check with `get_output_frames` that it marks the larger
+  first-frame person. A cap that keeps the late entrant over a first-frame person is a **finding**.
+- D and E behave the same as each other: the same status (both succeed, or both fail with the same kind of
+  message), the same number of masks (none). D's `get_job_events` show no load of `facebook/sam3`, as
+  `max_people`'s description says "loads no model". A sam3 load at `max_people: 0` is a **finding**.
+cleanup: `delete_output(job_id=…)` on all five jobs (A, B, C, D and E), once the "apart" bullets are read and C is
+compared against A.
 metrics: none.
 
 absorbs: C-F964 (merged 2026-11-26, suite review)
 - C-F964: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
-
-### C-F965 — `max_people` on the sam3 arm caps by first-frame area, then entry order; 0 loads nothing
-source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
-Workspace `regression-complete`, after the download hold lifts. Validate each first.
-1. `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4", backend="sam3", max_people=1)`, workflow
-   `qa-c-f965-one`.
-2. The same with `max_people=0`, workflow `qa-c-f965-zero`.
-3. The same as 2 with no `backend`, workflow `qa-c-f965-zero-dino`.
-expected:
-- 1 gives exactly one mask, `person-1`, with 121 frames. Its `people` record has one entry with `first_frame: 0`, the
-  largest first-frame person: `compare_outputs` against C-F963 A's `person-1` at `frame:60` is near-identical
-  (SSIM ≥ 0.9), when C-F963's job still exists. If not, check with `get_output_frames` that it marks the larger
-  first-frame person. A cap that keeps the late entrant over a first-frame person is a **finding**.
-- 2 and 3 behave the same as each other: the same status (both succeed, or both fail with the same kind of
-  message), the same number of masks (none). 2's `get_job_events` show no load of `facebook/sam3`, as
-  `max_people`'s description says "loads no model". A sam3 load at `max_people: 0` is a **finding**.
-cleanup: `delete_output(job_id=…)` on all three.
-metrics: none.
+absorbs: C-F965 (merged 2026-11-27, suite review, pass 2)
+- C-F965: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F966 — the sam3 arm on a person-free clip fails with "no person found", naming the backend
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
@@ -23452,15 +23414,16 @@ expected:
 cleanup: `delete_workspace(name="cf1222-ui", acknowledged_cost=true)`.
 metrics: none.
 
-### C-F1227 — `GET /api/workspaces/<ws>/changes` answers an epoch, a workspaces counter and six integer kinds; reading it moves nothing, each MCP write or delete grows its own kind and only that kind, and a refused write moves nothing
+### C-F1227 — `GET /api/workspaces/<ws>/changes` answers an epoch, a workspaces counter and six integer kinds; reading it moves nothing, each MCP write or delete grows its own kind and only that kind, a refused write moves nothing, and a workspace created or deleted moves `workspaces` in every workspace's snapshot and nothing else
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 
-absorbs: C-F1226, C-F1228, C-F1231 (merged 2026-11-26, suite review)
+absorbs: C-F1226, C-F1228, C-F1231, C-F1230 (merged 2026-11-26, suite review; C-F1230 merged 2026-11-27, suite review, pass 2)
 - C-F1226: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 - C-F1228: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 - C-F1231: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+- C-F1230: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 
-Free, no job. **Setup S1536-A** (C-F1229, C-F1230 and C-F1232 reuse it): `create_workspace(name="cf1226-chg")` and
+Free, no job. **Setup S1536-A** (C-F1229 and C-F1232 reuse it): `create_workspace(name="cf1226-chg")` and
 `create_workspace(name="cf1226-other")`. A **snapshot** below means one `ui-check` run whose only steps are
 `fetch {path: "/api/workspaces/cf1226-chg/changes"}` and `fetch {path: "/api/workspaces/cf1226-other/changes"}`
 (Don's Q4 ruling: a plain HTTP GET of the route, alongside MCP writes). `workspace="cf1226-chg"` on every MCP call
@@ -23488,6 +23451,10 @@ each: (7) `delete_request(request="chg1", workspace="cf1226-chg")` (with `acknow
 revision); `save_workflow(name="cf1231/none")` (neither `workflow` nor `patch`); `upload_asset(content="aGVsbG8=",
 asset_name="cf1231/x.exe")`; `delete_prompt(name="cf1231-none")`; `delete_workspace(name="cf1226-other")` with no
 `acknowledged_cost`; `keep_output(name="no/such/run/file.png", asset_name="cf1231/k.png")`. Snapshot.
+
+**Arm E (a workspace created or deleted).** Snapshot; `create_workspace(name="cf1230-tmp")`; snapshot, plus a `fetch` of
+`/api/workspaces/cf1230-tmp/changes`; `delete_workspace(name="cf1230-tmp", acknowledged_cost=true)`; snapshot,
+plus that same `fetch` again.
 expected:
 - Arm A: both reads answer 200, JSON, with `epoch` (a non-empty id), `workspaces` (an integer ≥ 0) and `kinds` holding
   exactly `requests`, `prompts`, `workflows`, `assets`, `gallery` and `jobs`, each an integer ≥ 0.
@@ -23504,12 +23471,16 @@ expected:
 - Arm C: `cf1226-other` unchanged across (7), (9), (10).
 - Arm D: each call is refused (an error or a refusal reply; `delete_workspace` reports what it would remove).
 - Arm D: the two snapshots are identical in both workspaces: every kind, `workspaces` and `epoch`.
+- Arm E: create grows `workspaces` by at least 1, read the same in `cf1226-chg` and `cf1226-other`; delete grows it
+  again. Neither moves any kind in either workspace, nor `epoch`.
+- Arm E: the new workspace's own read answers 200 with integer kinds (zero or not), the shared `workspaces` and its own
+  `epoch` (epochs are per workspace). After the delete, its read answers 404.
 Arm A: a missing kind, a string or float where an integer belongs, or a counter that moves between two bare reads is a
 **finding**.
 Arm B: a write that moves no counter, or moves a second kind, is a **finding**: it is the stale page the feature
 exists to end.
 Arm D: any counter moved by a refusal is a **finding**: a page would reload on a write that never happened.
-cleanup: none (C-F1232).
+cleanup: none (C-F1232); arm E deletes its own `cf1230-tmp`.
 metrics: none.
 
 ### C-F1229 — a job moves `jobs` as it queues, finishes and is cancelled; a finished run with outputs moves `gallery`; `keep_output` moves `assets` only
@@ -23534,19 +23505,6 @@ expected:
 - `cf1226-other` unchanged S0→S4.
 A finished run that leaves `gallery` where it was is a **finding**: it is the worker-path bump the plan names as
 its main risk.
-cleanup: none (C-F1232).
-metrics: none.
-
-### C-F1230 — a workspace created or deleted moves `workspaces` in every workspace's snapshot, and nothing else
-source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
-Free, no job. S1536-A. Snapshot; `create_workspace(name="cf1230-tmp")`; snapshot, plus a `fetch` of
-`/api/workspaces/cf1230-tmp/changes`; `delete_workspace(name="cf1230-tmp", acknowledged_cost=true)`; snapshot,
-plus that same `fetch` again.
-expected:
-- Create grows `workspaces` by at least 1, read the same in `cf1226-chg` and `cf1226-other`; delete grows it
-  again. Neither moves any kind in either workspace, nor `epoch`.
-- The new workspace's own read answers 200 with integer kinds (zero or not), the shared `workspaces` and its own
-  `epoch` (epochs are per workspace). After the delete, its read answers 404.
 cleanup: none (C-F1232).
 metrics: none.
 
@@ -23696,15 +23654,17 @@ expected:
 cleanup: `delete_workspace` on both (`acknowledged_cost=true`).
 metrics: none.
 
-### C-F1241 — the Prompts page shows a prompt an agent saves and drops one it deletes, the Workflows page shows a saved workflow, and the Assets page shows an upload and a kept output, with no reload
+### C-F1244 — with no reload: a finished run appears on Gallery and on Overview, the Prompts page shows a prompt an agent saves and drops one it deletes, the Workflows page shows a saved workflow, and the Assets page shows an upload and a kept output
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 
-absorbs: C-F1242, C-F1243 (merged 2026-11-26, suite review)
+absorbs: C-F1241, C-F1242, C-F1243 (C-F1241 merged 2026-11-27, suite review, pass 2; C-F1242 and C-F1243 merged into C-F1241 2026-11-26, suite review)
+- C-F1241: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 - C-F1242: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 - C-F1243: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 
-Cost: one CPU-only `templates/audio-trim-fade` run of a few seconds (the Assets arm); the rest is free. S1536-BG
-(C-F1233) for every runner run below.
+Cost: three CPU-only `templates/audio-trim-fade` runs of a few seconds (one in the Assets arm, two in the Gallery
+and Overview arm); the rest is free. S1536-BG (C-F1233) for every runner run below. Run the arms in this order: the
+Gallery and Overview arm uses the workspace `cf1243-as` that the Assets arm creates.
 
 **Prompts arm.** Before launching: `save_prompt(name="cf1241-gone", prompt="a quiet harbour")`. Spec:
 `record **/api/**`; `goto` the Prompts page; `wait_text "cf1241-gone"`; `wait_text "cf1241-new"`; `screenshot`;
@@ -23724,20 +23684,8 @@ workflow=<its definition>, workspace="cf1242-wf")`.
 **/api/**`; `goto` the Assets page of `cf1243-as`; `wait_text` <the name>; `screenshot`; `recorded`.
 (A1) Write: `upload_asset(content=<C-F1227's 1x1 PNG>, asset_name="cf1243/dot.png")`; wait for `dot.png`.
 (A2) Write: `keep_output(name=<the run's audio gallery name>, asset_name="cf1243/kept.wav")`; wait for `kept.wav`.
-expected:
-- Prompts: `cf1241-new` appears without a reload, and the final screenshot holds no `cf1241-gone`.
-- Prompts: the prompts list is read once on load and again only after the writes. No page errors.
-- Workflows: the workflow appears without a reload; the workflows list is read on load and again only after the write.
-  No page errors.
-- Assets, (A1) and (A2): each appears without a reload; each run reads the assets list on load and once after its
-  write. No page errors.
-cleanup: `delete_prompt(name="cf1241-new")` (and `cf1241-gone` if it survived);
-`delete_workspace(name="cf1242-wf", acknowledged_cost=true)`; none for `cf1243-as` (C-F1246 cleans up).
-metrics: none.
 
-### C-F1244 — a finished run appears on Gallery and on Overview, with no reload
-source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
-Cost: two CPU-only `templates/audio-trim-fade` runs of a few seconds. `cf1243-as` (C-F1243). Two S1536-BG runs.
+**Gallery and Overview arm.** `cf1243-as` (the Assets arm's workspace). Two S1536-BG runs.
 (1) Spec: `record **/api/**`; `goto` the Gallery page of `cf1243-as`; `wait_text` the page's heading; `wait_text
 "cf1244 gallery take"`; `screenshot`; `recorded`. Write: `run_workflow("templates/audio-trim-fade", arguments={…,
 "duration_seconds":3}, note="cf1244 gallery take", acknowledged_cost=…, workspace="cf1243-as")`, no wait.
@@ -23745,12 +23693,18 @@ Cost: two CPU-only `templates/audio-trim-fade` runs of a few seconds. `cf1243-as
 note if Overview shows notes, else the new run's id from `run_workflow`'s reply (or its job status, as Overview
 shows recent jobs).
 expected:
-- (1) The new output, with its note, appears without a reload within about 10 s of the job finishing
+- Prompts: `cf1241-new` appears without a reload, and the final screenshot holds no `cf1241-gone`.
+- Prompts: the prompts list is read once on load and again only after the writes. No page errors.
+- Workflows: the workflow appears without a reload; the workflows list is read on load and again only after the write.
+  No page errors.
+- Assets, (A1) and (A2): each appears without a reload; each run reads the assets list on load and once after its
+  write. No page errors.
+- Gallery and Overview: (1) The new output, with its note, appears without a reload within about 10 s of the job finishing
   (`get_job`'s `finished_at`, read after). (2) Overview shows the new run or job without a reload.
-- The gallery listing is read on load and again only after the job queues or finishes: never on a timer while
-  nothing changed.
-No page errors.
-cleanup: none (C-F1246).
+- Gallery and Overview: the gallery listing is read on load and again only after the job queues or finishes: never on a
+  timer while nothing changed. No page errors.
+cleanup: `delete_prompt(name="cf1241-new")` (and `cf1241-gone` if it survived);
+`delete_workspace(name="cf1242-wf", acknowledged_cost=true)`; none for `cf1243-as` (C-F1246 cleans up).
 metrics: none.
 
 ### C-F1245 — a write in another workspace doesn't reload the open Assets page
@@ -25271,18 +25225,30 @@ A stale copy after the decline, or a control arm that no longer duplicates, is a
 cleanup: none.
 metrics: none.
 
-### C-F1353 — `templates/text-to-image` declares `width` and `height` at 512, and takes them at validate
+### C-F1353 — `templates/text-to-image` declares `width` and `height` at 512 and takes them at validate, and every `text_to_image` ladder target declares the contract's required variables with the plan's declines
 source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 Free, no GPU. Before the stage, `validate_workflow(name="templates/text-to-image", arguments={"width":768},
 workspace="regression-complete")` refused `arguments.width` as an unknown variable (declared: `num_images_per_prompt`,
 `prompt`, `seed`); that refusal is the old behaviour this case turns around.
+
+**Arm "draft template" (steps 1 to 5).**
 1. `get_workflow(name="templates/text-to-image", variables_only=true)`.
 2. `list_workflows(shape="image")`: the `templates/text-to-image` entry.
 3. `validate_workflow(name="templates/text-to-image", workspace="regression-complete")`, no arguments.
 4. The same with `arguments={"width":768,"height":512,"seed":1234}`.
 5. The same with `arguments={"prompt":"a red bicycle","seed":1234,"num_images_per_prompt":1}` (the pre-stage
    argument set, no size).
+
+**Arm "ladder" (steps 6 and 7).** The defaults file itself has no MCP surface until #1626 (its pins are pytest); this
+checks the same contract from the outside, on each target's declared variables. Ladder (plan v2): draft
+`templates/text-to-image`; standard `models/z-image`, `models/z-image-sdnq`; best `models/minimax-h3-image`,
+`models/qwen-image-2.1`. Contract: required `prompt`, `seed`, `width`, `height`; optional `num_images_per_prompt`,
+`num_inference_steps`, `guidance_scale`.
+6. `list_workflows(configures="templates/text-to-image")` and `list_workflows(shape="image")` (step 2's call).
+7. `validate_workflow(name=<target>, arguments={"prompt":"a red bicycle","seed":1234,"width":512,"height":512},
+   workspace="regression-complete")` for each of the five targets.
 expected:
+Arm "draft template":
 - 1: the variables include `width: 512` and `height: 512`, beside `prompt`, `seed` and `num_images_per_prompt`
   (still declared; Q2 made it optional in the contract, not removed). A default other than 512, or either
   variable missing, is a **finding**.
@@ -25292,8 +25258,27 @@ expected:
 - 5: `valid: true`: a caller that never passes a size is not broken by the new variables.
 - The template still declares no `guidance_scale` and no `num_inference_steps` (the plan lists both as the draft
   target's declines, not as new variables); passing `guidance_scale` is still refused as an undeclared variable.
+
+Arm "ladder":
+- 6: each target is listed (the four models under `configures`, the draft under `shape="image"`), and each one's
+  `variable_names` contains all four required variables. Before the stage the draft target lacked `width`/`height`;
+  after it, none lacks any.
+- The optional variables a target lacks are exactly the plan's declines: `models/minimax-h3-image` lacks
+  `num_images_per_prompt`, `num_inference_steps` and `guidance_scale`; `models/qwen-image-2.1` lacks
+  `guidance_scale`; `templates/text-to-image` lacks `num_inference_steps` and `guidance_scale`; `models/z-image` and
+  `models/z-image-sdnq` lack none. A target that now lacks an optional variable it declared before is a **finding**
+  (the stage changes only the draft target's variables).
+- 7: no refusal on any of the four names for any target (a target that refuses a contract variable breaks a
+  swap). A refusal for a reason that isn't a variable (a device or host-RAM gate, such as `minimax-h3-image` on a
+  host without 64 GB to spare, or a size off a target's 32-pixel grid) is not a finding: record it.
+- `list_workflows(include_models=true)` lists no entry named `preference_defaults`, `preferences` or
+  `preference-defaults` (the file sits outside the workflow library, Q6), and `get_workflow(name="preference_defaults")`
+  answers unknown workflow.
 cleanup: none.
 metrics: none.
+
+absorbs: C-F1356 (merged 2026-11-27, suite review, pass 2)
+- C-F1356: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F1354 — SD 1.5 at defaults still renders 512x512; `width=768 height=512` renders 768x512
 source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
@@ -25334,33 +25319,6 @@ expected:
     nor a multiple of 8 below or above it, is filed as an ordinary issue.
   - A refusal whose reason names neither the grid nor the variable is a **finding**.
 cleanup: `delete_output(job_id=<id>)` for the fallback run, if one was made.
-metrics: none.
-
-### C-F1356 — every `text_to_image` ladder target declares the contract's required variables, and the declines are what the plan says
-source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
-Free, no GPU. The defaults file itself has no MCP surface until #1626 (its pins are pytest); this checks the same
-contract from the outside, on each target's declared variables. Ladder (plan v2): draft `templates/text-to-image`;
-standard `models/z-image`, `models/z-image-sdnq`; best `models/minimax-h3-image`, `models/qwen-image-2.1`. Contract:
-required `prompt`, `seed`, `width`, `height`; optional `num_images_per_prompt`, `num_inference_steps`, `guidance_scale`.
-1. `list_workflows(configures="templates/text-to-image")` and `list_workflows(shape="image")`.
-2. `validate_workflow(name=<target>, arguments={"prompt":"a red bicycle","seed":1234,"width":512,"height":512},
-   workspace="regression-complete")` for each of the five targets.
-expected:
-- 1: each target is listed (the four models under `configures`, the draft under `shape="image"`), and each one's
-  `variable_names` contains all four required variables. Before the stage the draft target lacked `width`/`height`;
-  after it, none lacks any.
-- The optional variables a target lacks are exactly the plan's declines: `models/minimax-h3-image` lacks
-  `num_images_per_prompt`, `num_inference_steps` and `guidance_scale`; `models/qwen-image-2.1` lacks
-  `guidance_scale`; `templates/text-to-image` lacks `num_inference_steps` and `guidance_scale`; `models/z-image` and
-  `models/z-image-sdnq` lack none. A target that now lacks an optional variable it declared before is a **finding**
-  (the stage changes only the draft target's variables).
-- 2: no refusal on any of the four names for any target (a target that refuses a contract variable breaks a
-  swap). A refusal for a reason that isn't a variable (a device or host-RAM gate, such as `minimax-h3-image` on a
-  host without 64 GB to spare, or a size off a target's 32-pixel grid) is not a finding: record it.
-- `list_workflows(include_models=true)` lists no entry named `preference_defaults`, `preferences` or
-  `preference-defaults` (the file sits outside the workflow library, Q6), and `get_workflow(name="preference_defaults")`
-  answers unknown workflow.
-cleanup: none.
 metrics: none.
 
 ### C-F1357 — the workflows guide has a *Default preferences* section with the file, the contract and the placement rule
@@ -25720,16 +25678,33 @@ Any of these still telling the agent it may close, or missing the re-proposal ru
 cleanup: none.
 metrics: none.
 
-### C-F1389 — a pending proposal shows as a banner with Close and Keep open; none shows with no proposal or a settled one
+### C-F1389 — a pending proposal shows as a banner with Close and Keep open; Close sends a user close in the proposed state; Keep open declines with or without a note and shows as "You kept this open"; no banner with no proposal or a settled one
 source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 **Web UI, black-box** (`ui-check`). Free. Setup: `create_workspace(name="cf1389-banner")`; create `demo` in it as in
-C-F1121 step (2) (`workspace=` on every call); open the workspace in the UI as its sidebar offers. Specs, each
-`goto` `demo`'s request page after the `mock`: (a) `mock` the GET of `demo` with `set` `close_proposal` =
+C-F1121 step (2) (`workspace=` on every call); open the workspace in the UI as its sidebar offers. Every spec below
+`goto`s `demo`'s request page after its `mock`.
+
+**Arm "banner".** Specs: (a) `mock` the GET of `demo` with `set` `close_proposal` =
 `{"state":"done","reason":"all 3 items accepted","by":"agent","at":"<now ISO>","revision":1,"outcome":"pending"}`;
 `wait_text "The agent proposes to mark this done"`; `inspect` that text; `screenshot`. (b) The same with `state:
 "abandoned"` and reason "the user moved on". (c) No mock (no proposal). (d) The (a) mock with `outcome: "accepted"`
 and a `decided_at`, and the request's `state` set to `done`. Each spec ends `dup_ids`.
+
+**Arm "Close".** The runner blocks the request PUT, so this arm and arm "Keep open" read the body the page sends
+(`record`, and the `blocked` list) rather than a stored close. Specs: (a) `record **/api/**`; banner (a)'s mock;
+`goto` the page; `wait_text "The agent proposes"`; `click {role:"button", name:"Close"}`; `recorded`. (b) The same
+over banner (b)'s mock (proposed `abandoned`). (c) No proposal mock: `record`, open the menu, Mark done, `recorded`.
+(d) `mock` the GET of `demo` with `state: "done"` and the proposal settled `outcome: "accepted"`; `goto`;
+`screenshot`.
+
+**Arm "Keep open".** Specs: (a) `record **/api/**`; banner (a)'s mock; `goto`; `wait_text "The agent proposes"`;
+`click {role:"button", name:"Keep open"}`; `fill` the note field it opens (by its label or placeholder) with `the
+second shot still flickers`; confirm (the button the field offers); `recorded`. (b) The same with the note left
+empty. (c) `mock` the GET of `demo` with `close_proposal` as banner (a) but `outcome: "declined"`, `note: "the second
+shot still flickers"`, a `decided_at`; `goto`; `wait_text "You kept this open"`; `inspect` that line and the request
+header beside it; `screenshot`. (d) The (c) mock with no `note`.
 expected:
+Arm "banner":
 - (a) under the request's header: "The agent proposes to mark this done: all 3 items accepted", with buttons
   **Close** and **Keep open**. The menu's Mark done, Abandon (and, on a closed request, Reopen) are still there.
 - (b) the banner names `abandoned` (not "done") and the reason.
@@ -25737,18 +25712,8 @@ expected:
 - No page errors and no duplicate ids.
 A pending proposal with no banner, a banner naming the wrong state, or a banner on a request with none pending is a
 **finding**.
-cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)`.
-metrics: none.
 
-### C-F1390 — Close sends a user close in the proposed state, and the closed request shows no banner
-source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
-**Web UI, black-box** (`ui-check`). Free. Setup as in C-F1389. The runner blocks the request PUT, so the case reads
-the body the page sends (`record`, and the `blocked` list) rather than a stored close. Specs: (a) `record **/api/**`;
-C-F1389 (a)'s mock; `goto` the page; `wait_text "The agent proposes"`; `click {role:"button", name:"Close"}`;
-`recorded`. (b) The same over C-F1389 (b)'s mock (proposed `abandoned`). (c) No proposal mock: `record`, open the
-menu, Mark done, `recorded`. (d) `mock` the GET of `demo` with `state: "done"` and the proposal settled
-`outcome: "accepted"`; `goto`; `screenshot`.
-expected:
+Arm "Close":
 - (a) one PUT to `/api/workspaces/cf1389-banner/requests/demo` (also in `blocked`) whose body carries `state:
   "done"`, `by: "user"`, the revision the page read, and the plan as read (no item lost).
 - (b) the PUT's `state` is `"abandoned"`: Close closes with the proposed state.
@@ -25758,18 +25723,8 @@ expected:
 A Close that sends no state, the wrong state, or `by: "agent"`, or a done request still showing the banner, is a
 **finding**. (The plan's "page then shows the request as done" after a real Close needs a real write; a session that
 can let one PUT through checks it with `get_request` reading `done` and `outcome: "accepted"`.)
-cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not already gone.
-metrics: none.
 
-### C-F1391 — Keep open declines with or without a note, and a declined proposal shows as "You kept this open"
-source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
-**Web UI, black-box** (`ui-check`). Free. Setup as in C-F1389. Specs: (a) `record **/api/**`; C-F1389 (a)'s mock;
-`goto`; `wait_text "The agent proposes"`; `click {role:"button", name:"Keep open"}`; `fill` the note field it opens
-(by its label or placeholder) with `the second shot still flickers`; confirm (the button the field offers);
-`recorded`. (b) The same with the note left empty. (c) `mock` the GET of `demo` with `close_proposal` as C-F1389 (a)
-but `outcome: "declined"`, `note: "the second shot still flickers"`, a `decided_at`; `goto`; `wait_text "You kept this
-open"`; `inspect` that line and the request header beside it; `screenshot`. (d) The (c) mock with no `note`.
-expected:
+Arm "Keep open":
 - (a) one PUT to `demo` (also in `blocked`) whose body carries `close_proposal: {"outcome":"declined","note":"the
   second shot still flickers"}`, `by: "user"`, no closed `state`, and the revision read.
 - (b) the PUT's `close_proposal` is `{"outcome":"declined"}` (no note, or an empty one): no note still declines.
@@ -25779,8 +25734,12 @@ expected:
 - No page error other than the blocked save.
 A Keep open that sends a close, sends nothing, or needs a note to decline, or a declined proposal still shown as a
 banner, is a **finding**.
-cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not already gone.
+cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)`.
 metrics: none.
+
+absorbs: C-F1390, C-F1391 (merged 2026-11-27, suite review, pass 2)
+- C-F1390: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+- C-F1391: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F1392 — the Requests list and Overview tag a request with a pending proposal "close proposed", and no other
 source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
@@ -26076,10 +26035,11 @@ cleanup: `delete_output(job_id=...)` for each run. Leave the three `qa-beddrop/`
 when they run in the same session; otherwise `delete_asset` them with `acknowledged_cost=true`.
 metrics: none.
 
-### C-F1402 — a bed sliced from shot 1 and looped under the cut heals the storm cut's bed drop
+### C-F1402 — a bed sliced from shot 1 and looped under the cut heals the storm cut's bed drop, and a bed window running past the end of the cut is shortened, never padded with silence
 source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
-Setup: the `qa-beddrop/` assets and A0 from C-F1401 (make them as C-F1401 says if they are gone). Run the template
-with A0 plus these arguments:
+Setup: the `qa-beddrop/` assets and A0 from C-F1401 (make them as C-F1401 says if they are gone).
+
+**Arm "heal".** Run the template with A0 plus these arguments:
 - `score_gain`: 0.0, so only the world track and the bed are heard
 - `bed_start_seconds`: 1.0
 - `bed_seconds`: 3.0, a window inside shot 1's steady bed
@@ -26089,17 +26049,45 @@ Validate it, run it (`wait_seconds=55`), then call `assess_output(name=<film>, p
 default form.
 
 As a control, run the same arguments with `bed_gain: 0.0`. Its assessment must show C-F1394's `shot_bed_drop` on
-shot 2. If it doesn't, the case is blocked and the report says so; it is not a finding against B.
+shot 2. If it doesn't, the arm is blocked and the report says so; it is not a finding against B.
+
+**Arm "past the end".** Run the template with A0 plus these arguments, so the film is the bed alone:
+- `score_gain`: 0.0
+- `world_gain`: 0.0
+- `bed_gain`: 1.0
+- `bed_start_seconds`: 14.0
+- `bed_seconds`: 5.0, running 3.5 s past the 15.5 s cut, inside shot 3's steady bed
+
+If validate refuses a zero `world_gain`, use 0.001 and say so in the report.
+
+Validate it, run it (`wait_seconds=55`), then call:
+- `get_job` (for `job.warnings`)
+- `get_job_events`
+- `assess_output(name=<film>)` in the default form and with `probe="analyze_shots"`
 
 expected:
+Arm "heal":
 - **With `bed_gain` 1.0**, the job succeeds and the film carries no `shot_bed_drop` on any shot.
 - Shot 2's `noise_floor_dbfs` is within 10 dB of shot 1's.
 - Shot 2's `floor_below_neighbours_db` is 10 or under.
 - No `shot_dead_air` and no `seam_hole`.
 
 A `shot_bed_drop` that survives the bed, or a shot 2 floor more than 10 dB under shot 1's, is a **finding**.
-cleanup: `delete_output(job_id=...)` for both runs.
+
+Arm "past the end":
+- The job succeeds.
+- Neither `job.warnings` nor the events carry a slice-past-end or padding warning from `bed_slice`.
+- **The film is a steady loop of the 1.5 s that exists:**
+  - no `shot_dead_air` and no `seam_hole`
+  - every shot's `noise_floor_dbfs` within 6 dB of the others'
+
+A silence-padded window (3.5 s of nothing in every 5 s loop) shows as dead air or as a floor that collapses in some
+shots. Either is a **finding**, as is a padding warning or a failed job.
+cleanup: `delete_output(job_id=...)` for all three runs (heal, its control, past the end).
 metrics: none.
+
+absorbs: C-F1404 (merged 2026-11-27, suite review, pass 2)
+- C-F1404: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F1403 — a zero-length bed window, or one starting past the end of the cut, fails the job instead of making a silent film
 source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
@@ -26121,34 +26109,6 @@ A **finding** is any of these:
 - a failure whose message names neither the bed variable nor a bed step
 
 cleanup: `delete_output(job_id=...)` for any job that ran.
-metrics: none.
-
-### C-F1404 — a bed window running past the end of the cut is shortened, never padded with silence
-source: tester, spec for #1719 from #1620's plan v2 (claude-opus-5-5 via anthropic)
-Setup: A0 from C-F1401 over the `qa-beddrop/` assets, run with these arguments so the film is the bed alone:
-- `score_gain`: 0.0
-- `world_gain`: 0.0
-- `bed_gain`: 1.0
-- `bed_start_seconds`: 14.0
-- `bed_seconds`: 5.0, running 3.5 s past the 15.5 s cut, inside shot 3's steady bed
-
-If validate refuses a zero `world_gain`, use 0.001 and say so in the report.
-
-Validate it, run it (`wait_seconds=55`), then call:
-- `get_job` (for `job.warnings`)
-- `get_job_events`
-- `assess_output(name=<film>)` in the default form and with `probe="analyze_shots"`
-
-expected:
-- The job succeeds.
-- Neither `job.warnings` nor the events carry a slice-past-end or padding warning from `bed_slice`.
-- **The film is a steady loop of the 1.5 s that exists:**
-  - no `shot_dead_air` and no `seam_hole`
-  - every shot's `noise_floor_dbfs` within 6 dB of the others'
-
-A silence-padded window (3.5 s of nothing in every 5 s loop) shows as dead air or as a floor that collapses in some
-shots. Either is a **finding**, as is a padding warning or a failed job.
-cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### C-F1405 — `shot_bed_drop`'s `says` names the `assemble-and-score` bed variables once Stage B lands
@@ -26240,16 +26200,24 @@ expected:
 cleanup: `delete_workflow(name="qa-pref-child-1626", workspace="regression-complete", acknowledged_cost=true)`.
 metrics: none.
 
-### C-F1408 — a `preference:` run pins its resolution in the job, and a rerun runs the same target
+### C-F1408 — a `preference:` run pins its resolution in the job, a rerun runs the same target, and a run of `templates/preferred/text-to-image` makes one image on the resolved target
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
-GPU: three or four short single-image jobs (SD 1.5 and one z-image). Workspace `regression-complete`. `validate_workflow`
+GPU: five or six short single-image jobs (SD 1.5 and z-image). Workspace `regression-complete`. `validate_workflow`
 each run first with the same arguments and pass its `acknowledged_cost`.
+
+**Arm "carrier" (steps 1 to 3).** Three or four jobs (SD 1.5 and one z-image).
 1. `run_workflow(inline_workflow=<PT("preference:text_to_image")>, arguments={"tier": "draft"}, wait_seconds=55,
    workspace="regression-complete")` (C-F1406's carrier). Then `get_job(<id>)`.
 2. `rerun_job(<id>)`, wait, `get_job`.
 3. A rerun of job 1 that changes `tier` to `standard` (`rerun_job` with changed arguments, as C-F1053 uses it). Wait
    (`wait_seconds=55`, then `wait_for_job` if `still_running`), `get_job`.
+
+**Arm "template" (steps 4 and 5).** One SD 1.5 image and one z-image image.
+4. `run_workflow(workflow="templates/preferred/text-to-image", arguments={"prompt": "a lighthouse", "seed": 1724, "tier":
+   "draft"}, wait_seconds=55, workspace="regression-complete")`; `get_job(<id>)`.
+5. The same with `"tier"` left out (the template's default, standard); `get_job`.
 expected:
+Arm "carrier":
 - 1: completes with one image. `get_job` carries a `preferences` map with an entry keyed
   `preference:text_to_image@draft` (or the same key and tier in another spelling), `target: templates/text-to-image`,
   `skipped: []` and `source`. The job's events or realized workflow (`get_job_workflow`) show `templates/text-to-image`
@@ -26258,8 +26226,18 @@ expected:
 - 3: resolves fresh: its map has `preference:text_to_image@standard` -> `models/z-image`, and it ran z-image. A rerun that
   passed `standard` but replayed the draft pin is a **finding**.
 - No job carries a warning that the resolution was skipped, guessed or re-resolved in the worker.
-cleanup: `delete_output(job_id=<id>)` for each job.
+
+Arm "template":
+- 4: completes with exactly one image. `get_job`'s `preferences` map has `preference:text_to_image@draft` (or that key and
+  tier in another spelling) -> `templates/text-to-image`, and the events or `get_job_workflow` show SD 1.5 ran.
+- 5: completes with exactly **one** image on `models/z-image` (map entry `@standard` -> `models/z-image`). Four images
+  means z-image's own `num_images_per_prompt` leaked through the template: a **finding**.
+- Neither job carries a warning that the resolution was guessed, skipped or re-resolved in the worker.
+cleanup: `delete_output(job_id=<id>)` for each job of both arms.
 metrics: none.
+
+absorbs: C-F1426 (merged 2026-11-27, suite review, pass 2)
+- C-F1426: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F1409 — an unknown key and a tier outside `draft | standard | best` are refused at validate, by a composing step and by the template, and queue nothing
 source: tester, spec for #1721 from #1626's plan v2 (claude-opus-5-5 via anthropic)
@@ -26583,27 +26561,21 @@ cleanup: none.
 metrics: none.
 amended: 2026-11-26, suite review: the draft rung declares `width`/`height` since #1710 (verified), so they are expected applied, not recorded; a validate at draft with 768x512 returned valid with both in `checked_arguments`.
 
-### C-F1426 — a run of the template makes one image, on the resolved target, pinned in the job
-source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
-GPU: one SD 1.5 image and one z-image image. Workspace `regression-complete`. `validate_workflow` each run first with the
-same arguments and pass its `acknowledged_cost`.
-1. `run_workflow(workflow="templates/preferred/text-to-image", arguments={"prompt": "a lighthouse", "seed": 1724, "tier":
-   "draft"}, wait_seconds=55, workspace="regression-complete")`; `get_job(<id>)`.
-2. The same with `"tier"` left out (the template's default, standard); `get_job`.
-expected:
-- 1: completes with exactly one image. `get_job`'s `preferences` map has `preference:text_to_image@draft` (or that key and
-  tier in another spelling) -> `templates/text-to-image`, and the events or `get_job_workflow` show SD 1.5 ran.
-- 2: completes with exactly **one** image on `models/z-image` (map entry `@standard` -> `models/z-image`). Four images
-  means z-image's own `num_images_per_prompt` leaked through the template: a **finding**.
-- Neither job carries a warning that the resolution was guessed, skipped or re-resolved in the worker.
-cleanup: `delete_output(job_id=<id>)` for both jobs.
-metrics: none.
-
-### C-F1427 — `get_guide("agent-rules")` has a *Choosing a model* section naming the `choosing-a-model` skill
+### C-F1427 — `get_guide("agent-rules")` has a *Choosing a model* section naming the `choosing-a-model` skill, and the `dw:choosing-a-model` skill routes a no-family request to the preference, a smoke test to SD 1.5, and a named workflow past both
 source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 Free. Before the stage the guide's `sections` were `FLUX 3 Klein`, `MiniMax H3`, `Longer than one clip`.
+
+**Arm "guide" (step 1).**
 1. `get_guide("agent-rules")` (the index); then `get_guide("agent-rules", section="Choosing a model")`.
+
+**Arm "skill" (steps 2 to 4).** A reading of the plugin skill as loaded in the session (plugin skills load from
+`develop`), plus read-only MCP calls.
+2. Find `dw:choosing-a-model` in the session's skill list; read its description. Load it with the `Skill` tool.
+3. For each workflow and MCP tool the skill names: `get_workflow(name=..., variables_only=true)`, or check the tool is in
+   the session's `mcp__dw__` tool list.
+4. Read step 1's section beside it.
 expected:
+Arm "guide":
 - `sections` includes `Choosing a model`. The section names the Claude Code skill `choosing-a-model` as carrying the
   same rules, as the other sections name theirs.
 - Its rules say, each in some wording: a request that names no family, workflow or model runs the matching
@@ -26615,18 +26587,9 @@ expected:
   resolve, is a **finding**.
 - The guide's opening no longer reads as family rules only if the section is not per-family (record its wording; a
   mismatch is a docs nit, not a failure).
-cleanup: none.
-metrics: none.
 
-### C-F1428 — the `dw:choosing-a-model` skill routes a no-family request to the preference, a smoke test to SD 1.5, and a named workflow past both
-source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
-Free. A reading of the plugin skill as loaded in the session (plugin skills load from `develop`), plus read-only MCP calls.
-1. Find `dw:choosing-a-model` in the session's skill list; read its description. Load it with the `Skill` tool.
-2. For each workflow and MCP tool the skill names: `get_workflow(name=..., variables_only=true)`, or check the tool is in
-   the session's `mcp__dw__` tool list.
-3. Read C-F1427's section beside it.
-expected:
-- 1: the skill exists. Its description fires on a request for an image (or a model choice) that names no family,
+Arm "skill":
+- 2: the skill exists. Its description fires on a request for an image (or a model choice) that names no family,
   workflow or model; a description that only fires on a family name is a **finding** (the plan's own risk).
 - Its text says, each in some wording: (a) no family, workflow or model named -> the matching `preference:` key at the
   asked tier, else no tier passed so the store's default applies, today `text_to_image` via
@@ -26634,13 +26597,16 @@ expected:
   is never the default otherwise; (c) a named family, workflow or model wins; (d) before spending, read the
   `preference:… (tier …) -> …` line in `validate_workflow`'s plan and tell the user what will run on this host. Any of
   the four missing is a **finding**.
-- 2: every name resolves. The skill may name `get_preferences` only if that tool is in the tool list; naming a tool the
+- 3: every name resolves. The skill may name `get_preferences` only if that tool is in the tool list; naming a tool the
   server does not have is a **finding** (plan v2 adds it to the skill only once #1723 verifies).
 - Tier names in the skill are exactly `draft`, `standard`, `best`.
-- 3: the skill and the agent-rules section agree rule for rule (the plugin's test holds every number in the section
+- 4: the skill and the agent-rules section agree rule for rule (the plugin's test holds every number in the section
   present in the skill); a disagreement is a **finding**.
 cleanup: none.
 metrics: none.
+
+absorbs: C-F1428 (merged 2026-11-27, suite review, pass 2)
+- C-F1428: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
 
 ### C-F1429 — the composing templates list their new pass-through variables, defaulting to the child's own values
 source: tester, spec for #1725 from #1642's plan v1 (claude-opus-5-5 via anthropic)
@@ -27298,81 +27264,6 @@ A **finding** is any of these:
 - a sizing error in place of a plan
 - a number for (c)
 cleanup: none (nothing runs).
-metrics: none.
-
-### C-F1455 — #1749's temporal-flicker record names the clip, the strengths, the CPU time, before/after numbers and a gate that follows from them
-source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
-Free (reads only). The record is `bench/records/temporal-flicker.md` (+ `.json`) in the dw repo, which the tester can't
-read: read it as the stage's hand-off comment on #1749 quotes it (`gh issue view 1749 --repo dkackman/diffusers-workflow
---comments`). If the comment neither quotes the record nor carries its numbers, send the stage back
-`status:needs-info` asking for them; don't pass it. The tester can't run `bench/temporal_flicker.py` (no box access):
-the plan's "a rerun reproduces the numbers" is checked as the record's own rerun line (below) and independently by
-C-F1457 over MCP.
-expected:
-- The record names **one clip**: an H3 output or asset on mini-ai, by its `asset:` or `output:` reference and the job
-  id that made it. `get_job(job_id=<that id>, workspace=<the record's workspace>)` is `completed`, its workflow
-  (`get_job_workflow`) is a MiniMax H3 one, and it finished **before** #1749 was claimed: the stage ran no GPU job. A
-  clip that isn't H3, or a generating job made for the stage, is a **finding** against the plan.
-- It gives the strengths used: luma 0.5, chroma 0.5, occlusion tolerance 1.5 px (the plan's defaults). Other values are
-  a **finding** unless the record says why and also gives the default-strength numbers.
-- It gives the CPU time of the run (seconds or minutes, with the frame count and size it was over).
-- It gives **both measures, before and after**: flicker (mean absolute frame-to-frame difference on the static-region
-  mask, where full-resolution flow magnitude is under 0.25 px) and motion blur (gradient energy on the moving subject),
-  and says how the static mask and the moving region were chosen, so a reader can find them on the frames.
-- It gives a rerun: the same command run a second time, with numbers that equal the first run's (or differ only past
-  the third significant figure). No rerun, or a rerun that moves a number more than that, is a **finding**: the
-  plan's intent says a rerun reproduces the numbers.
-- It **states the gate** as yes or no, and the statement follows from its numbers: yes needs flicker after < flicker
-  before **and** moving-edge gradient energy after within 5% of before (≥ 0.95×). A "yes" with energy under 0.95× or
-  flicker not lower, or a "no" with both met and no other reason given, is a **finding**.
-- The hand-off says the `docs/ATTRIBUTIONS.md` "Ideas reimplemented here" line crediting ComfyUI-H3-ReTime
-  `H3TemporalStabilizer` (MIT) landed with the stage (a docs reviewer checks the file itself), and that a unit test of
-  the measures on a synthetic clip landed (static grain: flicker falls; translating textured square: gradient energy
-  kept, no ghost trail).
-- No MCP tool, task or template changed: `list_tasks` has no `temporal_denoise` (that is stage B, #1750).
-cleanup: none (the record's clip and pair are its evidence).
-metrics: none.
-
-### C-F1456 — #1749's before/after pair is on mini-ai where the record says, the same geometry as the source, and posted for Don
-source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
-Free (reads only). BEFORE and AFTER are the two references the record (C-F1455) gives for the pair: outputs or kept
-assets on mini-ai, in the workspace it names.
-1. `get_gallery_metadata` on BEFORE, AFTER and the source clip, with the record's `workspace=`.
-2. `get_output_frames` on BEFORE and AFTER at the same three moments (start, middle, end), to see that the pair is the
-   same shot.
-expected:
-- Both references resolve. One that doesn't ("Unknown asset", not found) is a **finding**: Don has nothing to look at.
-- BEFORE is the source clip itself, or a copy of it with the same `frame_count`, `fps`, width and height.
-- AFTER has the same `frame_count`, `fps`, width and height as BEFORE, and an audio stream if BEFORE has one.
-- The frames show the same shot at the same moments, with no shift, crop, colour cast or black frames.
-- A comment on #1749 addressed to Don names both references and where to open them (workspace, and the web UI
-  Gallery or Compare), and asks for his verdict (Q2, `taste`). The stage is not verified until Don's verdict is on
-  #1749: the tester hands the look to Don, never answers it.
-cleanup: none (Don needs the pair; it is the record's evidence).
-metrics: none.
-
-### C-F1457 — over MCP, the probe's after clip flickers less than its before clip on a static region, and keeps the moving subject's detail
-source: tester, spec for #1749 from #1747's plan v2 (claude-opus-5-5 via anthropic)
-An independent check of C-F1455's direction with the server's own measures, since the tester can't rerun the bench.
-Four `trim_video` utility jobs (CPU, no model). Workspace: the record's. BEFORE/AFTER as in C-F1456, N = their
-`frame_count`. STATIC is a crop box `[x, y, w, h]` inside the record's static region (or, if the record gives none, a
-box on a part of the frame `get_output_frames` shows still across the clip, with no moving subject in it); MOVING is a
-box on the moving subject over the frames read.
-1. For X in BEFORE, AFTER: two jobs, `<trim(X, 0)>` and `<trim(X, 1)>`, where `<trim(X, S)>` = `{"id": "qa-c-f1457",
-   "steps": [{"name": "t", "task": {"command": "trim_video", "arguments": {"video": X, "start_frame": S, "num_frames":
-   N - 1}}, "result": {"content_type": "video/mp4"}}]}`. `validate_workflow` first, then `run_workflow(...,
-   wait_seconds=55, workspace=...)`. Call the outputs X0 and X1: frame i of X1 is frame i+1 of X.
-2. For X in BEFORE, AFTER: `compare_outputs(names=[X0, X1], crop=STATIC, at=["frame:<a>", ...])` at four frame
-   indices spread over 0..N-2. Its mean abs diff at each index is the frame-to-frame difference there. Call the mean of
-   the four F(X).
-3. `compare_outputs(names=[BEFORE, AFTER], crop=MOVING, texture_bands=true, at=<the same four frames>)`.
-expected:
-- F(AFTER) < F(BEFORE). Not lower, when the record says flicker fell, is a **finding** against the record.
-- In step 3, AFTER's highest texture band energy is at least 0.95× BEFORE's (the plan's "within a few %"). Lower,
-  when the record's gate says yes, is a **finding**: the after clip blurred the moving subject.
-- No ghost: the MOVING crop's frames in step 3's grid show no doubled edge or trail on AFTER that BEFORE doesn't have.
-cleanup: `delete_output(job_id=<id>, workspace=...)` for each of the four trim jobs; never delete BEFORE, AFTER or the
-source clip.
 metrics: none.
 
 ### C-F1466 — a job that passes an earlier job's `ru_maxrss` mark reports its peak above its own start RSS, not above the old mark
@@ -28881,5 +28772,179 @@ expected:
    entry in any arm is a **finding**.
 cleanup: none (nothing queued; the mock never writes).
 metrics: none.
+
+### C-F1560 — a cancel a denoise step can't honour within 300 s kills the worker, and the next queued job runs
+source: tester, verified in #1746 (claude-opus-5-5 via anthropic)
+Use `workspace="bench"`. Run this on an idle card. `validate_workflow` before each run, and bind its
+`acknowledged_cost`. The card has a single long denoise step: `models/z-image` with `num_images_per_prompt: 1`,
+`num_inference_steps: 2`, `prompt: "a lighthouse at dusk"`, and a canvas large enough that one step takes well over
+300 s on this server. On mps (mini-ai), 5120x5120 with the model warm does. A CUDA card may need a larger one. 4096x4096
+on mps finished its step inside the grace period, which is row (b) below, not row (a).
+- **a.** Run the big canvas. Once `progress.phase` is `generating` and `denoise_step` is still `null`, note the
+  `get_health` worker pid and call `cancel_job`. Right after that, queue `models/z-image` at 512x512, 1 image, 2
+  steps. `wait_for_job` on both.
+- **b.** (Adjacent.) Do the same on a canvas whose first step ends within 300 s of the cancel.
+
+expected:
+- (a) `get_job_events` has a `log` "Cancelling..." and, about 300 s later, a `log` "Cancel still pending in phase
+  'generating' after 300s: terminating the worker". The job ends `cancelled` with `manifest: []`. The queued job starts
+  when that one finishes and `succeeded`. `get_health` shows a different worker pid, and the queued job's timing shows
+  `load_cached: false`.
+- (b) The job ends `cancelled` at the step boundary with no terminate log. The pid is unchanged, and the queued job
+  shows `load_cached: true`.
+
+A **finding** is any of these:
+- (a) still `running` well past 300 s after the cancel
+- the queued job left `queued` behind a cancelled job
+- (b) a worker killed although the boundary came inside the grace period
+
+If the step in (a) ended inside 300 s, the canvas was too small for this server. Re-run it larger; that is not a
+finding.
+cleanup: `delete_output(job_id=...)` for the two 512x512 jobs.
+metrics: none.
+amended: 2026-11-27, suite review: landed from a suite-conflict branch where it was written as C-F1455; that number went to another case
+
+### C-F1561 — a save reads a path against its own workspace's roots, as validate does, and stays isolated from others
+source: tester, verified in #1739 (claude-opus-5-5 via anthropic)
+Free. Only meaningful when `get_server_info` reports `trust_workflows: false`. If it reports true, record "skipped:
+trusted" and stop. Before #1739, `save_workflow` checked reads against the default workspace's roots, so it refused
+a path inside a non-default workspace's own `assets/` or `outputs/` that `validate_workflow` accepted there.
+Use workspace W = `regression-complete`, plus one other workspace O (`default`). Read W's `assets` and `outputs`
+folders from `list_workspaces(detail=true)`. Pick A, a `workspace`-origin image in W (`list_assets(workspace=W,
+detail=true)`), as the absolute path `<W assets>/<name>`; if W has none, `upload_asset(workspace=W)` a small image
+first. Pick P, the absolute path `<W outputs>/<name>` of an image output in W (`list_gallery(workspace=W)`); if W
+has none, skip the outputs half. D(x) = `{"id":"cf1443","steps":[{"name":"r","task":{"command":"resize_resample",
+"arguments":{"image":x,"resolution":512}},"result":{"content_type":"image/jpeg","subfolder":"final"}}]}`.
+1. `validate_workflow(workspace=W, workflow=D(A))`.
+2. `save_workflow(name="cf1443-probe", workspace=W, workflow=D(A))`.
+3. `save_workflow(name="cf1443-probe", workspace=O, workflow=D(A))`.
+4. `save_workflow(name="cf1443-probe", workspace=W, patch={"steps":<D(P)'s steps>,"description":"cf1443 probe."})`.
+5. `save_workflow(name="cf1443-probe", workspace=W, patch={"steps":<D("<O's assets>/x.jpg")'s steps>})`.
+expected:
+- 1: valid, no path error.
+- 2: saved (`workspace` W). A "resolves outside every directory this workflow may read" refusal is the #1739
+  regression, a **finding**.
+- 3: refused with "resolves outside every directory this workflow may read" at `steps[0].task.arguments.image`. A
+  save here is a cross-workspace isolation hole: file it as a private advisory, not an issue.
+- 4: saved. The patch route uses W's roots for outputs too. `warnings` carries no no-summary warning now that
+  `description` is set.
+- 5: refused with the same message as 3.
+cleanup: `delete_workflow(name="cf1443-probe", workspace=W)`; never leave a probe in O (3 must not have saved it;
+if it did, delete it there too).
+metrics: none.
+amended: 2026-11-27, suite review: landed from a suite-conflict branch where it was written as C-F1443; that number went to another case
+
+### C-F1562 — `export_timeline` refuses a `previous_result:` `video` or `sources` at validate, with the second-job `output:` recipe
+source: tester, verified in #1613 (claude-opus-5-5 via anthropic)
+Free, no GPU. Run `validate_workflow` (`workspace="regression-complete"`) on two inline two-step workflows. In each,
+step `cut` is `film_grain` with `media: "output:x/latest/final/a.mp4"` and `result.content_type: "video/mp4"`, followed
+by an `export_timeline` task step:
+1. `"video": "previous_result:cut"`.
+2. `"video": "output:x/latest/final/a.mp4"`, `"sources": ["previous_result:cut"]`.
+expected:
+- 1: `valid: false`, with an error at `steps[1].task.arguments.video`. Its message says the reference hands over the
+  earlier step's result in memory, and tells you to export in a second job with an `output:` reference to the saved file.
+- 2: `valid: false`, with an error at `steps[1].task.arguments.sources` carrying the same recipe. No error names
+  `.video`: an `output:` video is accepted.
+It is a **finding** if either validates and the refusal comes only at run time, or if the message drops the
+second-job `output:` route.
+cleanup: none.
+metrics: none.
+amended: 2026-11-27, suite review: landed from a suite-conflict branch where it was written as C-F1352; that number went to another case
+
+### C-F1563 — a request re-created under a deleted request's id starts with no attempts, and the old jobs are not its takes
+source: tester, verified in #1761 (claude-opus-5-5 via anthropic, mini-ai mps, develop @ 12635ee5)
+CPU only. `templates/split-takes` needs no input. Use `workspace="regression-complete"` on every call, and bind each
+run's `acknowledged_cost` from its own `validate_workflow(..., arguments=...)`. Before step 1, if
+`get_request(request="cf1533")` finds a request, delete it at its `revision`.
+Let P be the plan `items=[{key:"take-01", title:"Take 1", workflow:"templates/split-takes",
+arguments:{text:"One sentence. Two sentences."}}, {key:"take-02", title:"Take 2", workflow:"templates/split-takes",
+arguments:{text:"Three. Four."}}]`.
+1. `set_request(request="cf1533", revision=0, title="CF1533", goal="id reuse", why="C-F1563 first instance", items=P)`.
+   `run_workflow(workflow_path="templates/split-takes", arguments={"text":"One sentence. Two sentences."},
+   request="cf1533/take-01", wait_seconds=55)`. Call its job A. `get_request(request="cf1533")`, then
+   `delete_request(request="cf1533", revision=<it>)`. Keep A's output.
+2. `set_request(request="cf1533", revision=0, title="CF1533", goal="id reuse", why="C-F1563 second instance", items=P)`,
+   then `get_request(request="cf1533")` and `get_request()` (the list).
+3. `set_request` the same plan at revision 1, with `take-01` carrying `accepted:{job:"<A>"}`.
+4. `run_workflow(workflow_path="templates/split-takes", arguments={"text":"Three. Four."}, request="cf1533/take-02",
+   wait_seconds=55)`. Call it B. `get_request(request="cf1533")`.
+5. `delete_request(request="cf1533", revision=<it>)`. Then `set_request(request="cf1533", revision=0, ..., items=P)`
+   once more and `delete_request(request="cf1533", revision=1)` right away.
+expected:
+- (1) `take-01` reads `done` with `attempts` [A]. The delete reports `linked_jobs: 1`.
+- (2) Both items read `planned`, with `attempts: []`, `result: null` and `spent_minutes: 0`. The request's
+  `spent_minutes` is 0, both in the `set_request` reply and in `get_request`. The list row shows
+  `status_counts: {planned: 2}` and `cover: []`.
+- (3) Refused: A is not linked to this request and item (today: `... is not linked to this request and item, so it
+  cannot be accepted`).
+- (4) `take-02` reads `done` with `attempts` [B]. `take-01` is still `planned` with no attempts.
+- (5) The first delete reports `linked_jobs: 1` (B only). The third instance's delete reports `linked_jobs: 0`.
+It is a **finding** if A shows up in any later instance as an attempt, a `result`, in `spent_minutes` or in
+`linked_jobs`. That is #1761: a suite case with a fixed request id then fails on its next pass.
+cleanup: `delete_output(job_id=A)`, `delete_output(job_id=B)`.
+metrics: none.
+amended: 2026-11-27, suite review: landed from a suite-conflict branch where it was written as C-F1533; that number went to another case
+
+### C-F1564 — a seedless compose-workflows run hands its drawn seed to the image child, and a rerun at that recorded seed makes the same still
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v2 (claude-opus-5-5 via anthropic)
+GPU: two compose runs (z-image still + MiniMax H3 image-to-video each). Workspace `regression-complete`. Plan v2's
+acceptance 7. Before the stage a seedless parent's `"seed": "variable:seed"` was dropped (it resolved to null), so
+z-image kept its declared `seed: 42` and a rerun at the parent's recorded seed made a different still.
+Arguments N = `{"width": 512, "height": 320, "image_num_inference_steps": 4, "video_num_inference_steps": 2}` (no
+`seed`, no `num_images_per_prompt`; if validate refuses a size or step count, use the smallest it accepts and record it).
+1. `validate_workflow(name="templates/compose-workflows", arguments=N, workspace="regression-complete")`;
+   `run_workflow(workflow_path="templates/compose-workflows", arguments=N, acknowledged_cost=<from validate>,
+   wait_seconds=1500, workspace="regression-complete")`; `wait_for_job` if `still_running`. Call it J1.
+2. `get_job(J1)` (its recorded seed, R) and `get_job_workflow(J1)`; read the image child's seed where the realized
+   workflow or the manifest records it, and note which one.
+3. `validate_workflow` with N plus `{"seed": R}`, then `rerun_job(job_id=J1, arguments={"seed": R},
+   acknowledged_cost=<from that validate>)`, `wait_for_job` (cap 1500). Call it J2. `get_job(J2)`, `get_job_workflow(J2)`.
+4. `compare_outputs` J1's still against J2's.
+expected:
+- 2: R is a drawn integer, not null. The image child's seed is R. **42 on the image child is a finding** (the null
+  reference was dropped again). The child seed recorded nowhere over MCP is a finding too: acceptance 7 says it is
+  "reported".
+- 3: J2's image child seed is R, and J2 makes exactly one still (Q3).
+- 4: the two stills are the same image: identical, or scored as a match. Reuse from the step cache, named in J2's events,
+  is acceptable. Different stills mean the record doesn't reproduce the run: a **finding**.
+cleanup: `delete_output(job_id=J1)`, `delete_output(job_id=J2)`.
+metrics: none.
+amended: 2026-11-27, suite review: landed from a suite-conflict branch where it was written as C-F1466; that number went to another case
+
+### C-F1565 — the null-seed hand-down applies only to a `seed` authored as a reference: a literal seed and an omitted seed keep their old behaviour
+pending: #1725
+source: tester, spec for #1725 from #1642's plan v2 (claude-opus-5-5 via anthropic)
+GPU: z-image only, four 512x320 4-step stills per job, three jobs (one a rerun). Workspace `regression-complete`.
+Plan v2's Q5 engine change in `_sub_workflow_action`: a `workflow` step whose authored `arguments.seed` is a reference
+that resolves to null hands down the parent's run seed; a literal `seed` still wins; a step that passes no `seed` leaves
+the child its own default (z-image declares `seed: 42`).
+Inline parent P, `id` `cf1467-seed`, `"seed": "variable:seed"`, `"variables": {"seed": null, "child_seed": null}`, four
+steps, each `"workflow": {"path": "models/z-image", "arguments": B + X}` with B = `{"prompt": "a lighthouse",
+"num_images_per_prompt": 1, "num_inference_steps": 4, "width": 512, "height": 320}` (use the path form `validate_workflow`
+accepts for a catalog model from an inline parent, e.g. `../models/z-image.json` if the bare name is refused; record it):
+- `by_ref`: X = `{"seed": "variable:seed"}`;
+- `other_ref`: X = `{"seed": "variable:child_seed"}` (a different reference that also resolves to null);
+- `literal`: X = `{"seed": 5}`;
+- `omitted`: X = `{}`.
+1. `validate_workflow(workflow=P, workspace="regression-complete")`, then `run_workflow` P with its
+   `acknowledged_cost`, `wait_seconds=55`. Call it J1; `get_job(J1)` (recorded seed R), `get_job_workflow(J1)`.
+2. `validate_workflow` P with `arguments={"seed": R}`; `rerun_job(job_id=J1, arguments={"seed": R},
+   acknowledged_cost=...)`. Call it J2.
+3. `validate_workflow` P with `arguments={"seed": 9}`; `run_workflow` P with the same arguments. Call it J3.
+4. `compare_outputs` J1's `by_ref` still against J2's, and J1's `by_ref` against J3's.
+expected (each child's seed as the realized workflow or the manifest records it):
+- J1: `by_ref` R; `other_ref` R; `literal` 5; `omitted` 42. `by_ref` or `other_ref` at 42 is a **finding** (the
+  hand-down missed); `literal` at R or `omitted` at R is a **finding** (the change reached past a reference, against the
+  plan's "narrow").
+- J2: the same four seeds as J1; its `by_ref` still matches J1's (identical, or scored as a match; step-cache reuse named
+  in its events is acceptable).
+- J3: `by_ref` 9; `other_ref` 9 (its own reference is still null, so the parent's seed goes down); `literal` 5;
+  `omitted` 42. J3's `by_ref` still differs from J1's (unless R happened to be 9: then rerun step 3 with 10).
+- No job errors, and no `declares no variable` warning in `job.warnings` or `get_job_events`.
+cleanup: `delete_output(job_id=...)` for J1, J2 and J3.
+metrics: none.
+amended: 2026-11-27, suite review: landed from a suite-conflict branch where it was written as C-F1467; that number went to another case
 
 ## Performance

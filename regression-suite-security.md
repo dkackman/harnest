@@ -2053,12 +2053,17 @@ privately with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none (validation only). If `probe-1315` didn't exist, validate in `default` instead. Validating creates
 nothing.
 
-### SE-F069 — validate findings and plan text on the run page and in the editor render as text, never as markup
+### SE-F069 — validate findings, plan text and declared rule text on the run page and in the editor render as text, never as markup
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
-Free, no job. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1028 (headless Chromium, the
-validate route mocked from a real answer). #1468 puts server-supplied strings (errors, warnings, plan download names)
-on the run page, and in a field's own slot. Register `page.on("dialog")`, `page.on("console")` and a
-`page.on("request")` log before loading. Hostile strings, one per position:
+Free, no job, nothing saved. **Web UI, black-box**. Two arms, V and D, on the same two pages of
+`templates/text-to-image`; each has its own setup, its own mocked route and its own hostile strings, so do not swap
+them between arms. In each arm register `page.on("dialog")`, `page.on("console")` and a `page.on("request")` log
+before loading. The `window.__pwn` names repeat between the arms: give each arm its own page loads and read the
+flags per arm.
+
+**Arm V (validate findings and plan text).** Setup as in `regression-suite-complete.md` C-F1028 (headless Chromium,
+the validate route mocked from a real answer). #1468 puts server-supplied strings (errors, warnings, plan download
+names) on the run page, and in a field's own slot. Hostile strings, one per position:
 - H1 `<img src=x onerror="window.__pwn1=1">` as an `errors` message at `arguments.prompt` (lands under a field);
 - H2 `<script>window.__pwn2=1</script>` as an `errors` message at `model_name` (general list);
 - H3 `arguments.prompt: <svg onload="window.__pwn3=1">` as a warning (placed under a field);
@@ -2068,19 +2073,9 @@ on the run page, and in a field's own slot. Register `page.on("dialog")`, `page.
 Load the run page of `templates/text-to-image` with that answer; then open the editor on the same workflow and
 validate twice (the editor shows no warnings for an answer that has errors): first with the errors H1, H2, H6 and
 H5; then with `valid: true`, no errors, the warnings H3 and H4, and H5.
-expected:
-- On both pages each string appears **literally** as visible text (the `<`, `>` and quotes shown), and H6 shows
-  `{{7*7}} ${7*7}`, not `49`.
-- `window.__pwn1`…`__pwn4` are all undefined; no dialog opened; no `<img>`, `<script>`, `<svg>` or `<a
-  href="javascript:…">` element exists inside the plan or findings areas; no request went to `example.invalid`.
-Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
-cleanup: none.
 
-### SE-F070 — declared rule text (reason, unknown key, value) renders as text on the run page and in the editor
-source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
-Free, no job, nothing saved. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1038 (the
-workflow-definition route mocked from a real answer). #1469 puts definition-supplied strings under fields. Register
-`page.on("dialog")`, `page.on("console")` and a `page.on("request")` log before loading. On
+**Arm D (declared rule text: reason, unknown key, value).** Setup as in `regression-suite-complete.md` C-F1038 (the
+workflow-definition route mocked from a real answer). #1469 puts definition-supplied strings under fields. On
 `templates/text-to-image`, mock `variable_constraints`:
 - `prompt`: `{min_length: 1, reason: "<img src=x onerror=\"window.__pwn1=1\">"}`
 - `seed`: `{"<svg onload=\"window.__pwn2=1\">": "<script>window.__pwn3=1</script>", reason: "{{7*7}} ${7*7}"}` (an
@@ -2089,11 +2084,21 @@ workflow-definition route mocked from a real answer). #1469 puts definition-supp
   src=\"http://example.invalid/leak.png\">"}`
 Load the run page, then open the editor's define mode on the same workflow with the same mock.
 expected:
+Arm V:
+- On both pages each string appears **literally** as visible text (the `<`, `>` and quotes shown), and H6 shows
+  `{{7*7}} ${7*7}`, not `49`.
+- `window.__pwn1`…`__pwn4` are all undefined; no dialog opened; no `<img>`, `<script>`, `<svg>` or `<a
+  href="javascript:…">` element exists inside the plan or findings areas; no request went to `example.invalid`.
+Arm D:
 - On both pages each string appears **literally** as visible text, and `{{7*7}} ${7*7}` is not `49`.
 - `window.__pwn1`…`__pwn4` are undefined; no dialog opened; no `<img>`, `<svg>`, `<script>` or `<a href="javascript:…">`
   element exists in the hint lines; no request went to `example.invalid`.
-Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+Any of those failing, in either arm, is a hole: file it privately with `./scripts/file-advisory.sh`, never as an
+issue.
 cleanup: none (leave the editor without saving).
+
+absorbs: SE-F070 (merged 2026-11-27, suite review, pass 2)
+- SE-F070: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 
 ### SE-F071 — bundle names and bundle values render as text in the dropdown, placeholders and "sets …" line
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
