@@ -27210,7 +27210,7 @@ expected:
   crossfade is the default: no override, or 250 ms.
 - **`mixed`** has three entries. The third is `previous_result:bed`, at gain `variable:bed_gain`. The first two entries
   and their gains are unchanged from before the stage, as C-F1401's B0 shows.
-- **Call 2** answers `valid: true` with no warning naming a bed step. The estimate is 0.2 min.
+- **Call 2** answers `valid: true` with no warning naming a bed step. Its `plan.estimate` is priced (positive `minutes`): 0.2 min when the basis is the curated row, or the server's figure when the basis is `observed`.
 
 A **finding** is any of these:
 - a bed step that slices something other than the edited cut
