@@ -25152,11 +25152,12 @@ Free past S1670-GRID. Web UI through `ui-check` at the default 1280x720. Find th
 `inspect` GA's tile (by its label) and read the `open=` link in its `href`, or click it and read the URL the page
 moves to from the next `goto`'s result. GA is new, so near the top: to get a file far down, use the Gallery's oldest
 file instead (the last `list_gallery(limit=1000, workspace="regression-complete")` entry, 200+ files below the
-fold). `goto` the Gallery's URL with `open=<that file>`; `screenshot`. Then the same on Assets with its last asset
+fold). `goto` the Gallery's URL with `open=<that file>`, then `inspect` the opened file's tile (by its label) and
+read `in_viewport` and `classes`; `screenshot` for the record. Then the same on Assets with its last asset
 by name (or the `cf1670-grid-b.wav` asset if the list fits on one screen).
 expected:
-- On each page the opened file is on screen in the screenshot (its tile or viewer, as today), without scrolling by
-  the runner, and it is the file named in the hash.
+- On each page the tile of the file named in the hash carries `active` and reports `in_viewport: true`, with no
+  scrolling by the runner (`inspect` never scrolls); on the Gallery the viewer opens on that file.
 No page errors. An `open` hash that lands at the top with the file off screen, or opens another file, is a
 **finding**.
 cleanup: none (C-F1333's cleanup covers the setup).
