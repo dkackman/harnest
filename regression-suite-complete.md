@@ -24953,7 +24953,7 @@ is a **finding**.
 Arm "two folders":
 - Each visit makes exactly two `/api/gallery` reads at load, one with `folder=<F>` and one with `folder=<G>`;
   never one per name, never a whole listing.
-- Each cell shows its file and note as `list_gallery` gives them, in the order the files were ticked.
+- Each cell shows its file and note as `list_gallery` gives them, in the order the Gallery shows the picked files when Compare is pressed.
 No page errors. A read per name, a whole listing, or a misplaced cell is a **finding**.
 
 Arm "fewer than two names":
