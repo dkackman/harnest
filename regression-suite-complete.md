@@ -28639,15 +28639,16 @@ the #1697 probe jobs `b64312ad68ff` (226 frames) and `cdfa3d6fdea2` (243 frames)
 `get_job` each: if either is gone from history, its arms are *not checked*.
 
 Definitions:
-- `<b3s>` = C-F1298's `<base>` + `{"width": 1344, "height": 768, "weights_dtype": "{int8}", "lora_model_name": null,
-  "num_inference_steps": 12, "attention_backend": "sparse"}`.
+- `<b3s>` = `{"width": 1344, "height": 768, "weights_dtype": "{int8}", "lora_model_name": null,
+  "num_inference_steps": 12, "attention_backend": "sparse"}`, with no voice arguments (C-F1298's `<base>` adds a
+  second reference per shot, which lem's VRAM gate refuses at these counts).
 - `<shot(F, N)>` = C-F1298's `<shot(F)>` with `name` set to N.
 - Every call is `validate_workflow(name="templates/minimax/dialogue-short", workspace="regression-complete",
   arguments=...)`. "The term" is the first-pass clause in `plan.estimate.scaled` (C-F1533's wording).
-- U1 and U2: two frame counts this card can't have run at B3s's canvas. Use 277 and 294: 260 frames ran out of memory
-  at 1344x768 on lem's 3090 (#1615's field report), so a succeeded row above it can't exist. If validate refuses 277 or
-  294 on the VRAM ceiling, use instead the first two of 158, 141, 124 whose step-3 quote carries the term, and say so;
-  with fewer than two, the arms that need them are *not checked*.
+- U1 and U2: two frame counts this card hasn't run at B3s's canvas: 158 and 141. (277 and above exceed lem's VRAM
+  ceiling at 1344x768 even with one reference; 233 and 237 round up to 243, which lem has run.) If either one's
+  step-3-style quote lacks the term because lem has since run it, use 124 in its place and say so; with fewer than
+  two, the arms that need them are *not checked*.
 
 Steps:
 1. `<b3s>` + `{"shots": [<shot(226, "a")>]}`.
