@@ -39,6 +39,10 @@
   <nav class="links" data-area="nav" title="Site links"><a id="doc-link" href="/docs?x=1" title="Open the docs" data-kind="doc" aria-label="Docs" onclick="return false;">Docs link</a></nav>
   <i id="twice">dup one</i><i id="twice">dup two</i><b id="thrice">t1</b><b id="thrice">t2</b><b id="thrice">t3</b>
   <p id="long">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!</p>
+  <!-- Below the fold, for inspect's in_viewport: "Go far" scrolls it on screen. -->
+  <button type="button" id="far-go" onclick="document.getElementById('far').scrollIntoView()">Go far</button>
+  <div style="height: 3000px"></div>
+  <p id="far">far paragraph</p>
 </main>
 <script>
   // The bearer token the way dw's UI keeps it (ui/src/lib/token.ts, storage.ts): localStorage

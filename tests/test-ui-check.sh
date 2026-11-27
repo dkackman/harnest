@@ -693,6 +693,23 @@ for v in '"width": 319, "height": 800' '"width": 3841, "height": 800' '"width": 
   eq "viewport {$v} is an invalid spec" 2 "$rc"
 done
 
+# --- inspect in_viewport: below the fold until scrolled to (harnest#325, C-F1332)
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "inspect", "text": "far paragraph"},
+  {"step": "inspect", "text": "steps: 3"},
+  {"step": "click", "role": "button", "name": "Go far"},
+  {"step": "inspect", "text": "far paragraph"},
+  {"step": "inspect", "text": "steps: 3"}
+]}'
+eq "in_viewport run ok" true "$(j .ok)"
+eq "below the fold: not in the viewport" false "$(j '.steps[1].result.in_viewport')"
+eq "inspect does not scroll to the element" true "$(j '.steps[1].result.rect.top > 720')"
+eq "near the top: in the viewport" true "$(j '.steps[2].result.in_viewport')"
+eq "scrolled to: in the viewport" true "$(j '.steps[4].result.in_viewport')"
+eq "scrolled away: the top line has left the viewport" false "$(j '.steps[5].result.in_viewport')"
+eq "the ancestor carries no viewport fields" null "$(j '.steps[4].result.ancestor.in_viewport')"
+
 # --- stream: an event stream that ends; a 500 on the reconnect makes EventSource give up (dw#1650)
 sglob='**/api/jobs/*/events**'
 run '{"steps": [

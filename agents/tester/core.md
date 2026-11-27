@@ -238,6 +238,9 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   `data-*`...; at most 40, values cut to 500 chars, an `on*` handler shown as
   `"<handler>"`), and its closest classed ancestor. A
   line "styled as a warning" differs from the plain lines around it there; inspect both.
+  "On screen" or "scrolled into view" is `inspect`'s `in_viewport` (with `rect` in
+  viewport pixels); the step never scrolls, so it reads what the page did. Screenshots
+  are full-page and can't show it.
 
 ## Enforced by the harness
 

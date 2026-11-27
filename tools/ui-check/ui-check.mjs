@@ -59,7 +59,9 @@
 //               color, background_color, font_weight, aria, attributes (name ->
 //               value, at most 40, each value cut to 500 chars, the rest counted in
 //               attributes_dropped; an on* handler's value is "<handler>", never
-//               its body), text, and the same for the closest ancestor with a class
+//               its body), text, and the same for the closest ancestor with a class;
+//               for the element only, in_viewport (any of its box on screen now; the
+//               step never scrolls) and rect {top, left, width, height} in viewport px
 //   dup_ids     {}  -> {ids, counts}: the DOM ids used more than once in the page
 //               (at most 200 listed), counts id -> occurrences
 //   window_flag {name}  -> {name, type, value}: window[name], for a name
@@ -642,6 +644,13 @@ function describe(el) {
     };
   };
   const r = d(el);
+  // Where the element sits in the viewport now (nothing is scrolled to find it):
+  // in_viewport is true when any of its box shows, rect is in viewport pixels.
+  const b = el.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  r.rect = { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width), height: Math.round(b.height) };
+  r.in_viewport = b.width > 0 && b.height > 0 && b.bottom > 0 && b.right > 0 && b.top < vh && b.left < vw;
   const anc = el.parentElement && el.parentElement.closest("[class]");
   r.ancestor = anc ? d(anc) : null;
   return r;
