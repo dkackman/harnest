@@ -1,5 +1,7 @@
-# Release gate case set, from the 2026-11-26 suite review. One case ID per line.
-# Run: REGRESSION_CASES="$(grep -v '^#' regression-release-set.txt | tr '\n' ' ')" ./run-regression.sh all
+# Release gate case set, from the 2026-11-26/27 suite review. One case ID per line.
+# Run across lem and mini-ai (the loop must not hold the driver lock):
+#   REGRESSION_CASES="$(grep -v '^#' regression-release-set.txt | tr '\n' ' ')" FLEET_SERVERS="lem mini-ai" python3 -m harness.drivers.fleet all
+# Add --plan before `all` to preview the lane assignment without running anything.
 S-F001
 S-F002
 S-F003
