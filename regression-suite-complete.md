@@ -28825,4 +28825,58 @@ expected:
 cleanup: `delete_output(job_id=<id>)` for all three jobs.
 metrics: none.
 
+### C-F1544 — GET `/api/system/dw` carries `newer`, a PEP 440 compare of `latest` against `version`, and the OpenAPI document declares it
+pending: #1770
+source: tester, spec for #1770 from #1768's plan v1 (claude-opus-5-5 via anthropic)
+Free, read-only, no job, no update. **Web UI, black-box**, through `ui-check` `fetch` steps only (no page). At spec time
+the reply was `{version, latest, managed, command, status, error, log}` with `version` `"0.23.0-alpha.4"` and `latest`
+`"0.22.0"` (C-F1443 pins those keys). The POST `/api/system/dw/update` reply gains the same field, but a real POST
+starts an update and the runner blocks it, so this case reads the GET only.
+Spec: `fetch {path: "/api/system/dw"}` twice, then `fetch {path: "/openapi.json"}`.
+expected:
+1. Both reads answer 200 with every key C-F1443 lists, unchanged in type, plus `newer`. A missing `newer`, or a
+   missing or retyped old key, is a **finding**.
+2. `newer` is `true` or `false` when `latest` is a version string, and `null` when `latest` is null (PyPI
+   unreachable). Its value is the PEP 440 order of the two strings: `true` exactly when `latest` sorts after
+   `version` (so `"0.22.0"` against `"0.23.0-alpha.4"` is `false`; a pre-release sorts before its release, and
+   `0.10.0` after `0.9.0`). A `newer` that disagrees with that order, a string `"true"`/`"false"`, or a boolean
+   beside a null `latest` is a **finding**. Both reads agree.
+3. `/openapi.json`: the schema the GET's 200 response names (`DwUpdateState`, or whatever it `$ref`s) declares a
+   `newer` property typed boolean and nullable (`anyOf` with `null`, or `nullable: true`). A field the route serves
+   but the document doesn't declare is a **finding** (stale OpenAPI). If the document is `truncated`, report that
+   rather than a pass.
+cleanup: none.
+metrics: none.
+
+### C-F1545 — the Models page offers a dw update exactly when `newer` is `true`, and never from its own string compare
+pending: #1770
+source: tester, spec for #1770 from #1768's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`. Before the stage, the Models page's dw line read `dw
+<version>` and, when it judged `latest` newer by its own heuristic, a muted span `<latest> is available - update with
+<command>` beside it (with `managed` true the offer may be an Update button instead; either form counts as "the
+offer"). Each arm is a fresh run of: `mock {url_glob: "**/api/system/dw", set: {...}}` from the real answer;
+`goto {path: "/"}`; `click {text: "Models"}`; `wait_text {regex: "dw\\s"}` (the dw line, the version `<V>` shown);
+`wait_text {text: <V>}`; `inspect {text: "is available"}` (a no-match is the "no offer" result, not a step failure to
+stop on: if the runner stops there, the arm's offer is absent); `screenshot {name: "models_<arm>"}`. Read each
+screenshot.
+Arms (`set` values; `managed` and the rest stay as served):
+1. `{version: "0.9.0", latest: "0.10.0", newer: true}`.
+2. `{version: "0.10.0", latest: "0.9.0", newer: false}`.
+3. `{version: "1.0.0", latest: "1.0.0rc1", newer: false}`.
+4. `{version: "0.9.0", latest: null, newer: null}`.
+5. `{version: "0.9.0", latest: "0.10.0", newer: null}`.
+6. Field drives, not the strings: `{version: "2.0.0", latest: "1.0.0", newer: true}`.
+7. Field drives, not the strings: `{version: "1.0.0", latest: "2.0.0", newer: false}`.
+expected:
+1. Arm 1 shows the offer naming `0.10.0` (and the served `command` when unmanaged). No offer is a **finding**.
+2. Arms 2, 3, 4 and 5 show no offer: no "is available" text and no Update button. An offer in any is a
+   **finding**; arm 5 is the null-means-no-offer rule even when the strings alone look newer.
+3. Arm 6 shows the offer and arm 7 shows none. The server never sends such a pair; these arms show the page reads
+   `newer` rather than comparing `version` and `latest` itself (the plan deletes `isNewer()`). The reverse in
+   either is a **finding** (the old heuristic still decides).
+4. Every arm renders the dw line with its version and no text `null`, `undefined` or `NaN`; a `page_errors`
+   entry in any arm is a **finding**.
+cleanup: none (nothing queued; the mock never writes).
+metrics: none.
+
 ## Performance
