@@ -1,0 +1,2 @@
+{"ts":"2026-11-27T17:18:22Z","level":"complete","case":"C-F078","metric":"peak_dbfs","condition":"raw","value":1.015,"unit":"dBFS","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"job 6d3de801fda0","note":"develop @ 53640084"}
+{"ts":"2026-11-27T17:18:22Z","level":"complete","case":"C-F078","metric":"peak_dbfs","condition":"normalized","value":-0.636,"unit":"dBFS","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"job 6d3de801fda0","note":"develop @ 53640084"}

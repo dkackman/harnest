@@ -1,0 +1,1 @@
+{"ts": "2026-11-27T19:54:32Z", "level": "complete", "case": "C-F484", "outcome": "fail", "issue": 1795, "secs": 163.3, "session": "regression:complete.lem-2.15", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}

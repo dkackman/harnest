@@ -1,0 +1,2 @@
+{"ts": "2026-11-27T19:56:38Z", "level": "complete", "case": "C-F592", "outcome": "unreported", "issue": null, "secs": null, "session": "regression:complete.lem-2.17", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-11-27T19:57:10Z", "level": "complete", "case": "C-F592", "outcome": "unreported", "issue": null, "secs": null, "session": "regression:complete.lem-1.54", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}

@@ -1,0 +1,1 @@
+{"ts":"2026-11-27T17:01:23Z","level":"smoke","case":"S-F006","metric":"latency","condition":"wall","value":1.48,"unit":"s","server":"0.23.0-alpha.4","model":"claude-sonnet-5-5","provider":"anthropic","ref":"list_gallery(workspace=regression-smoke), 3 files","note":"includes agent turnaround; ceiling 5 s"}

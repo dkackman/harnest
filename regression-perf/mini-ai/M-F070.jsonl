@@ -1,1 +1,2 @@
 {"date": "2026-10-25", "case": "M-F070", "metric": "latency", "condition": "asset-plus-gather-512", "value": 278.6, "unit": "s", "commit": "68ae280a", "model": "claude-sonnet-5-5", "note": "first run on mini-ai (mps), job started_at->finished_at"}
+{"ts":"2026-11-27T18:36:35Z","level":"model-specific","case":"M-F070","metric":"latency","condition":"asset-plus-gather-512","value":168.4,"unit":"s","server":"0.23.0-alpha.4","model":"claude-sonnet-5-5","provider":"anthropic","ref":"job aa7a0870ec9f"}

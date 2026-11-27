@@ -1,1 +1,2 @@
 {"ts": "2026-11-08T22:11:49Z", "level": "complete", "case": "C-F241", "outcome": "pass", "issue": null, "secs": 0.2, "session": "regression-mini-ai:complete.mini-ai-1.57", "head": "develop @ 39720f89", "model": "claude-sonnet-5-5", "server": "mini-ai"}
+{"ts": "2026-11-27T17:50:19Z", "level": "complete", "case": "C-F241", "outcome": "pass", "issue": null, "secs": 42.8, "session": "regression-mini-ai:complete.mini-ai-1.31", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "mini-ai"}
