@@ -4893,12 +4893,13 @@ expected:
   multiple-of-32 error.
 - `plan.estimate` has a numeric `minutes` (any `basis` but `unknown` is fine; `unknown` with
   `minutes: null` is also acceptable, not a finding) and `downloads_required` is empty on lem.
-- (c) and (f) each carry the warning that `lora_model_name` is null so the LoRA is not loaded
-  (the M-F038 warning). (a), (e) and (g) carry no such warning: the turbo LoRA is on.
+- (c) and (f), at 12 steps, carry no null-`lora_model_name` warning (#993); neither do (a), (e), (g).
+  A further call with `{"lora_model_name": null}` alone does warn that the LoRA is not loaded
+  (the M-F038 warning).
 - (a) and (g) return the **same** `plan.fingerprint` (the cost fingerprint is seed-independent);
   (a) and (e) differ (dtype).
 It is a **finding** if any arm is refused, if 345 frames or the 544×672 canvas is refused or
-snapped, or if the null-LoRA warning is missing on (c)/(f) or present on (a)/(e).
+snapped, or if the null-LoRA warning is present on any of the five arms or missing on the null-alone call.
 cleanup: none (validate only).
 metrics: none.
 
