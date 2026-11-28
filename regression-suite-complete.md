@@ -18081,8 +18081,10 @@ scores lower. One workflow (`id: "qa-c-f827"`): `crop_face_track` on BLURPAIR wi
 detected.
 expected:
 - All steps succeed.
-- `left` → left (the degraded face). This proves both faces are detected; if it gives the right face,
-  the degraded face wasn't found: rebuild `p_blur` at `"resolution": 128` and rerun (setup, not a finding).
+- `left` → a box left of centre (x < 480). At 0.3 it may be a non-face detection, so look at its crop.
+  To prove the degraded face is detected, also run `left` at `min_confidence: 0.75`: its crop shows the
+  degraded face (on BLURPAIR as built 2026-11-27 its box centre x was about 263). If neither run finds it,
+  rebuild `p_blur` at `"resolution": 128` and rerun (setup, not a finding).
 - `confident` → right (the sharp face), on every frame, and the record says `"select": "confident"`.
 - If the track entries carry a detection score, the picked face's score is the higher of the two.
 It is a **finding** if `confident` picks the degraded face once both are shown to be detected.
