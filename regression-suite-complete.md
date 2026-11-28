@@ -29051,4 +29051,26 @@ cleanup: `delete_output(job_id=...)` for J1, J2 and J3.
 metrics: none.
 amended: 2026-11-27, suite review: landed from a suite-conflict branch where it was written as C-F1467; that number went to another case
 
+### C-F1566 — `replace-performer` warns, without refusing, when a cut is left on the default `prompt`
+source: tester, verified in #1810 (claude-opus-5-5 via anthropic)
+Free, plus one run that is cancelled at once. All calls are on `templates/minimax/replace-performer`. Use
+`source_video` = `mask_video` = one video asset on the server at least 121 frames long, `references` = one
+`MiniMaxH3ImageReference` from any image asset, `seed` 7, and `cuts` = `[{"name": "cut-1", "start_frame": 0,
+"num_frames": 121, "render_frames": 124}]`. P is any pose sentence, e.g. "A man stands turning slowly to his left, whole
+head and shoulders in frame."
+1. `validate_workflow` with those arguments and no `prompt`.
+2. `run_workflow` with the same arguments and step 1's bound `acknowledged_cost`, then `cancel_job` straight away,
+   `wait_for_job` until it ends, and `get_job`.
+3. `validate_workflow` as in step 1, with `"prompt": P` set on `cut-1`.
+4. `validate_workflow` as in step 1, with a workflow-level `"prompt": P` and none on the cut.
+5. `validate_workflow` with no `arguments`.
+expected:
+- Step 1 is `valid: true`, and its `warnings` include one that begins `'prompt' is left at this workflow's default`,
+  names `cuts[0] 'cut-1'`, and says the performer can be cut along the mask edge.
+- Step 2 is queued (not refused), and `job.warnings` carries the same message.
+- Steps 3 and 4 are `valid: true` with no `'prompt' is left at` warning.
+- Step 5 has no `'prompt' is left at` warning (its errors for the template's placeholder assets are expected).
+cleanup: `delete_output(job_id=...)` for step 2's job.
+metrics: none.
+
 ## Performance
