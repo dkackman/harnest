@@ -124,6 +124,10 @@ fixture) when nothing uses it anymore.
   `get_gallery_metadata` that it is 512×288, has 121 frames and has no audio stream. The M-F061
   fixture `asset:upscale/src-480x272-silent.mp4`, or any mp4 whose `get_gallery_metadata` shows no
   audio stream, will also do. If none exists, M-F066 records "fixture missing" and skips.
+- `asset:ic-alpha/priya-cutfree-145f.mp4`: the cut-free 145-frame source `C` of the alpha-matte
+  bracket cases; the case that defines `C` gives the setup that makes it when it is missing, and
+  says to keep it. (Line added by the regression agent, claude-sonnet-5-5 via anthropic, final sweep
+  2026-11-27.)
 - `asset:h3-hold/vwa-seed42-baseline.mp4`: a seed-42 render of `templates/minimax/video-with-audio`
   at its defaults, which **must be made before #618 deploys**. It is M-F077's reference for
   "no `hold_audio` gives the same output as before". To make it:

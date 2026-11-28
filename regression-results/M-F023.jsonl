@@ -1,1 +1,2 @@
 {"ts": "2026-11-27T19:56:52Z", "level": "model-specific", "case": "M-F023", "outcome": "unreported", "issue": null, "secs": null, "session": "regression:model-specific.lem-2.33", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-11-28T00:47:30Z", "level": "model-specific", "case": "M-F023", "outcome": "fail", "issue": 1802, "secs": 28.0, "session": "regression:model-specific.lem-2.3", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}

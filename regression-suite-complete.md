@@ -332,6 +332,10 @@ smoke's Fixtures lists the asset too.
   describes it in full and saves it when it's missing. Keep it across runs. What matters is that it is an LTX chain
   (not H3), keeps its segments, overrides one ceiling, and declares both `stop_after` and `resume_from`. Its jobs
   (J1, P, J2, J3 and C-F1086's continuation) are made per run and deleted.
+- C-F296–C-F305 (guide clips) and C-F974 use the `qa-guides/` assets in this workspace: `ep6-22f.mp4`,
+  `ep6-30f.mp4`, `ep21-39f-audio.mp4` (made by C-F296's setup) and `ep13-141f.mp4` (made by C-F974's setup), each
+  only when `list_assets` lacks it. Those setups describe them in full. Keep them across runs.
+  (Added by the final sweep, model `claude-sonnet-5-5` via `anthropic`.)
 
 ## Functional
 

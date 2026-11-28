@@ -1,2 +1,3 @@
 {"ts": "2026-11-27T19:56:58Z", "level": "model-specific", "case": "M-F375", "outcome": "unreported", "issue": null, "secs": null, "session": "regression:model-specific.lem-2.39", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}
 {"ts": "2026-11-27T19:57:28Z", "level": "model-specific", "case": "M-F375", "outcome": "unreported", "issue": null, "secs": null, "session": "regression:model-specific.lem-1.72", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-11-28T02:46:42Z", "level": "model-specific", "case": "M-F375", "outcome": "fail", "issue": 1808, "secs": null, "session": "regression:model-specific.lem-1.9", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}

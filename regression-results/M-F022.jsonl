@@ -1,1 +1,3 @@
 {"ts": "2026-11-27T19:56:51Z", "level": "model-specific", "case": "M-F022", "outcome": "unreported", "issue": null, "secs": null, "session": "regression:model-specific.lem-2.32", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-11-28T00:20:04Z", "level": "model-specific", "case": "M-F022", "outcome": "fail", "issue": 1802, "secs": 69.0, "session": "regression:model-specific.lem-2.17", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-11-28T00:31:11Z", "level": "model-specific", "case": "M-F022", "outcome": "fail", "issue": 1802, "secs": 16.9, "session": "regression:model-specific.lem-2.2", "head": "develop @ 53640084", "model": "claude-sonnet-5-5", "server": "lem"}
