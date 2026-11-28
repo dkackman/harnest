@@ -422,15 +422,15 @@ amended: 2026-11-27, harnest#376 (Don's ruling): the whole-song bullet checks `w
 
 ### M-F008 — the 768p H3 path renders at its trained canvas on its trained schedule
 `templates/minimax/video-with-audio-768p` pins a combination rather than leaving it to arguments:
-the `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16` checkpoint, 1344x768, `video_shift: 6.0`,
-`lora_alpha: null`, `num_inference_steps: 9`. Every one of those has to reach a different part of
+the `minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16` checkpoint, 1344x768, `video_shift: 6.0`,
+`audio_shift: 3.0`, `lora_alpha: null`, `num_inference_steps: 5`. Every one of those has to reach a different part of
 the stack — the canvas to the pipeline, the shift to the scheduler, the alpha to the peft layers
 after load — and none of them fails loudly if it doesn't. A 768p LoRA run on the 544p sigma
 schedule at a stated `alpha: 128` (16x the file's own `alpha: 8`, #468) produces a clip that
 completes, saves, and simply looks mediocre. M-F003 pins that the catalog *declares* these
 numbers; this case is the other half — that a render on them actually happens. The two together
 are why a checkpoint swap can be trusted to be three numbers rather than one.
-Model/pipeline: MiniMax-H3 T2VA with `lightx2v/Minimax-h3-Turbo`'s **768p FL2VA** 8-step
+Model/pipeline: MiniMax-H3 T2VA with `lightx2v/Minimax-h3-Turbo`'s **768p FL2VA** 4-step v1.2
 checkpoint. Costs one real run, ~13 min cold on a 3090 — model-specific is opt-in, which is where
 a render this size belongs.
 expected: `run_workflow("templates/minimax/video-with-audio-768p")` on defaults, then
@@ -443,7 +443,7 @@ expected: `run_workflow("templates/minimax/video-with-audio-768p")` on defaults,
   deferral regressed), or if `get_gallery_metadata`'s `peak_dbfs` on the written file is at
   or above 0 dBFS without `audio_clipped` having fired for it. A lone `audio_no_headroom` is
   worth a note but not a failure — it was the pre-amendment shape.
-- **`denoise_total_steps: 8`** from `num_inference_steps: 9`, i.e. the turbo schedule, not a
+- **`denoise_total_steps: 4`** from `num_inference_steps: 5`, i.e. the turbo schedule, not a
   silent fallback to the base model's step count.
 - **The deliverable is `width: 1344`, `height: 768`**, `frame_count: 124`, `fps: 24.0`, with audio:
   `sample_rate: 32000`, `channels: 2`, and `mean_dbfs` above -40 (a soundtrack that generated
@@ -452,15 +452,17 @@ expected: `run_workflow("templates/minimax/video-with-audio-768p")` on defaults,
   This box runs at ~96% of host RAM on H3 and the original 768p attempt was OOM-killed at 345
   frames, so the headroom is the thing to watch, not an abstract pass.
 It is a **finding** if the run fails or OOMs at the *default* 124 frames, if the canvas comes back
-anything but 1344x768, if `denoise_total_steps` stops being 8, or if wall clock moves well outside
+anything but 1344x768, if `denoise_total_steps` stops being 4, or if wall clock moves well outside
 the trend in `regression-perf/M-F008.jsonl` (the shift or the alpha silently not being applied
 would most likely show up as a step count or a timing change, since nobody in this loop can judge
 the picture). A failure at a frame count *above* the default is not this case's business — 345
 frames at this canvas is a known OOM and deliberately out of scope.
 cleanup: delete the run's output (sweeps its run directory). Nothing durable is produced.
 metrics: `latency`, condition `cold`, unit `s` — the job's own `started_at`->`finished_at`, logged
-to `regression-perf/M-F008.jsonl` pass or fail. This template shipped with **no curated `cost`**
-because nothing had measured it, so this log is currently the only cost history it has.
+to `regression-perf/M-F008.jsonl` pass or fail. The catalog now declares a curated `cost` (9.87 min, RTX 3090); this log is the
+per-box history beside it, and its trend restarts at the 4-step v1.2 default (diffusers-workflow
+commit 2cfae541; entries before it are 8-step v1.0 runs). Until a 4-step run has set a new trend,
+a drop below the old ~786 s 8-step entries is not a timing finding.
 source: tester, model `opus` via provider `anthropic`, verified in #148 on 2026-09-14 against dw
 0.4.0-beta.4 on `lem`, workspace `qa-verify` — the template's first ever run (job `b6ecc7877346`,
 786.0 s, 1344x768/124 f, peak RSS 61548.9 of 64208.6 MB). Proposed by the implementer; the memory
@@ -472,6 +474,7 @@ mux always comes back clean; re-architecting `warn_without_headroom`'s timing to
 amendment, see #305. Note for a future run: the **first**
 denoise step took ~232 s against ~40-57 s for steps 2-8 — warm-up, not a stall, and the same
 pattern C-F023 records after a reload.
+amended: 2026-11-27, harnest#378 (Don's ruling): 4-step v1.2 768p turbo default (5 steps, 4 denoise, `audio_shift: 3.0`) per diffusers-workflow commit 2cfae541 and #1805, matching M-F003's 4-step v1.2 row; perf trend restarts at the swap.
 
 ### M-F011 — a clipped soundtrack is warned about and reported as clipped, by both halves at once
 Music 3 writes tracks at or over full scale as a matter of course, and a lossy encode
