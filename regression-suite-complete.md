@@ -529,11 +529,18 @@ with a cached reading from the *previous* job — do not compare it against a
 live figure. `host_pinned_*` is absent (not zero) on `lem`'s torch build.
 metrics: logged to `regression-perf/C-F007.jsonl` — job 2's `latency` in
 seconds (`condition: job2`), the residual host RSS in MB from the `Released
-cached models` line (`bytes`, `condition: residual-rss-mb`), and job 2's
-peak RSS in MB (`bytes`, `condition: job2-peak-mb`). The residual is the
+cached models` line minus the idle worker's RSS from `get_health` just before
+job 1 (`bytes`, `condition: residual-over-idle-mb`); record the raw residual
+in the result too, and job 2's
+peak RSS in MB (`bytes`, `condition: job2-peak-mb`) when
+`host_memory_job_peak_rss_mb` is non-null; when it is null (job 2 did not
+raise the worker's high-water mark), record the highest sampled
+`host_memory_rss_mb` instead (`bytes`, `condition: job2-peak-sampled-mb`).
+The residual is the
 number this case exists for: it was 14,928 MB before #98 and ~2,042 MB after,
 and a creep back toward the tens of GB is the near miss described above
 long before it is a SIGKILL.
+A raw residual above 8,000 MB is the near miss regardless of history.
 **This case is ~10 minutes of GPU time** and is the most expensive in the
 file. It earns it: this is the failure mode that silently costs a whole
 session's work, and it cannot be tested with one run or with two runs of the
