@@ -22978,8 +22978,8 @@ metrics: none.
 
 ### C-F1190 — `analyze_held_frames` scores a built-choppy clip high, with a `held_frames` warn and clusters, on a silent video
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
-CPU tasks only. **Setup shared by C-F1190–C-F1203**, in workspace `qa-1527` (`create_workspace` if missing; pass
-`workspace="qa-1527"` on every call). Each fixture is a task-only workflow, `validate_workflow`'d with its
+CPU tasks only. **Setup shared by C-F1190–C-F1203**, in the level's workspace (`create_workspace` if missing; pass
+`workspace=<the level's workspace>` on every call). Each fixture is a task-only workflow, `validate_workflow`'d with its
 `acknowledged_cost` bound (`minutes: null`, since the basis is `unknown`), then `run_workflow(..., wait_seconds=55)`.
 The source is `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4", start_frame=9, num_frames=38)` named `src`
 (38 frames, 24 fps; shared asset), and Step 1 reads `previous_result:src`. Confirm first with the source's
@@ -22998,7 +22998,7 @@ durations=D)` with `result: {"content_type": "video/mp4"}`. A still gets `max(1,
 CL, HC and H4 are silent: `stills_to_video` makes "one silent clip". If `stills_to_video` refuses the frame array at
 run time (the chain validated on 2026-11-21), the setup can't be built. File that as an ordinary issue and report the
 B cases blocked; it is not a finding of #1552.
-Then `assess_output(name=<HC output>, probe="analyze_held_frames", workspace="qa-1527")`, and the same on CL, and on the
+Then `assess_output(name=<HC output>, probe="analyze_held_frames", workspace=<the level's workspace>)`, and the same on CL, and on the
 source asset. Read the `held_frames` threshold from the rule table, `get_guide("tasks", section="Assessment Probes")`.
 expected:
 - HC: `held_frames` is at least 0.4 × `frames` (about one per source frame, minus frames at rest and the first).
@@ -23013,16 +23013,18 @@ expected:
 - CL's `held_frames` equals the source asset's, ±2, since CL is a re-encode of it frame for frame. HC's exceeds CL's by
   at least 0.4 × HC's `frames`.
 It is a **finding** if HC raises no `held_frames` warn, or if any probe errors on these files.
-cleanup: none in this case. Once the last case that uses `qa-1527` this pass has run (C-F1190–C-F1203, C-F1268–C-F1283):
-`delete_output(job_id=<id>, workspace="qa-1527")` for each run, `delete_asset` for anything kept into `qa-1527` (never in
-Don's workspace), then `delete_workspace("qa-1527")`. The take kept from Don's workspace must still be there in its own
+cleanup: none in this case. Once the last case of this group has run this pass (C-F1190–C-F1203, C-F1268–C-F1283):
+`delete_output(job_id=<id>, workspace=<the level's workspace>)` for each run this group made this pass, and
+`delete_asset` for anything it kept into the level's workspace, in the level's workspace only (never in Don's
+workspace). The take kept from Don's workspace must still be there in its own
 workspace (`get_gallery_metadata` answers).
 metrics: none.
 amended: 2026-11-26, suite review: inlined the shared `qa-1527` cleanup from C-F1204, which is retired, so the cases sharing this setup point here; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): the group's fixtures and cleanup move from `qa-1527` to the level's workspace, and the cleanup no longer deletes the workspace; no expectation changed.
 
 ### C-F1191 — holds in fours count too, and a static shot and a clean take score 0 with no finding
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
-Setup as in C-F1190. `assess_output(..., probe="analyze_held_frames", workspace="qa-1527")` on H4 and ST. Also run it
+Setup as in C-F1190. `assess_output(..., probe="analyze_held_frames", workspace=<the level's workspace>)` on H4 and ST. Also run it
 on a take #1551's record names with 0 held frames, in its own workspace, read-only (any one; else the lowest-count
 take, and say so).
 expected:
@@ -23035,12 +23037,13 @@ expected:
   finding). A mismatch is a **finding**: the probe and the bench disagree on the same file.
 cleanup: none.
 metrics: none.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1192 — a hard cut into a static shot is not counted as a hold
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Setup as in C-F1190. CUT's frame N+1 (the first repeat of the incoming still) has d ≈ 0, and the frame before it, the
 cut, is a large difference. So the plain rule would call frame N+1 held. The plan excludes "frames within one frame of
-a hard cut". Run `assess_output(..., probe="analyze_held_frames", workspace="qa-1527")` on CUT and on
+a hard cut". Run `assess_output(..., probe="analyze_held_frames", workspace=<the level's workspace>)` on CUT and on
 `asset:qa-cast/ep3-shot1-incident.mp4`.
 expected:
 - CUT's `held_frames` is within ±1 of ep3-shot1's own count (the concat re-encode can move a near-ε frame away from
@@ -23050,6 +23053,7 @@ expected:
   total count.
 cleanup: none.
 metrics: none.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1193 — clusters split on a gap of more than 4 frames, and a cluster's times are the held frames' times
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
@@ -23130,18 +23134,19 @@ metrics: none.
 
 ### C-F1197 — the gallery's Assess shows the held-frame cluster findings, each with a time
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
-**Web UI, black-box**, through `ui-check` as in C-F1088: open the gallery for workspace `qa-1527`, select HC (C-F1190),
-press **Assess** and wait for it to finish. Also take `assess_output(name=<HC>, workspace="qa-1527")` (the default call)
+**Web UI, black-box**, through `ui-check` as in C-F1088: open the gallery for the level's workspace, select HC (C-F1190),
+press **Assess** and wait for it to finish. Also take `assess_output(name=<HC>, workspace=<the level's workspace>)` (the default call)
 as R.
 expected:
 - The list shows R's `held_frames` warn and each cluster finding, in R's order. Each cluster row shows a time that
   matches its `at` (its start, in the UI's usual time format), not a blank, `NaN` or `[object Object]`.
 - `page_errors` is empty.
 It is a **finding** if a cluster finding is missing from the list or shows no time.
-cleanup: none (C-F1190's cleanup covers `qa-1527`; if #1553's cases aren't being run in the same session, run that
+cleanup: none (C-F1190's cleanup covers this group's runs; if #1553's cases aren't being run in the same session, run that
 cleanup now).
 metrics: none.
 amended: 2026-11-26, suite review: the cleanup pointer now names C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1199 — `refill: "held"` on #1551's highest-count take keeps its audio in sync, has `held_before` > `held_after`, and leaves frames away from the clusters matching the source
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
@@ -23151,8 +23156,8 @@ absorbs: C-F1272 (merged 2026-11-26, suite review)
 
 GPU, a few minutes: one refill run serves both arms. The source is the highest-count take #1551's record names (a real
 H3 take with audio, in Don's
-workspace). Read-only there: `keep_output` it into `qa-1527` under a free name (`get_gallery_metadata` answers "Unknown
-asset" first), and run against that `asset:`. Run `interpolate_frames(refill="held")` in `qa-1527` (arm B was written
+workspace). Read-only there: `keep_output` it into the level's workspace under a free name (`get_gallery_metadata` answers "Unknown
+asset" first), and run against that `asset:`. Run `interpolate_frames(refill="held")` in the level's workspace (arm B was written
 for the same run made as `interpolate_frames(refill="held", device="cuda")`, and reuses this result).
 
 **Arm A (audio and sync).** Take `get_gallery_metadata` and default `assess_output` on both the asset and the result.
@@ -23178,9 +23183,10 @@ expected:
 - Arm B: the frame count, fps, duration and audio match arm A's (its first bullet).
 It is a **finding** if the audio is gone. The plan's point is that the repair carries it, where `interpolate_frames`
 today drops it.
-cleanup: none (C-F1190's cleanup covers `qa-1527`, the kept asset included).
+cleanup: none (C-F1190's cleanup covers this group's runs, the kept asset included).
 metrics: none.
 amended: 2026-11-26, suite review: the cleanup pointer now names C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1201 — `refill` together with `multiplier` is refused at validate, naming both; a bad `refill` value is refused
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
@@ -23203,15 +23209,16 @@ metrics: none.
 
 ### C-F1203 — `interpolate_frames` without `refill` behaves as before
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
-GPU, about a minute. Run `interpolate_frames(video=<CL output>, multiplier=2, device="cuda")` in `qa-1527` (CL from
+GPU, about a minute. Run `interpolate_frames(video=<CL output>, multiplier=2, device="cuda")` in the level's workspace (CL from
 C-F1190).
 expected:
 - The output's frame count is what `multiplier=2` gives today (2N-1 = 75, the behavior the plan leaves alone), and
   the answer carries no `held_before`/`held_after`.
 It is a **finding** if adding `refill` changed the `multiplier` path.
-cleanup: none (C-F1190's cleanup covers `qa-1527`).
+cleanup: none (C-F1190's cleanup covers this group's runs).
 metrics: none.
 amended: 2026-11-26, suite review: the cleanup pointer now names C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1205 — an argument change after a take makes a done item `revised`: result kept, it is ready, its dependent waits; a new take of the revised item makes it `done` and its dependent ready
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
@@ -24048,11 +24055,11 @@ metrics: none.
 
 ### C-F1268 — `refill: "held"` keeps the frame count on even and odd lengths and records before and after; a take with no holds comes back unchanged without loading RIFE
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
-GPU, a few minutes. Run this case, and C-F1269 to C-F1274, **before C-F1190's cleanup**, which deletes `qa-1527`. If it has
+GPU, a few minutes. Run this case, and C-F1269 to C-F1274, **before C-F1190's cleanup**, which deletes this group's runs. If it has
 already run, rebuild the fixtures. Fixtures HC (twos, 76 frames), CL (clean, 38) and ST (static, 120) come from C-F1190
-in `qa-1527`. Add **HO**: `trim_video(video=<HC output>, start_frame=0, num_frames=75)`, the odd length. The workflow
+in the level's workspace. Add **HO**: `trim_video(video=<HC output>, start_frame=0, num_frames=75)`, the odd length. The workflow
 is one `interpolate_frames(video=<file>, refill="held", device="cuda")` step with a `video/mp4` result. Run it on HC,
-HO, CL and ST, each after `validate_workflow` with its cost bound, in `qa-1527`. For each source and its result, take
+HO, CL and ST, each after `validate_workflow` with its cost bound, in the level's workspace. For each source and its result, take
 `get_gallery_metadata`, `assess_output(..., probe="analyze_held_frames")` and `get_job_events`.
 **Re-encode baseline:** for each source a case compares, also run a plain re-encode of it (no refill, the same
 `video/mp4` result) and `compare_outputs` it against the source at the same frames. Byte-equal passthrough is
@@ -24069,13 +24076,14 @@ expected:
   the frames come back unchanged.
 - CL and ST: `get_job_events` shows no RIFE weight load or download, where HC's events show one. If HC's events never
   name the load either, say the "RIFE not loaded" half is unverified. Don't pass it.
-cleanup: none (C-F1190's cleanup covers `qa-1527`).
+cleanup: none (C-F1190's cleanup covers this group's runs).
 metrics: none.
 amended: 2026-11-26, suite review: the run-order and cleanup pointers now name C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`, and the run-order note says the cleanup deletes this group's runs; no expectation changed.
 
 ### C-F1269 — a single hold is refilled at the midpoint, and every other frame passes through unchanged
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
-GPU, a minute. Build **GS** in `qa-1527` with C-F1190's chain: `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4",
+GPU, a minute. Build **GS** in the level's workspace with C-F1190's chain: `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4",
 start_frame=9, num_frames=38)` named `src`, `video_frames(video="previous_result:src")` named `frames`, then
 `stills_to_video(images="previous_result:frames", fps=24, durations=[38 numbers], result video/mp4)`. Each number is
 0.0417, except still 20 (0-based), which is 0.0834. That makes 39 frames, with one hold at output frame 21 (a copy of
@@ -24093,13 +24101,14 @@ expected:
   clearly lower than those frames. A drop on frames 20 or 22 (the anchors) or on any far frame is a **finding**: the
   plan passes every non-held frame through byte-equal. A whole-take resynthesis is v1's keep-every-2nd, which plan v2
   replaced.
-cleanup: none (C-F1190's cleanup covers `qa-1527`).
+cleanup: none (C-F1190's cleanup covers this group's runs).
 metrics: none.
 amended: 2026-11-26, suite review: the cleanup pointer now names C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1271 — a hold at the clip's end, or one whose next moving frame is across a cut, stays held, and nothing blends across the cut
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
-GPU, a few minutes. Build in `qa-1527`, as GS in C-F1269:
+GPU, a few minutes. Build in the level's workspace, as GS in C-F1269:
 - **HE**: 38 stills, with still 15 and still 37 (the last) at 0.0834. That makes 40 frames, with holds at output frames
   16 and 39. Frame 39 is the clip's last frame, so it has no b.
 - **HX**: first `trim_video(..., start_frame=9, num_frames=24)` of the scythe asset, and 24 stills with stills 10 and 23
@@ -24121,13 +24130,14 @@ expected:
   neither count) or left held and counted in `held_after`. Either passes, provided both counts agree with the probe
   ±1.
 - HX: `assess_output(..., probe="analyze_seams")` on the result reports the same seam count, at the same seconds ±1 frame, as on HX (the cut at frame 26). The shots were carried.
-cleanup: none (C-F1190's cleanup covers `qa-1527`).
+cleanup: none (C-F1190's cleanup covers this group's runs).
 metrics: none.
 amended: 2026-11-26, suite review: the cleanup pointer now names C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1273 — on a real cuts take, the frames at each cut are the source's and the shots are carried
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
-GPU, a few minutes. Use a cuts-mode take #1551's record names, preferring one with holds. Keep it into `qa-1527` as
+GPU, a few minutes. Use a cuts-mode take #1551's record names, preferring one with holds. Keep it into the level's workspace as
 C-F1199 does. If the record names none, skip this case and say so: C-F1271's HX covers the rule on a built clip. Find
 the source's cut frames with `assess_output(..., probe="analyze_seams")` (or its shots under `analyze_shots`). Run
 `interpolate_frames(refill="held", device="cuda")`. Then `compare_outputs(names=[<asset>, <result>])` at cut-1 and
@@ -24138,9 +24148,10 @@ expected:
 - `analyze_seams` on the result reports the same seams, at the same seconds ±1 frame, as on the source. A default
   `assess_output` raises no `sync_drift` or `sync_length` finding the source lacks. The result has audio.
 - The frame count equals the source's, and `held_after` < `held_before` when `held_before` > 0.
-cleanup: none (C-F1190's cleanup covers `qa-1527`).
+cleanup: none (C-F1190's cleanup covers this group's runs).
 metrics: none.
 amended: 2026-11-26, suite review: the cleanup pointer now names C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1274 — the served docs describe the run-wise refill, not keep-every-2nd, and say a slow long hold can survive a refill: reroll when `held_after` stays over the mark
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
@@ -24252,7 +24263,7 @@ amended: 2026-11-26, suite review: said where the shared card asset is found in 
 
 ### C-F1282 — a slow frame-shown-four-times run is refilled with new in-betweens, counted honestly in `held_after`
 source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic). Supersedes C-F1270's G4 expectations (`held_after` 0 on G4, and its closing note), which plan v3 (Q6, ruled at default) withdrew.
-GPU, a minute. Run before C-F1190's cleanup. Build **G4** in `qa-1527`: C-F1269's GS chain, but with
+GPU, a minute. Run before C-F1190's cleanup. Build **G4** in the level's workspace: C-F1269's GS chain, but with
 still 20 at 0.1667. That makes 41 frames: output frames 20 to 23 are one picture (anchor a = frame 20), and 24 is
 still 21 (anchor b). Run `interpolate_frames(video=<G4>, refill="held", device="cuda")` after `validate_workflow`
 with its cost bound. Take `assess_output(..., probe="analyze_held_frames", detail=true)` on G4 and on the result, and
@@ -24275,14 +24286,15 @@ expected:
   Q6); only copies, a frame changed outside 21 to 23, or `held_after` > `held_before` are.
 - H4: 152 frames, and `held_after` < `held_before`. A run whose source step (its D, from H4's d series) is ≥ 4.0
   is not counted held on the result; slower runs may be.
-cleanup: none (C-F1190's cleanup covers `qa-1527`).
+cleanup: none (C-F1190's cleanup covers this group's runs).
 metrics: none.
 amended: 2026-11-26, suite review: dropped the pointer to the retired C-F1270 (the G4 build was already spelled out here) and pointed run order and cleanup at C-F1190's cleanup in place of the retired C-F1204; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1283 — a four-frame run whose anchors differ by at least (k+1)·ε reaches `held_after` 0
 source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic)
 GPU, a minute. Run before C-F1190's cleanup. Find a fast stretch: `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4",
-start_frame=0, num_frames=<the asset's frame count>)` into `qa-1527` (or use the asset directly if the probe takes
+start_frame=0, num_frames=<the asset's frame count>)` into the level's workspace (or use the asset directly if the probe takes
 it) and take `assess_output(..., probe="analyze_held_frames", detail=true)`. Pick a source frame s where d at s+1 is
 ≥ 5.0 and d at s and s+2 are each ≥ 2.0. If the scythe asset has none, try `asset:qa-cast/ep3-shot2-reply.mp4`; if
 neither has one, skip the case and say so (the fast half of the plan's v3 statement is then unverified). Build **G4F**
@@ -24297,9 +24309,10 @@ expected:
   **finding**: plan v3 states a run reaches `held_after` 0 when its anchors differ by at least (k+1)·ε.
 - Frames 0, 20, 24 and 40 match G4F (SSIM no more than 0.01 below C-F1268's re-encode baseline at that frame), and
   frames 21 to 23 each score below that: new in-betweens.
-cleanup: none (C-F1190's cleanup covers `qa-1527`).
+cleanup: none (C-F1190's cleanup covers this group's runs).
 metrics: none.
 amended: 2026-11-26, suite review: the run-order and cleanup pointers now name C-F1190's cleanup, where the steps of the retired C-F1204 were inlined; nothing else changed.
+amended: 2026-11-27, dkackman/harnest#337 (Don's ruling): runs in the level's workspace in place of `qa-1527`; no expectation changed.
 
 ### C-F1293 — exporting a cut with `export_timeline` keeps it final; a reader that writes media or nothing still demotes
 source: tester, verified in #1614 (claude-opus-5-5 via anthropic)
