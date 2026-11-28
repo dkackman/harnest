@@ -3,6 +3,44 @@
 Claude Code agents that improve [an MCP server](https://github.com/dkackman/diffusers-workflow)
 by arguing through [its GitHub Issues](https://github.com/dkackman/diffusers-workflow/issues).
 
+## Common commands
+
+```sh
+# The loop: one Python driver runs lem and mini-ai (not ./run-loop.sh, which is the rollback)
+scripts/loop.zsh start                    # detached; also brings up the dashboard
+scripts/loop.zsh start --servers lem      # one server only
+DRAIN=1 scripts/loop.zsh start            # exit once only deferred issues are left
+scripts/loop.zsh status                   # pid, servers, running sessions, today's spend
+scripts/loop.zsh log                      # follow logs/loop.log
+scripts/loop.zsh stop                     # graceful: running sessions finish  (stop --now: kill -TERM)
+scripts/loop.zsh restart
+touch logs/stop-after-cycle.mini-ai       # stop one server, keep the others (logs/stop-after-cycle for lem)
+scripts/loop.zsh dashboard                # print the dashboard address
+
+# Your queue
+./run-digest.sh                           # everything waiting on you, with the commands to act on it
+scripts/approve-batch.sh <n>...           # approve the digest's batch-lane plans
+./scripts/file-advisory.sh --list         # private security findings
+
+# Regression
+./run-regression.sh [smoke|complete|model-specific|security|all]
+DW_TARGET=mini-ai ./run-regression.sh smoke
+python3 -m harness.drivers.fleet --plan all   # where each case would run, across servers
+python3 -m harness.drivers.fleet all          # run it (REGRESSION_CASES=... to pick cases)
+scripts/fleet-resume.sh                       # re-run the cases the last fleet run left unanswered
+
+# Servers
+scripts/testbed.sh <lem|mini-ai> status|update|restart|logs
+
+# Occasional
+./run-features.sh                         # lead design/decompose by hand (the loop runs these)
+./run-curate.sh / ./run-retro.sh          # suite curation audit / harness retro
+./run-release.sh <version> freeze|check|review|notes|gates|cut
+./run-bench.sh                            # implementer replay benchmark (offline)
+
+tests/run.sh                              # the harness test suite: before committing a driver change
+```
+
 Two agents alternate:
 
 - **Implementer:** has the source, SSH to `lem` (the box the server runs on), and the
