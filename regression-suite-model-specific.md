@@ -402,9 +402,7 @@ expected:
   `song_cut@<entry>` per shot, `song_cuts`, `balanced`, `music_video` (#788). Each `song_cut@<entry>`
   slices the song at that entry's own `start_frame` for its `cut_frames`; a step that slices
   `write_song` to a fixed total frame count is the coupling this case exists to keep out.
-- **The song itself is generated whole.** `write_song`'s intermediate is ≈ 30 s
-  (`audio_duration`), i.e. the fit happens at pair time and not by truncating generation. Without
-  this bullet a "fix" that shortened the song to match would pass the first one.
+- **The song itself is generated whole.** `get_job_workflow` shows `write_song` run with `audio_duration: 30` (the default, unaltered), and every `song_cut@<entry>` reads `write_song`'s whole output. Since #627 `write_song` is not saved (`files: []`), so this is checked on the manifest, not on a file. A "fix" that shortened the song to match the cut would pass the first bullet and fail this one.
 - **The other direction — still unconfirmed by anyone, run it when the budget allows.** A **six**-
   entry list is 744 f = 31 s of cut against a 30 s song, so it should come back `succeeded` **with**
   a padding warning naming the shortfall, rather than the score quietly stopping before the film does
@@ -420,6 +418,7 @@ against the pre-fix run's 248 / 20.666). Proposed by the implementer; the manife
 whole-song bullet and the carried-forward six-shot direction are mine.
 amended: 2026-11-26, suite review: the `write_song` headroom warning is no longer called expected; #286 (verified 2026-09-21) suppresses it and M-F021 asserts it absent.
 amended: 2026-11-27, harnest#376: manifest bullet lists `trim@`/`song_cut@`/`song_cuts` and forbids only a fixed-length song slice, after #627 and #788 (both verified).
+amended: 2026-11-27, harnest#376 (Don's ruling): the whole-song bullet checks `write_song`'s `audio_duration: 30` and the `song_cut@<entry>` inputs on the manifest, since #627 (verified, breaking-change) stopped saving the `write_song` mp3.
 
 ### M-F008 — the 768p H3 path renders at its trained canvas on its trained schedule
 `templates/minimax/video-with-audio-768p` pins a combination rather than leaving it to arguments:
