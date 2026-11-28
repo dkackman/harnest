@@ -3787,7 +3787,9 @@ expected:
   `chained-segments`. Existing unrelated warnings, such as no seed, are fine.
 - Every template with a `vram_estimate` whose H3 step is `t2va` or `fl2va` has
   `bytes_per_guide_voxel`, equal to that estimate's `bytes_per_voxel` (28.71 today). That includes
-  `chained-segments`.
+  `chained-segments`. The one exception is `templates/minimax/repair-segment` (fl2va): its guides
+  are cut at run time, so it has no `bytes_per_guide_voxel` and folds their frames into
+  `bytes_per_voxel` 42.84 (= 28.71 * (124 + 22 + 39) / 124), as its `reason` says (#1169, #1804).
 - No estimate in the catalog has `gb_per_guide` or `gb_per_guide_audio`.
 - No template whose only H3 step is `ref2va` carries `bytes_per_guide_voxel`, since guides are
   refused there.
