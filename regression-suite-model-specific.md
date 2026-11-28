@@ -2826,19 +2826,19 @@ Steps:
    `subject: "asset:qa-cast/priya-portrait.jpg"` where the template has a `subject` variable.
 3. Read the H3 sections of `get_guide("tasks")` (search for "lip-sync") and the `minimax-h3` skill.
 expected:
-- Hold branch: every H3 shot or segment step carries `hold_audio`, pointing at that shot's slice
-  (a `previous_result:` of the slice step or equivalent). No shot step passes the track as an
-  audio reference (`AudioReference`, or an `audio_reference_type` driving the shot). The final
-  mux or `pair_audio` step against the full track is still there.
-- Reference branch: the templates are unchanged from before #619. The docs say hold is opt-in and
-  name `hold_audio`.
-- All three validate clean, with no new warning.
-- Neither the guide nor the skill keeps the unconditional claim that H3 "lip-syncs poorly when it
-  must follow supplied audio". Both state the measured A/B result (which path won) consistently
-  with the templates.
-It is a **finding** if the templates and the docs disagree about which path is used, if any
-template fails validation, if a shot step is missing its slice or holds the whole track, or if
-the old claim survives unchanged.
+- `templates/minimax/music-video`: every H3 shot step passes its own slice as a
+  `MiniMaxH3AudioReference`, and `hold_audio` defaults to `previous_result:slice` (#808); the
+  final mux stays.
+- `chain-matched-to-audio` and `chain-matched-and-aligned`: audio reference present, `hold_audio`
+  null by default and settable.
+- All three validate clean with no new warning (the unset-`seed` warning on
+  `chain-matched-to-audio` is pre-existing).
+- The `tasks` and `workflows` guides and the `minimax-h3` skill state those same defaults and the
+  measured result (reference plus hold: 0.00 s offset on all eight shots, correlation 0.95 to
+  1.00), and none says unconditionally that H3 "lip-syncs poorly when it must follow supplied
+  audio".
+It is a **finding** if templates and docs disagree, a template fails validation, a shot step is
+missing its slice or holds the whole track, or the old claim survives.
 cleanup: none (no job).
 metrics: none.
 amended: 2026-11-26, suite review: dropped the pointer to M-F081, which is retired; the A/B result is read from #619's record as the case already says; nothing else changed.
