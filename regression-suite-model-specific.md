@@ -106,6 +106,14 @@ fixture) when nothing uses it anymore.
   Until they exist, M-F060 and M-F061 record "fixture missing" and skip. That is a note for
   Don, not an issue.
 
+- `asset:upscale/ref-960x544-stretch.mp4` (M-F060): the composition reference, a plain 2x resize of
+  `asset:upscale/src-480x272.mp4`. To make it on any server: run one utility job with `fit_to_model` on
+  `asset:upscale/src-480x272.mp4` at 960×544, `mode: "stretch"`, in workspace `regression-model-specific`.
+  Then `keep_output` the result as asset `upscale/ref-960x544-stretch.mp4`, `delete_output` the job, and
+  confirm with `get_gallery_metadata` that it is 960×544, 121 frames, 24 fps. On lem, the existing
+  `mf060_ref_resize/20261128-023851-bf69f700/...` output can be kept instead of re-running the job. If the
+  asset is missing, make it before the run. If the source fixture is missing, M-F060 already skips.
+
 - `asset:refine/src-512x288.mp4` and `asset:refine/src-384x288.mp4` (M-F064, M-F065).
   These are LTX-2.5 clips with their own soundtracks, made on-box. The
   first is 512×288 (16:9, the refine-clip default size) and the second 384×288 (4:3, the
@@ -2211,9 +2219,9 @@ metrics: none.
 
 ### M-F060 — `upscale-clip` doubles a 480×272 clip to 960×544 at the same length and rate, carrying the source's own soundtrack
 source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F058. Paid: one LTX-2.5 job at 960×544×121 frames (the shape of M-F014's
+Model/pipeline: as M-F058. Paid: one LTX-2.5 job at 960×576×121 frames (the 64-grid render; final cut to 960×544) (the shape of M-F014's
 restore runs). Setup: fixture `asset:upscale/src-480x272.mp4` (see Fixtures: 480×272, 121 frames, 24 fps,
-with audio). If it's missing, record "fixture missing" and skip.
+with audio) and `asset:upscale/ref-960x544-stretch.mp4` (a plain 2x `fit_to_model` resize of the source, mode stretch; see Fixtures). If it's missing, record "fixture missing" and skip.
 Steps:
 1. `get_gallery_metadata("asset:upscale/src-480x272.mp4", workspace="regression-model-specific")` to pin the
    source's size, frame count, fps, sample rate, channels and duration.
@@ -2235,6 +2243,7 @@ expected:
 - **Same framing.** `get_output_frames` at `frame:0`, `frame:60` and `frame:120` on the final file shows the same
   composition as the source at the same frames: same subject, same position, no crop or stretch. The detail may
   differ, since this is a re-render.
+- **Composition matches the source.** `compare_outputs` of the final against `asset:upscale/ref-960x544-stretch.mp4` at `frame:0`, `frame:60` and `frame:120`: features such as the hand, the paper edge and the desk corner sit at the same y within a few px, and PSNR is well above the 14.8 dB the squashed output gave (the fixed build gave 21.5 dB, SSIM 0.68). A vertical shift or compression is a finding (regression of dkackman/diffusers-workflow#1809).
 It is a **finding** if the output isn't 960×544×121 at 24 fps, if the final carries generated rather than source
 audio, if sync drifts, if the framing shifts, or if the upscale isn't kept in `intermediate/`.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
