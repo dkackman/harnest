@@ -4136,12 +4136,18 @@ Setup:
 2. In `load_components.quantization_config.vae`, add one entry to `modules_to_not_convert` (create the
    list if it's absent): `"qcache_race_probe_<YYYYMMDDHHMM>"`, with the current time from `date`. No module
    has that name, so quantization is unchanged and only the key moves.
+2a. If get_workflow shows a weights_dtype variable that takes {int4}, set it to {int4}, so the host-RAM gate
+   (#910) can admit two jobs at once on a 128 GB host. The vae key change in step 2 still makes the key cold.
+   If the template has no int4 option, leave the dtype as it is and record that.
 3. `save_workflow` the result as `m-qcache-race`, then validate it clean with the M-F128 short run.
 Steps:
 1. Queue two runs of `m-qcache-race` with the identical short-run `arguments` and `acknowledged_cost=true`,
    back to back with `wait_seconds=0`.
 2. Confirm with `get_job` that they run at the same time on different cards: the `device` values differ,
-   and both are `running` at once.
+   and both are `running` at once. If the second job stays queued with a waiting_for naming host RAM while
+   the other card is idle, record that string and skip the race expectations (the two-job vae bullets) as
+   environment, not failure. The #910 gate is intended. Still run step 3 and the third run. Record "race
+   unexercised" in the result.
 3. `wait_for_job` each one, then read each job's `quantized_cache` events.
 expected:
 - Both jobs succeed.
