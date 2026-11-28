@@ -342,9 +342,12 @@ expected: the **unmatched** step produces a warning on *both* consumer
 channels — an entry on `get_job(id).warnings` / `wait_for_job`'s job,
 prefixed with the step's name and naming the spread, and a `warning` event
 in `get_job_events` carrying `kind: "level_spread"` with the figures
-(`spread_db`, `measure`). The **matched** step produces neither. The matched
-output's `mean_dbfs` lands on the level target (-20 dBFS by default) rather
-than between the two inputs'.
+(`spread_db`, `measure`). The **matched** step produces neither; its only
+warnings are a `match_levels_held` line for each shot whose peak at the rms
+target would pass -3.0 dBFS (dw#1248; both fixtures are, at -2.7 and -1.5, as
+in C-F029). The matched output's `mean_dbfs` lands at the level target (-20 dBFS
+by default) or below it by no more than the largest reported `shortfall_db`,
+rather than between the two inputs'.
 Two things are being pinned, and the second is the reason this case is worth
 its seconds: the level matching itself, and the fact that the engine's
 run-time warning channel is alive at all. That channel (`emit_warning` →
@@ -1225,7 +1228,7 @@ read by the second). The output decodes at `duration_seconds` 10.33 ± 0.01,
 "templates/assemble-and-score", arguments={shots: [the two C-F001 fixtures],
 score: "asset:<the kept score>", fps: 24, total_frames: 248, seam_fade_ms:
 80, match_levels: "rms"})` — **no `sample_rate`** — is valid with
-`checked_arguments` naming exactly those six and `plan.steps: 8`; run it with
+`checked_arguments` naming exactly those six and `plan.steps: 11` (since dw#1719); run it with
 the bound `acknowledged_cost`. It succeeds with no warning except one `concat_videos`
 `match_levels_held` warning for each shot whose peak at the rms target is above
 −3.0 dBFS (dw#1248; both C-F001 fixtures are, at −2.7 and −1.5, as in C-F029).
@@ -1278,7 +1281,7 @@ asset:qa-cast/ep21-shot2-verdict.mp4]`, `score: "asset:<the score>"`,
 `sample_rate: 32000`, `fps: 24`, `total_frames: 248`, `match_levels: "rms"`,
 `score_gain: 0.0`, `world_gain: 1.0`.
 (a) **Hard cut.** `audio_bleed_ms: 0`, `seam_fade_ms: 80`. `validate_workflow`
-is valid (the template plans 8 steps; the count is not this case's subject); the run succeeds with **no `bleed_join:`
+is valid (the template plans 11 steps since dw#1719; the count is not this case's subject); the run succeeds with **no `bleed_join:`
 warning**, and the film decodes at 248 frames / 24 fps / `sample_rate: 32000`
 / 2 channels / `duration_seconds` 10.333 ± 0.01, `peak_dbfs` strictly below 0.
 (b) **Bleed.** `audio_bleed_ms: 1800`, `seam_fade_ms` omitted. Same
@@ -2424,10 +2427,12 @@ expected:
   manifest; do not retype them.
 - (a) → **`valid: true`**, `checked_arguments` containing `shots` (so the references
   were actually resolved, not skipped), and a `plan` (its step count is the template's,
-  8 today, and not this case's subject).
+  11 today, and not this case's subject).
 - (b) → **`valid: false`**, single error at path **`arguments.shots[0]`** whose message
-  names the missing name and the workspace's outputs directory (`Output
-  's_f061/<run id>/final/open.mp4' not found under …/regression-complete/outputs`). A
+  names the missing name and the shape a valid `output:` reference takes (`Output
+  's_f061/<run id>/final/open.mp4' not found - an 'output:' reference names a file an
+  earlier run wrote, like …`), and names no server filesystem path (the outputs root
+  left reference errors on purpose in f0fb02d4, dw#1292). A
   `valid: true` here — the existence check dropped from argument references — is the
   regression that turns a bad `shots` entry back into a queued job that fails at the
   cut.
@@ -4159,8 +4164,10 @@ the file's last sample (#426 was a map that overran it).
    "subfolder": "final"}}]}, acknowledged_cost=<bound from validate>, wait_seconds=55)`.
 3. `get_gallery_metadata` and `assess_output` on the `join` file.
 expected:
-- Arm A: `succeeded`. Its only warning is `concat_videos`' sample-rate mismatch (44100 vs
-  32000 Hz, resampled to 44100).
+- Arm A: `succeeded`. Its warnings are `concat_videos`' sample-rate mismatch (44100 vs
+  32000 Hz, resampled to 44100) and a `match_levels_held` line for each input whose peak at
+  the rms target would pass −3.0 dBFS (dw#1248; `ep49-episode.mp4` here, −2.5 dBFS peak,
+  held 0.5 dB short).
 - Arm A: the film is 620 frames, 24 fps, 25.833 s, 44.1 kHz stereo.
 - Arm A: the `film` manifest entry and `media.shots` both list five shots, in order:
   `ep42-shot1-accuse.mp4`, `ep42-shot2-deflect.mp4`, `ep37-shot1-receipt.mp4`,
@@ -4186,7 +4193,9 @@ expected:
   num_samples` equals `duration_seconds × 32000` (794688 when written, last num_samples
   165355).
 - Arm B: `assess_output`: `shots_source: "manifest"`, `rules_skipped: []`, no findings other
-  than `shot_dead_air` (#465) warnings on the near-silent gaps inside the shots.
+  than `shot_dead_air` (#465) warnings on the near-silent gaps inside the shots and, allowed
+  but not required, a `shot_bed_drop` warn (dw#1718) on `ep42-shot2-deflect.mp4` (20.77
+  against a threshold of 20.0 on 2026-11-27).
 It is a **finding** in arm A if the film lists two shots (one per input) or none, if a
 `shot@…` entry keeps its 32 kHz sample figures (165333), if any seam is missing, or if the
 map ends past the file's last sample. It is a **finding** in arm B if there are fewer than
@@ -4475,7 +4484,9 @@ only the last inner shot of input 1. It must mark only the first inner shot of i
    validate>, wait_seconds=55)`.
 4. `assess_output(name=<the film file>, probe="analyze_seams")`.
 expected:
-- Arm A: `succeeded`; its only warning is the `bed` step's quiet-overall note.
+- Arm A: `succeeded`. Its warnings are the `bed` step's quiet-overall note and a
+  `match_levels_held` line on `edit` for each shot whose peak at the rms target would pass
+  −3.0 dBFS (dw#1248, dw#1291; `ep53-episode.mp4` here, −2.3 dBFS peak, held 0.7 dB short).
 - Arm A: the `film` manifest entry lists eight shots at start_frame 0/124/248/372/496/608/720/832,
   num_frames 124/124/124/124/112/112/112/124, the last three with `overlap_frames: 12`
   (the same list `get_gallery_metadata` gives for `ep53-episode.mp4`).
@@ -4485,7 +4496,8 @@ expected:
 - Arm B: `succeeded`. Its warnings are the `bed` step's quiet-overall note, and two that follow from
   this input: a `match_levels_held` line on `edit` for each shot whose peak at the rms target
   would pass −3.0 dBFS (dw#1248; video 1 here, −2.3 dBFS peak, held 0.7 dB short), and a
-  `shot_name_collision` line ("joined shots share a name", prefixed `film:`), because both
+  `shot_name_collision` line ("joined shots share a name", prefixed `edit:`, the join step
+  inside the template; exactly one such line, dw#1794), because both
   episodes carry `ep42-shot1-accuse.mp4`, `ep42-shot2-deflect.mp4`, `ep37-shot1-receipt.mp4`,
   `shot@accuse` and `shot@deflect` (#508). There is **no** `sample_rate_mismatch` warning: the
   template pins `sample_rate`, so the 32000 → 44100 resample is a `log` event from
@@ -4551,8 +4563,9 @@ The inputs are `asset:qa-cast/ep62-shot1-accuse.mp4` (124 f, 32 kHz),
    "final"}}]}, acknowledged_cost=<bound from validate>, wait_seconds=55)`.
 2. `get_gallery_metadata` and `assess_output` on the `join` file.
 expected:
-- `succeeded` with exactly one warning: the sample-rate mismatch, naming 32000/48000/32000 and
-  resampling to 48000 Hz.
+- `succeeded` with exactly two warnings: the sample-rate mismatch, naming 32000/48000/32000 and
+  resampling to 48000 Hz, and a `match_levels_held` line for video 1, whose peak at the rms
+  target would pass −3.0 dBFS (dw#1248, dw#1291; −1.2 dBFS peak, held 1.8 dB short).
 - 345 frames (124+121+124 − 2×12), 24 fps, 14.375 s, 48 kHz stereo, 960×544,
   `audio_stream_seconds` equal to `duration_seconds`.
 - The manifest and `media.shots` list three shots at start_frame 0/112/221, num_frames
@@ -4643,9 +4656,11 @@ The film must stay at 48 kHz with the input's inner shots. CPU only, about 6 s.
    `acknowledged_cost=<bound from the plan>`, `wait_seconds=55`.
 2. `get_job_events(job_id)`, and `get_gallery_metadata` on the `film` file.
 expected:
-- `succeeded`. Validation is clean, and the plan has 8 steps and no downloads.
-- The events carry `resample_audio` log lines `48000 → 48000` (the `world` step) and
-  `44100 → 48000` (the `soundtrack_resampled` step), plus `mix_audio: 2 tracks, gains [0.3, 1.0]`.
+- `succeeded`. Validation is clean, and the plan has 11 steps (since dw#1719) and no downloads.
+- The events carry `resample_audio` log lines `already 48000 Hz, unchanged` (the `world` step,
+  `source_sample_rate` = `target_sample_rate` = 48000; the no-op wording is dw#564's) and
+  `44100 → 48000` (the `soundtrack_resampled` step), plus `mix_audio: 3 tracks, gains [0.3, 1.0,
+  0.0]` (the third is the bed, off by default, dw#1719).
 - The film is 469 frames, 24 fps, 19.542 s, **48000 Hz** stereo, 960×544, with
   `peak_dbfs` ≤ −2.0 (the `balanced` step holds −3.0 on the mix; the AAC mux into the mp4 can
   land up to about 1 dB above it, per the template description, #497 — −2.17 measured
@@ -4653,7 +4668,7 @@ expected:
   the input: start_frame 0/124/236/345 and num_frames 124/112/109/124, the last two with
   `overlap_frames: 12`.
 It is a **finding** if the film reads 44100 Hz, if the score's resample line is missing or
-reads `44100 → 44100` / `48000 → 48000` (a relabel), or if the shots collapse to one, or if the film's peak is above −1.0 dBFS.
+shows `source_sample_rate` = `target_sample_rate` (a relabel), or if the shots collapse to one, or if the film's peak is above −1.0 dBFS.
 Not asserted here: a `joined_audio_short_after_mux` warning of 32 samples appeared when this
 case was written (#435).
 cleanup: `delete_output(job_id=…)`.
@@ -5961,8 +5976,9 @@ break a join silently. This case fixes that route. It runs on the CPU in about 1
    `{"name": "film", "task": {"command": "dissolve_videos", "arguments": {"videos": ["asset:qa-cast/ep62-shot1-accuse.mp4", "previous_result:hal_shot", "asset:qa-cast/ep62-shot2-deflect.mp4"], "dissolve_frames": 12, "fps": 24, "match_levels": "rms", "match_levels_dbfs": -24}}, "result": {"content_type": "video/mp4", "fps": 24, "subfolder": "final"}}]}`
 2. `get_gallery_metadata` on the `film` file, and `assess_output` on it.
 expected:
-- Validation is clean and plans 4 steps. The run `succeeds`, and its only warning is `dissolve_videos`' sample-rate
-  resample to 48000 Hz (32000/48000/32000 in).
+- Validation is clean and plans 4 steps. The run `succeeds`, and its warnings are `dissolve_videos`' sample-rate
+  resample to 48000 Hz (32000/48000/32000 in) and one `match_levels_held` line for video 1
+  (`held to -3.0 dBFS`, dw#1248); no others.
 - The film is **960×544**, 345 frames, 24 fps, 14.375 s, 48000 Hz stereo, and `audio_stream_seconds`
   equals the duration. Its `media.shots` read start_frame 0/112/221 and num_frames 112/109/124, with the last two
   at `overlap_frames: 12`.
@@ -10725,7 +10741,9 @@ expected:
   `shot@confess` 248/41, `shot@gasp` 289/33, `trim@hal_wide` 322/124, `trim@hal_close` 446/124;
   start_sample 0/248000/496000/578000/644000/892000, num_samples 248000/248000/82000/66000/248000/248000.
   Shots 2–6 carry `hard_cut: true`; only shot 5 (the outer seam) carries `seam_fade_ms: 200.0`.
-- `assess_output`: no findings; `seam_hole` skipped for seam 4 only. `analyze_seams` lists five seams, seam 5
+- `assess_output`: no findings other than, allowed but not required, one `shot_bed_drop` warn
+  (dw#1718) on `shot@confess` (21.25 against a threshold of 20.0 on 2026-11-27: the source cut's
+  dialogue shot has no ambience bed); `seam_hole` skipped for seam 4 only. `analyze_seams` lists five seams, seam 5
   `between` the second `trim@hal_wide`/`trim@hal_close` pair at 18.583 s.
 It is a **finding** if any start_sample or num_samples is off the 2000-per-frame grid (227850 left unscaled
 on the direct ep157 shots), if the repeated names collapse or merge into fewer than six shots, or if
@@ -20104,7 +20122,9 @@ expected:
     the values against it.
   - Otherwise compare against the documented fields in the tasks guide.
 - (1) and (2): `rules_applied`, `rules_skipped` and every finding's code are drawn from the rules table, and no
-  rule or code names a share, floor, hiss, brightness or drift.
+  rule or code names a share, floor, hiss, brightness or drift, except `shot_bed_drop` (dw#1718), which reads
+  `noise_floor_dbfs` through `floor_below_neighbours_db`. No rule reads `high_share`, the look fields or
+  `segment_looks`.
 - (2): the same 400 as C-F102, naming the probes: `analyze_shots`, `analyze_seams`, `analyze_sync_drift` and, since #1552,
   `analyze_held_frames`.
 - (3): the parameters are still exactly `video`, `shots` and `device`. (4): `assessment` is still exactly those
@@ -20115,7 +20135,8 @@ expected:
     `noise_floor_dbfs` (10th percentile of 50 ms RMS windows, `null` under 0.5 s);
   - the floor row says that in dense dialogue it may track speech tails rather than hiss, as the plan's risk
     section promises;
-  - the rules table gains no row.
+  - the rules table gains no row from #1464 (rows another verified issue added since, such as `shot_bed_drop`
+    from dw#1718, are not this case's subject).
 - (6): the skill says that `high_share` and `noise_floor_dbfs` rising together down a chain's segments is the
   dulling-voice signature, to be judged by ear with `get_output_audio`.
 - A **finding**: a new key in seams or sync, a new rule or finding code, a new probe or task argument, a missing
