@@ -1744,7 +1744,7 @@ non-null reference count. Only one error is reported, for the largest member. It
 `arguments.shots[i]` when the caller supplied `shots`, else `variables.shots[i]`. Its message
 names `shot@<name>`, the frames, the size, the reference count and the formula.
 
-Free: validate calls only. The GB figures below are at the plan v1 calibration: base 16.0,
+Free: validate calls only. The GB figures below are at the #1586 calibration: base 15.7,
 28.71 bytes per voxel, 1.0 GB per reference.
 Setup:
 1. `get_workflow("templates/minimax/dialogue-short", variables_only=true)`, and take its `shots`
@@ -1757,12 +1757,12 @@ Setup:
 Steps (all `validate_workflow`, `name="templates/minimax/dialogue-short"`, workspace
 `regression-model-specific`; every call also passes `"width": 1344, "height": 768`):
 1. Arguments `{"shots": S1, "character_a_voice": V}`. `cold_open` then has 3 non-null refs at 209
-   frames (~24.8 GB). `tag` has 3 at 141 frames (~22.9). The others are 124 frames with 2 or
+   frames (~24.47 GB). `tag` has 3 at 141 frames (~22.59). The others are 124 frames with 2 or
    fewer refs.
 2. Arguments `{"shots": S1}`, with voices at their null defaults. `cold_open` then has 2 refs at
-   209 frames (~23.8).
-3. Arguments `{"shots": S2, "character_a_voice": V}`. `cold_open` is ~24.8 and `tag` is 3 refs
-   at 226 frames (~25.2).
+   209 frames (~23.47).
+3. Arguments `{"shots": S2, "character_a_voice": V}`. `cold_open` is ~24.47 and `tag` is 3 refs
+   at 226 frames (~24.94).
 4. The same shape at the template's own defaults, with only the size overridden:
    `{"character_a_voice": V, "character_b_voice": V}`.
 5. An inline copy of the whole template (`get_workflow` definition) whose `shots` variable
@@ -1774,13 +1774,13 @@ expected:
   - `shot@cold_open`;
   - 209 frames and 1344x768 (or the product `1344*768*209`);
   - 3 references;
-  - ~24.8 GB and the RTX 3090 ceiling (23.6 GB card capacity, or the 24 GB entry);
+  - ~24.47 GB and the RTX 3090 ceiling (23.6 GB card capacity, or the 24 GB entry);
   - `#479`.
 - Step 2 is `valid: true`, so nulling one reference in the heavy shot clears it.
 - Step 3 is `valid: false` with exactly one VRAM error, at `arguments.shots[4]`, naming
   `shot@tag` and 226 frames. That is the largest member, even though `cold_open` is also over.
-- Step 4 is `valid: false` with exactly one VRAM error, at `variables.shots[4]`, naming
-  `shot@tag`, 141 frames, 4 references and ~23.9 GB (above the 23.6 GB card capacity, #900).
+- Step 4 is `valid: true`: `tag` at 141 frames with 4 references projects ~23.59 GB, under the
+  23.6 GB card capacity (#900, #1586).
 - Step 5 is `valid: false` with the one error at **`variables.shots[0]`**, naming `shot@cold_open`.
 It is a **finding** if:
 - any over-ceiling member validates clean;
