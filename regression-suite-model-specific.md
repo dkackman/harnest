@@ -3529,8 +3529,9 @@ expected (messages verbatim):
 - (d), (e) and (f) give the same sentence with their own value after `got`. Each ends with a
   suggestion naming the multiples of 17 on either side. (f), captured before the split, ends
   verbatim `got 18 - use 17 or 34`. (d) and (e) both end `- use 0 or 17`.
-- (i) `valid: true`, carrying only the carrier's no-`seed` step-cache warning, which is not a
-  guide error. This was captured before the split.
+- (i) `valid: true`, carrying only the carrier's no-`seed` step-cache warning and the inherited
+  VRAM (`vram_config_differs`, #954) and cost (#797) warnings, none a guide error. The no-`seed`
+  warning was captured before the split.
 - `run_workflow` on (a) is refused with the same error and queues no job.
 At #771's verification, also re-run M-F113 and M-F114. Both must pass unchanged.
 It is a **finding** if a count or frame message changes wording or path, if 4 clips or a
