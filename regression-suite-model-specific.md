@@ -381,7 +381,7 @@ in a 20.67 s container: the song kept playing over nothing for 10.3 s, and `fram
 contradicted `duration_seconds` in the same metadata block — invisible to an agent that cannot watch
 the file, and the same failure shape as #104. The fix removed the `soundtrack` step entirely and let
 `pair_audio` fit the whole song to the picture (`"fit": "video"`), which is why the assertion below
-is on the manifest as well as the numbers: a re-introduced slice step is the regression, even if some
+is on the manifest as well as the numbers: a re-introduced fixed-length slice step is the regression, even if some
 future default happens to make the arithmetic come out right.
 Model/pipeline: MiniMax-H3 shots + MiniMax Music 3 score, via `templates/minimax/music-video`. Costs
 a real run — ~830 s for the two-shot form on a 3090.
@@ -397,9 +397,11 @@ expected:
   consumed by `balanced`'s `normalize_audio` and is not warned about, and M-F021 pins that absence.
   A headroom warning naming a `shot@<entry>` intermediate is M-F011's and M-F021's business, not
   this case's; only a padding warning here is a finding.
-- **No slice-the-song step in the manifest.** The steps are `draw_singer`, `write_song`,
-  `slice@<entry>` per shot, `shot@<entry>` per shot, `edit`, `balanced`, `music_video`. A step
-  that slices `write_song` to a frame count is the coupling this case exists to keep out.
+- **No fixed-length slice of the song in the manifest.** The steps are `draw_singer`, `write_song`,
+  `slice@<entry>` per shot, `shot@<entry>` per shot, `trim@<entry>` per shot (#627), `edit`,
+  `song_cut@<entry>` per shot, `song_cuts`, `balanced`, `music_video` (#788). Each `song_cut@<entry>`
+  slices the song at that entry's own `start_frame` for its `cut_frames`; a step that slices
+  `write_song` to a fixed total frame count is the coupling this case exists to keep out.
 - **The song itself is generated whole.** `write_song`'s intermediate is ≈ 30 s
   (`audio_duration`), i.e. the fit happens at pair time and not by truncating generation. Without
   this bullet a "fix" that shortened the song to match would pass the first one.
@@ -417,6 +419,7 @@ succeeded in 831.2 s, `warnings: []`, final `frame_count: 248` / `duration_secon
 against the pre-fix run's 248 / 20.666). Proposed by the implementer; the manifest bullet, the
 whole-song bullet and the carried-forward six-shot direction are mine.
 amended: 2026-11-26, suite review: the `write_song` headroom warning is no longer called expected; #286 (verified 2026-09-21) suppresses it and M-F021 asserts it absent.
+amended: 2026-11-27, harnest#376: manifest bullet lists `trim@`/`song_cut@`/`song_cuts` and forbids only a fixed-length song slice, after #627 and #788 (both verified).
 
 ### M-F008 — the 768p H3 path renders at its trained canvas on its trained schedule
 `templates/minimax/video-with-audio-768p` pins a combination rather than leaving it to arguments:
