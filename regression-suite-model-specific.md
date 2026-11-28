@@ -2225,7 +2225,7 @@ expected:
 - The job succeeds with no warning except, at most, `pair_audio`'s `audio_padded_to_video` or
   `audio_trimmed_to_video` from `pair_audio` for an off-by-a-few-ms audio length.
 - The manifest has:
-  - the `upscaled` file under `intermediate/`, 960×544 and 121 frames;
+  - the `upscaled` file under `intermediate/`, 960×576 (the 64-grid render; `final/` cuts it back) and 121 frames;
   - one `with_source_audio` file under `final/`, 960×544, **121 frames, 24 fps**, according to
     `get_gallery_metadata` on it.
 - **The soundtrack is the source's.** On the final file, `get_output_audio` has the source's sample rate and
