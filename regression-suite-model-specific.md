@@ -1135,26 +1135,27 @@ submissions fail in under 3 s with no model load; the one accepted submission is
 its load phase (~90 s wall, a cooperative cancel waits for the load to reach a boundary).
 expected:
 - `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"num_frames": 353}, acknowledged_cost=true, wait_seconds=20)`
-  → **`status: failed`** within the wait, **`run_id: null`**, an empty `manifest`, and `job.error`
-  beginning `Workflow execution error:` followed by the *same* ceiling message `validate_workflow`
-  reports for these arguments (the product `960*544*353`, `projects to … GB VRAM`, `above the
-  24 GB declared for RTX 3090`, `#265`). `progress.phase` must be null — no `loading` ever began.
+  → **refused at submit** (#676): the call returns a tool error and no job is created (`list_jobs`
+  shows none), so no `loading` phase ever begins. The error carries the *same* ceiling message
+  `validate_workflow` reports for these arguments (the product `960*544*353`, `projects to … GB
+  VRAM`, `above the 24 GB declared for RTX 3090`, `#265`), followed by `This job needs … GB of
+  VRAM, more than any card here has`.
   353 is the first grid point past the confirmed-safe 345, so it sits just over the ceiling at the
   2026-09-21 calibration; if a recalibration admits it, move to the next refused grid point rather
   than calling this a finding.
 - `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"num_frames": 121, "width": 1920, "height": 1088}, acknowledged_cost=true, wait_seconds=15)`
-  → **`status: failed`**, `run_id: null`, the `1920*1088*121` ceiling message — the run-time gate
-  reads width and height, not only frames, same as the validate-time one.
+  → **refused at submit** the same way, with the `1920*1088*121` ceiling message — the run-time
+  gate reads width and height, not only frames, same as the validate-time one.
 - `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"num_frames": 345}, acknowledged_cost=true, wait_seconds=6)`
   → **`status: running`**, a non-null `run_id`, `progress.phase: "loading"` — the confirmed-safe
   point is *not* over-refused by the run-time gate. Then `cancel_job(job_id)` and `wait_for_job`
   until `status: cancelled`; the job isn't meant to finish (M-F023 is the case that runs it out).
-It is a **finding** if 353 or 1920x1088 comes back `running`/`queued` (or reaches a `loading`
-phase, or gets a `run_id`) before failing, if the run-time error text differs from the
+It is a **finding** if 353 or 1920x1088 creates a job (comes back `running`/`queued`, reaches a
+`loading` phase, or gets a `run_id`), if the run-time error text differs from the
 validate-time text for the same arguments, if it degrades to a `warnings` entry on a running job,
 or if 345 is refused on submission.
 cleanup: `delete_output(job_id=<the 345-frame job's id>)` — the cancelled run leaves a run
-directory; the two refused jobs have none (`run_id: null`), nothing to delete for them.
+directory; the two refused submissions create no job, so there is nothing to delete for them.
 source: tester, verified in #265 (the run-path half; the H3 half split to #324), model `opus` via
 provider `anthropic`, on 2026-09-21 against `lem` `develop @ 7e1a1a5`: job `1ba74592fb81` (353)
 failed in 2.9 s and `872838db5cb7` (1920x1088x121) in 0.3 s, both `run_id: null` with the
@@ -1278,9 +1279,11 @@ expected:
 - `validate_workflow(name="templates/restore-faces", arguments={})` → `valid: true` (the no-seed
   step-cache warning is expected).
 - `run_workflow(workflow_path="templates/restore-faces", arguments={}, acknowledged_cost=<bound plan>,
-  wait_seconds=55)`, then `wait_for_job` if still running → `status: succeeded`, `warnings: []`, no
-  `error`. The manifest has two steps: `generate` (one `intermediate/*.jpg`) and `restore` (one
-  `final/*.jpg`).
+  wait_seconds=55)`, then `wait_for_job` if still running → `status: succeeded`, no `error`, and no
+  warnings other than the no-seed step-cache warning, one `vram_config_differs` naming
+  `models/z-image` (#954: the step sets no offload), and on mps `device_adjusted` notes such as
+  automatic attention slicing (#1727). The manifest has two steps: `generate` (one
+  `intermediate/*.jpg`) and `restore` (one `final/*.jpg`).
 It is a **finding** if the run fails with the parallel-loading `NotImplementedError` or any load-time
 error, or if `low_cpu_mem_usage: false` reappears in the template.
 cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole.
@@ -1823,7 +1826,7 @@ Steps (workspace `regression-model-specific`):
 4. `list_jobs` again.
 expected:
 - Steps 2 and 3 each return a refusal:
-  - `status: failed`, `run_id: null`;
+  - refused at submit (#676): a tool error, no job created;
   - an error carrying the same ceiling message `validate_workflow` gives for the same input
     (M-F043 step 4, M-F044 step 1), including `shot@cold_open` for step 3.
 - Step 4 shows no new queued or running job, and nothing loaded a model.
@@ -1873,19 +1876,20 @@ Free: validate calls only.
 Setup: build **N3** from R3 (M-F043: the inline copy with 3 references) by deleting its
 top-level `vram_estimate` and `cost`.
 Steps (`validate_workflow(workflow=N3, ...)`, workspace `regression-model-specific`):
-1. `arguments={"width": 1344, "height": 768, "num_frames": 209}` (3 refs, ~24.8 GB).
-2. `arguments={"width": 1344, "height": 768, "num_frames": 175}` (~23.8 GB).
+1. `arguments={"width": 1344, "height": 768, "num_frames": 209}` (3 refs, ~24.5 GB).
+2. `arguments={"width": 1344, "height": 768, "num_frames": 175}` (~23.5 GB).
 3. `arguments={"num_frames": 124}` (960x544, the template's size).
-4. `arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}` (2 refs, ~25.2).
+4. `arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}` (2 refs, ~24.9).
 expected:
 - Step 1 is **`valid: true`** with exactly one inherited-ceiling warning. It names:
-  - `templates/minimax/reference-to-video`;
-  - the projected GB (~24.8), the 24 GB it is over, and the reference count;
+  - a Ref2VA template that loads the same pipeline (today `templates/minimax/composable-references`,
+    by #502's fewest-steps-then-name rule), never a T2VA or FL2VA one;
+  - the projected GB (~24.5 at the #1586 calibration), the 24 GB it is over, and the reference count;
   - that the copy's config may differ from the template's.
 
   Any other warning, such as no seed, stays as it is today.
 - Steps 2 and 3 carry no inherited-ceiling warning.
-- Step 4 carries the warning at ~25.2 GB.
+- Step 4 carries the warning at ~24.9 GB.
 It is a **finding** if:
 - step 1 is refused, since an inherited ceiling must never be an error;
 - step 1 has no warning, or its warning doesn't name the source template;
@@ -1938,9 +1942,9 @@ Steps:
 2. `validate_workflow(workflow=NT)` with no arguments.
 3. `validate_workflow(workflow=NM, arguments={"width": 1344, "height": 768, "num_frames": 209})`.
 expected:
-- Step 1 is `valid: true` with one inherited-ceiling warning. It names a T2VA template
-  (`templates/minimax/video-with-audio-768p` or `video-with-audio`), **never**
-  `reference-to-video`, and its figure counts no references.
+- Step 1 is `valid: true` with one inherited-ceiling warning. It names a T2VA template (today
+  `templates/minimax/add-sound`, by #502's fewest-steps-then-name rule), **never** a Ref2VA one
+  such as `reference-to-video`, and its figure counts no references.
 - Step 2 has no inherited-ceiling warning.
 - Step 3 has no inherited-ceiling warning. Any error or warning about the unknown model itself is
   outside this case.
@@ -2458,7 +2462,7 @@ Steps:
 3. `validate_workflow(workflow=W)`, with no arguments (the defaults 960x544x124 project to about 20 GB).
 expected:
 - Steps 1 and 2 are each `valid: false`, with an error at `variables.shots[0]` naming `shot@one`, the
-  projected VRAM (172.76 GB with 2 references), and the device's own ceiling it exceeds.
+  projected VRAM (172.46 GB with 2 references), and the device's own ceiling it exceeds.
 - Step 3 is `valid: true` with no VRAM error or warning.
 It is a **finding** if step 1 or step 2 is `valid: true`. A missing `cost` must not skip the check.
 cleanup: none.
@@ -3795,7 +3799,8 @@ expected:
   `composable-references` counts its `motion` video reference like any other.
 - Per-reference arm (step 2), `video-with-audio` and `video-with-audio-768p`: the T2VA templates'
   `vram_estimate` is unchanged from before #479. Per M-F026 that means no `gb_per_reference` is
-  required, and the 768p breakpoint is between 277 and 294 frames.
+  required, and on a 3090 the 768p breakpoint is between 260 and 277 frames (checked against the
+  card's 23.6 GB, #900).
 - LTX arm (step 3): 900 frames is still `valid: false`, with the two co-reported errors M-F022
   pins. 121 is still `valid: true`.
 - Adapter arm (step 4): every template returns no error whose path ends in `weight_name` or

@@ -6054,8 +6054,11 @@ with distinct names `s1`, `s2`, ….
 3. The same with `arguments={"shots": [10 entries]}`.
 expected:
 - `plan.list_entries.shots` is 5, 2 and 10.
-- If step 3's `basis` is `per_entry`, `derived` or `other_device`, its `minutes` is 5× step 2's
-  (within 0.1). With `other_device` or `derived`, step 2's is also 2/5 of step 1's.
+- Compare each step's figure without the first-pass term (#1764: `first_at_shape` adds "plus N min
+  first pass" to `minutes`): `cached_minutes` when present, else `minutes`. If step 3's `basis` is
+  `per_entry`, `derived` or `other_device`, its figure is 5× step 2's (within 0.3, rounding). With
+  `other_device` or `derived`, step 2's is also 2/5 of step 1's times 124 / the default shots' mean
+  `num_frames` (127.4 today), within 0.3.
 - If any basis is `observed` or `unknown`, report the three figures and bases rather than a ratio,
   but step 3's `minutes` must still not equal step 2's unless both are `null`.
 It is a **finding** if steps 2 and 3 quote the same non-null `minutes`. That is #589: the
@@ -10333,7 +10336,10 @@ expected:
 - Step 1: `valid: false`, with one error at `variables` in this form (as on mini-ai on
   2026-10-08): `num_images_per_prompt = 1 projects to <2L>.00 GB VRAM, above the <L> GB
   declared for the largest card here (<C>). Declared ceiling: <2L> GB base plus 0 bytes per
-  unit of num_images_per_prompt`.
+  unit of num_images_per_prompt`. When W's `cost` declares a card for this server's accelerator
+  that the need exceeds, the one error names that card instead: `above the <n> GB declared for
+  <name>` (on lem, `above the 24 GB declared for RTX 3090`), with no second "largest card here"
+  error (#1053).
 - Step 2 is refused before anything queues, with an HTTP 400 / tool error whose text names
   the largest card (its GPU name and usable figure, e.g. `NVIDIA GeForce RTX 3090 (23.6 GB
   usable)`) and the job's need. `list_jobs` shows no job from it.
@@ -12650,13 +12656,15 @@ Free. Workspace `regression-complete`.
    `validate_workflow(..., workspace=<ws>)`, or `use_workspace` first if the name doesn't resolve.
    Skip this call, and say so, if there is none.
 expected:
-- Every call is `valid: true` with a non-null `plan` and no `host_memory` key: absent, not `null`,
-  not `{}`.
+- Every call is `valid: true` with a non-null `plan`. Call 2 has no `host_memory` key: absent, not
+  `null`, not `{}`. Calls 1 and 3 have either no `host_memory` key, or one with `basis: "inherited"`
+  (a catalog entry loading the same single pipeline identity has runs here, #1436); never `observed`
+  or `fit`.
 - No call has an error or warning that mentions host memory.
 - Call 3 still has its usual `plan.estimate` (`observed` from the old rows). Pre-column rows count
   for minutes but not for RAM.
-It is a **finding** if any call errors, gains a `host_memory` figure from nothing, or returns
-`plan: null`.
+It is a **finding** if any call errors or returns `plan: null`, if call 1 or 3 reports `basis`
+`observed` or `fit`, or if call 2 gains any `host_memory` figure.
 cleanup: none.
 metrics: none.
 
@@ -12666,15 +12674,15 @@ GPU, under a minute. Workspace `regression-complete`.
 Setup: W is `get_workflow("templates/text-to-image")` with `variables.seed` 42 and
 `num_inference_steps` 200, so a run lasts long enough to cancel. Set the pipeline step's `offload`
 to a value that, by C-F489's call 1, no run on this box has used. Save it as `c-f490-t2i`.
-1. `validate_workflow(name="c-f490-t2i")`. Expect no `host_memory`; if there is one, pick another
-   offload value.
+1. `validate_workflow(name="c-f490-t2i")`. Expect no `host_memory`, or one with `basis: "inherited"`
+   (#1436); if it has another basis, pick another offload value.
 2. `run_workflow(name="c-f490-t2i", acknowledged_cost=<plan>)` → J1. Poll `get_job(J1)` until its
    events show the denoise phase, then `cancel_job(J1)`. Its final status should be `cancelled`.
 3. Repeat call 1.
 4. Failed arm (optional): if this run knows a way to make the same definition fail at run time
    after the model loads, run it, then repeat call 1. Say whether this arm ran.
-expected: calls 3 and 4 still have no `host_memory` key. A cancelled or failed job's peak is not
-history.
+expected: calls 3 and 4 still have no `host_memory` key, or one with `basis: "inherited"` (#1436),
+as call 1 had. A cancelled or failed job's peak is not history.
 It is a **finding** if call 3 or 4 reports `basis: "observed"` with `runs` ≥ 1.
 cleanup: `delete_output(job_id=J1, acknowledged_cost=true)` (and the failed arm's job), then
 `delete_workflow("c-f490-t2i", acknowledged_cost=true)`.
@@ -17663,7 +17671,9 @@ Pinned before stage A (lem, 2026-11-13): (a) returned `valid: true`, no warnings
 `plan.estimate.basis: "derived"`, `minutes: 4.4`, `scaled: "scaled from the curated 7.9 min: steps 5 vs 9"`.
 expected:
 - (a) matches the pinned reply: `basis: "derived"`, a `scaled` string naming `steps 5 vs 9`, and `minutes` equal to
-  the curated minutes × 5/9, rounded to 0.1. A change to the curated figure since then is not a finding, as long as
+  the curated minutes × 5/9, rounded to 0.1. When this box has 1 or 2 runs at 5 steps, the quote is instead
+  `basis: "observed"` with `tempered: true` (#319), and its `curated_minutes` is the curated minutes × 5/9; `scaled`
+  still names `steps 5 vs 9`. A change to the curated figure since then is not a finding, as long as
   the ratio holds. A `scaled` string that names passes (`4 vs 8`), a step list, or a default other than the template's
   own is a **finding**: stage A changed the count for a pipeline with no step list.
 - (b) is scaled up by 13/9 from the same curated figure, with `steps 13 vs 9` in `scaled`.
