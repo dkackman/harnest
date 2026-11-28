@@ -340,8 +340,8 @@ Set the session with `use_workspace("default")` for the duration and restore
 `use_workspace("regression-smoke")` at the end. Nothing is written to
 `default` — the pin is what sends every write into `regression-smoke`, which
 is the whole assertion.
-expected: the pinned `keep_output` returns an `asset:` reference whose `path`
-is under `regression-smoke/assets`, and the pinned `list_gallery` returns
+expected: the pinned `keep_output` returns an `asset:` reference with
+`workspace: "regression-smoke"` (it carries no `path` since #527), and the pinned `list_gallery` returns
 `regression-smoke`'s files with `workspace: "regression-smoke"` in the reply
 and a `url` on each entry already carrying `?workspace=regression-smoke`.
 "Path does not exist", with the workspace segment missing from the path it

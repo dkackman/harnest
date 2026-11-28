@@ -2157,8 +2157,9 @@ expected:
 - The job is `succeeded`, not `failed`. `warnings` holds one `mix: mix_audio:` entry and one
   `xfade: crossfade_audio:` entry, each saying the tracks carry different sample rates,
   naming both tracks with their rates (`ep11-bed.wav: 32000 Hz`, `ep15-song.mp3: 44100 Hz`),
-  saying it is resampling them all to **44100 Hz**, and naming both remedies (`sample_rate`
-  to pin a target, `resample_audio` ahead of the step). Neither step emits the #180
+  saying it is resampling them all to **44100 Hz**, naming `resample_audio` ahead of the step
+  as the remedy for another rate, and naming `sample_rate` only to warn that it relabels
+  rather than resamples (#586). Neither step emits the #180
   "relabeled … not resampled" warning. (An `xfade:` no-headroom warning is expected too —
   the song decodes at +0.76 dBFS — and is not part of this case.)
 - Step 2: `mix` is `sample_rate: 44100`, `duration_seconds` 30.02 ± 0.05 (the longer input,
@@ -2169,7 +2170,8 @@ expected:
 It is a **finding** if either step fails with "needs one sample rate" (or any) error, if a
 step succeeds with no mismatch warning, if the target is 32000 (first-listed rather than
 highest, with no pin given), if either output's rate or duration disagrees with the above, or
-if a `get_task` description still calls a given `sample_rate` merely the one that "wins".
+if a `get_task` description still calls a given `sample_rate` merely the one that "wins",
+or if the warning advises passing `sample_rate` to pin a target.
 cleanup: `delete_output` on the `regression-audio-rates/<run>` directory.
 metrics: none.
 source: moved from S-F096 (curation 2026-09-22, harnest#2); tester, verified in #293 on 2026-09-21 over MCP as model `opus` via provider
@@ -4226,9 +4228,10 @@ expected:
     must be at most 345, and "Accepted: 124 to 345, 17 * n + 5".
   - 123 is `valid: true`, with a warning that it rounds up to 124 ("The run generates 124,
     not 123").
-- Step 2: every H3 shot template (`templates/minimax/…`) still shows `"constraints":
+- Step 2: every H3 shot template (`templates/minimax/…`) that takes `num_frames` still shows `"constraints":
   {"num_frames": "17*n+5, 124-345, rounds up"}`. `templates/minimax/shots-batch` shows it under
-  `lists.shots.constraints`. The LTX templates still show `"8*n+1, 9+"`.
+  `lists.shots.constraints`. The LTX templates that take `num_frames` still show `"8*n+1, 9+"`, except
+  `templates/ltx2/alpha-matte`, which shows `"8*n+1, 9-145"` (#1079).
 - Step 3:
   - The `minimax-h3` call returns a non-empty list whose every `details[*].intended_model` is
     `minimax-h3`. It had 36 entries on 2026-09-24; that count changes with the library.
@@ -8683,8 +8686,9 @@ expected:
   - aligned lengths are 1, 5 or 17m+5, and any other length is snapped down with a warning;
   - a guide may not run past `num_frames`;
   - the limit of 4 guides;
-  - `guides` is refused on `ref2va` and on non-H3 steps;
-  - `guides` is H3 `t2va`/`fl2va` only.
+  - `guides` is refused on non-H3 steps;
+  - on `ref2va`, `guides` takes exactly one clip, at `frame` 0, covering the whole render (#1413); otherwise
+    `guides` is H3 `t2va`/`fl2va` only.
 - (2) The skill mentions `guides` and points to the subsection.
 It is a **finding** if the subsection is missing or its example doesn't validate. Paste the example
 into `validate_workflow` with the `video` set to `asset:qa-cast/ep6-cold-open.mp4`.
@@ -8745,8 +8749,10 @@ expected:
   - "not a video" for g-h;
   - the 4-guide limit for i;
   - the missing key for j;
-  - the step type or workflow for k-l.
-- k must say `ref2va` isn't supported, not that the argument is unknown to the pipeline.
+  - the ref2va one-full-length-guide rule for k; the step type or workflow for l.
+- k is refused for being shorter than the render: the message states the ref2va rule (exactly one clip, at
+  frame 0, covering the whole render, #1413) and names the 22-frame guide and the 124-frame render. It does
+  not say the argument is unknown to the pipeline.
 - No job is queued: `list_jobs` shows no new job.
 It is a **finding** if a variant validates, or if one is only refused once `run_workflow` starts.
 "Refused too late" is a failure here.
@@ -9487,15 +9493,15 @@ Free: validation only. A `breaking-change` stage, so the old call shape is expec
 expected:
 - Step 1: no top-level `num_frames` variable. Every default entry has `num_frames: 124,
   lead_frames: 0, cut_frames: 124`. `lists.shots.fields` holds exactly `name`, `prompt`,
-  `start_frame`, `num_frames`, `lead_frames`, `cut_frames`, and `lists.shots.steps` includes
+  `start_frame`, `num_frames`, `lead_frames`, `cut_frames` and the optional `singer` (#801), and `lists.shots.steps` includes
   `slice`, `shot` and `trim`. `constraints` keeps the 17n+5 bound (124 to 345) for the
   entries' `num_frames`, with **no** `snap`. A `song` variable defaults to
-  `{from_previous_result: write_song}`.
+  the string `previous_result:write_song` (#627).
 - Step 2: `slice` reads `lead_frames: item:lead_frames` and `num_frames: item:num_frames`.
   `shot` reads `num_frames: item:num_frames`. A for_each step `trim` runs `trim_video` with
   `start_frame: item:lead_frames` and `num_frames: item:cut_frames`. `edit` gathers `trim`,
-  and `pair_audio` is the one `final` step. `slice` and the balancing step read
-  `variable:song`.
+  and `pair_audio` is the one `final` step. `slice` and `song_cut` read
+  `variable:song`, and the balancing step reads `previous_result:song_cuts` (#788).
 - Step 3 is `valid: true`, and the estimate is the four-shot render it was before.
 - Step 4 is refused as an unknown variable `num_frames`.
 - Step 5 is refused at `arguments.shots[1].num_frames`, naming the 17n+5 grid. It is **not**
@@ -11345,13 +11351,11 @@ source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic
 Free. On `templates/minimax/dialogue-short`, with the voices from C-F416, run `validate_workflow` three times with
 `lora_model_name: null`, `video_shift` 12, `audio_shift` 3, and `num_inference_steps` 9, 12 and 30 in turn.
 expected:
-- All three: `valid: true`, with a `lora_disabled` warning saying the LoRA was dropped and asking for the base
-  schedule. On 2026-10-13, before the stage was built, the warning was still there at 12 and 30 steps, so the case
-  doesn't require it to go away.
-- The section's B3/L5 rungs name the base values that warning asks for: 12 or more steps, `video_shift` 12,
-  `audio_shift` 3, `lora_model_name: null`. The section does not promise that those values make the warning go away.
-It is a **finding** if any set is refused, if the warning is missing, or if the section says the base values clear a
-warning that validate still reports.
+- All three: `valid: true`. At 9 steps there is a null-LoRA ("undertrained") warning saying the LoRA was dropped; at
+  12 and 30 steps there is none (#993: it stops at 10 steps).
+- The section's B3/L5 rungs name the base values: 12 or more steps, `video_shift` 12, `audio_shift` 3,
+  `lora_model_name: null`.
+It is a **finding** if any set is refused, if the warning is missing at 9 steps, or if it appears at 12 or 30.
 cleanup: none.
 metrics: none.
 
@@ -13482,12 +13486,16 @@ Confirm the override argument names with `get_task("segment")`.
 expected:
 - Step 2: each default repo is listed iff step 1 didn't list it, once each, whole-repo shape.
 - Step 3: exactly the two `qa-spec/…` repos, and neither default.
-- Step 3 (unsized): both entries present, each with `gb: null` (not 0, not missing), and `valid: true`.
-- Step 4: `qa-spec/c-f520-det-975` plus the default segmenter repo iff uncached; no default detector.
+- Step 3 (unsized): both entries present, each with `gb: null` (not 0, not missing) and `not_found: true`. The
+  call is `valid: false`, with one error per `qa-spec/…` repo saying it "is not a model repo on Hugging Face"
+  (#1201).
+- Step 4: `qa-spec/c-f520-det-975` plus the default segmenter repo iff uncached; no default detector. The call is
+  `valid: false`, with one such error, on that repo (#1201).
 - Step 5: each real tiny repo that step 1 didn't list appears with a numeric `gb` well under the base
   models' (grounding-dino-tiny about 0.7, sam2-hiera-tiny about 0.16; each within 0.05–1.5).
 - Step 6: each uncached tiny repo is listed with `gb: null`.
-- Every one of calls 2–5 is `valid: true`, and none errors from the download walk.
+- Calls 2 and 5 are `valid: true`. Calls 3 and 4 are `valid: false` only for the not-found errors above (an
+  offline lookup leaves the entry unknown and the call `valid: true`). None errors otherwise from the download walk.
 It is a **finding** if an override doesn't replace its default, one override drops the other default,
 a repo appears twice, or a cached repo is listed. It is a **finding** if an unsized entry (step 3 or
 step 6) is dropped, or its `gb` is 0 or missing. If neither a switch nor an offline server exists,
@@ -13621,7 +13629,7 @@ task's first run pulled its weights unquoted. Three arms; `list_models()` once s
 
 **Arm A: the rest of the A′ table.** The plan's A′ rows beyond arms B and C below and C-F520:
 `diffusion_upscale`, `transcribe_audio`,
-`speech_generation` (and its speechbrain repo), `voice_attribution` (speechbrain only), `image_to_text`,
+`generate_speech` (and its speechbrain repo), `attribute_voices` (speechbrain only), `image_to_text`,
 depth (`Intel/dpt-hybrid-midas`), and the controlnet_aux detectors. For each task:
 1. `get_task(<task>)`: required arguments, and its model argument if any. Use
    `asset:qa-cast/priya-portrait.jpg` for an image, `asset:qa-cast/priya-voice.wav` for audio, a short
@@ -13650,22 +13658,26 @@ model (today `HuggingFaceTB/SmolVLM-256M-Instruct`), `text_generation`'s without
 8. `validate_workflow` on WC, then on WC2.
 9. WC with the judge's `model_name` set to `qa-spec/c-f521-absent-975`.
 expected:
-- Arm A, at defaults: each task's repo(s) appear iff not cached, whole-repo shape. `speech_generation`
-  lists its speechbrain repo as well as its main one when uncached; `voice_attribution` lists speechbrain
+- Arm A, at defaults: each task's repo(s) appear iff not cached, whole-repo shape. `generate_speech`
+  lists its speechbrain repo as well as its main one when uncached; `attribute_voices` lists speechbrain
   only.
 - Arm A, with an override: the `qa-spec/…` repo appears and the default does not.
-- Arm A: every call is `valid: true`, with no error from the walk.
+- Arm A: every call at defaults is `valid: true`, with no error from the walk. Every call with a `qa-spec/…`
+  override is `valid: false`, with an error naming that repo ("is not a model repo on Hugging Face") and its entry
+  carrying `not_found: true` (#1201); no other error comes from the walk.
 - Arm B, step 5 is `valid: true`. If step 4 did **not** list the repo, `plan.downloads_required` has
   exactly one entry with `repo: "briaai/RMBG-2.0"`, `gb` numeric > 0 or null, `gated`
   true/false/null/`"auto"`, `access_blocked` a boolean, and no `filename` (absent or null): a whole-repo
   entry, today's shape. If step 4 **did** list it, `downloads_required` is `[]`.
 - Arm B, step 6 (if the argument exists): exactly one entry, `repo: "qa-spec/c-f519-absent-975"`, `gb`
-  null or numeric, and no entry for `briaai/RMBG-2.0` (the override replaces the default). A not-found
-  note in `warnings` is acceptable; an error or `valid: false` caused by the download walk is not.
+  null or numeric, and no entry for `briaai/RMBG-2.0` (the override replaces the default). The entry
+  carries `not_found: true` and the call is `valid: false`, with one error naming that repo (#1201); any other
+  error caused by the download walk is not acceptable.
 - Arm C, step 8: WC lists the judge's default repo iff uncached, with `gb` numeric > 0 or null,
   whole-repo shape. WC2 lists each distinct uncached default repo **once** (two entries if the defaults
   differ, one if they are the same repo), never once per step. A cached repo is not listed.
-- Arm C, step 9: `qa-spec/c-f521-absent-975` is listed and the judge's default repo is not.
+- Arm C, step 9: `qa-spec/c-f521-absent-975` is listed (with `not_found: true`, and the call `valid: false` with
+  one error naming it, #1201) and the judge's default repo is not.
 It is a **finding** if:
 - arm A: an override is ignored, a cached repo is listed, or an uncached default is missing. Record per
   task which arms were exercisable (cached defaults with no override argument can't show the positive
@@ -15072,7 +15084,8 @@ expected:
   - `kandinskylab/Kandinsky-6.0-Lite-distill-5s-Diffusers`: only `audio_vae/` and `vocoder/` config
     and safetensors files (pinned at a sha starting `4c487e8b`), not the rest of the K6 repo;
   - `apple/DFN5B-CLIP-ViT-H-14-384`: its weights file(s) and tokenizer files.
-  Files already cached are still named, marked present. No entry is `v1-44.pth`,
+  If they are already cached, `downloads_required` is `[]`, as for every model (it lists only missing
+  downloads, #382, #975), and the naming, pin and size checks can't be made on that box. No entry is `v1-44.pth`,
   `best_netG.pt` or `bigvgan_generator.pt`, and none comes from an NVIDIA BigVGAN repo. The estimate is
   a number or an explicit `unknown` basis.
 - 3: refused (`valid: false`) naming V as missing, not a run-time error.
@@ -23438,7 +23451,7 @@ expected:
 cleanup: `delete_workspace(name="cf1222-ui", acknowledged_cost=true)`.
 metrics: none.
 
-### C-F1227 — `GET /api/workspaces/<ws>/changes` answers an epoch, a workspaces counter and six integer kinds; reading it moves nothing, each MCP write or delete grows its own kind and only that kind, a refused write moves nothing, and a workspace created or deleted moves `workspaces` in every workspace's snapshot and nothing else
+### C-F1227 — `GET /api/workspaces/<ws>/changes` answers an epoch, a workspaces counter and eight integer kinds; reading it moves nothing, each MCP write or delete grows its own kind and only that kind, a refused write moves nothing, and a workspace created or deleted moves `workspaces` in every workspace's snapshot and nothing else
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 
 absorbs: C-F1226, C-F1228, C-F1231, C-F1230 (merged 2026-11-26, suite review; C-F1230 merged 2026-11-27, suite review, pass 2)
@@ -23481,7 +23494,7 @@ asset_name="cf1231/x.exe")`; `delete_prompt(name="cf1231-none")`; `delete_worksp
 plus that same `fetch` again.
 expected:
 - Arm A: both reads answer 200, JSON, with `epoch` (a non-empty id), `workspaces` (an integer ≥ 0) and `kinds` holding
-  exactly `requests`, `prompts`, `workflows`, `assets`, `gallery` and `jobs`, each an integer ≥ 0.
+  exactly `requests`, `prompts`, `workflows`, `assets`, `gallery`, `jobs`, `models` and `loras`, each an integer ≥ 0.
 - Arm A: the second snapshot equals the first, field for field, in both workspaces: reading is not a write.
   `workspaces` is the same in both workspaces' snapshots (one server-wide counter). `epoch` is per workspace: each
   workspace's epoch is stable across reads, and epochs are not compared across workspaces.

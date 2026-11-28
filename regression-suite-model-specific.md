@@ -675,7 +675,7 @@ Model/pipeline: LTX-2.5 + `Lightricks/LTX-2.5-22b-IC-LoRA-Deblur` and
 expected:
 - **Both are in the catalog, as shots that need media.** `list_workflows(shape="shot",
   traits="needs-input-media")` lists both. Each carries `constraints.num_frames: "8*n+1, 9+"` and
-  traits including `has-audio` + `needs-input-media` but **not** `image-conditioned` — the reference
+  traits including `needs-input-media` but **not** `has-audio` (the output is silent, #1108) or `image-conditioned` — the reference
   is a clip, and a template that claims `image-conditioned` here is mislabelled for a caller
   filtering on it.
 - **Each names its own adapter, and only its own.** With a real video asset supplied —
@@ -692,7 +692,7 @@ expected:
   'blurry.mp4' not found in …". A caller who ships the template without pointing it at their own
   footage must be stopped at validate, not after the weights load.
 - **The trained bucket is on the workflow.** `get_workflow(name="templates/ltx2/restore-deblur",
-  variables_only=true)` → `width` 960, `height` 544, `num_frames` 121, `frame_rate` 24.0,
+  variables_only=true)` → `width` 960, `height` 544, `num_frames` 121, `frame_rate` `"source"` (#1108),
   `lora_scale` 1.0, `prompt` `prompt:ltx2/deblur_dual_panel`, and
   `constraints.num_frames` `{modulus 8, remainder 1, min_frames 9}`. Both cards warn that generating
   far above the bucket weakens the effect, so a default that drifts off it is a finding.
