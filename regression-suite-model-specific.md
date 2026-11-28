@@ -8013,7 +8013,7 @@ It is a **finding** if skipping the decode leaks into the plain refine (no video
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
-### M-F362 — `h3-seam-pass` is in the shot catalog with its traits, cost and claims, validates clean with only `source` quoting the flat cost row, and refuses a source that is not a video
+### M-F362 — `h3-seam-pass` is in the shot catalog with its traits, cost and claims, validates clean with only `source` quoting the flat cost row (directly, or as the curated figure once runs exist), and refuses a source that is not a video
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: catalog read and validate only.
 Steps:
@@ -8032,9 +8032,9 @@ expected:
   - Its one required variable is the source take (`source`); everything else has a default.
   It is a **finding** if it is missing from the shot catalog, lacks the trait or the cost, or drops the not-a-burn-fix line.
 - **Arm V.**
-  - With `source`: `valid: true`, no error, and `plan.estimate` equal to the template's catalog cost row (arm C).
+  - With `source`: `valid: true`, no error, and a `plan.estimate` that rests on the template's catalog cost row (arm C): with `basis: "catalog"`, `minutes` equals the row; with `basis: "observed"` and `tempered: true`, `curated_minutes` equals the row; with `basis: "observed"` and `runs` ≥ 3, `minutes` is a positive figure and `runs` is reported.
   - With nothing: refused (or a warning that a run would fail) naming `source` as required.
-  It is a **finding** if `source` alone does not validate, or the estimate differs from the catalog row.
+  It is a **finding** if `source` alone does not validate, the catalog-basis estimate or the tempered `curated_minutes` differs from the catalog row, or a tempered estimate lacks `curated_minutes`.
 - **Arm N.**
   - (a), (b): `valid: false`, an error naming `source` and saying it must be a video.
   - (c): `valid: false`, naming the missing asset.
