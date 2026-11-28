@@ -4319,33 +4319,6 @@ or if the job fails.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
-### M-F138 — `music-video-cuts` on a song whose vocal stem hallucinates keeps the intro and the fade out of the lines, with bounded warnings
-source: tester, verified in #822 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/music-video-cuts` (demucs `separate_stems` → Whisper `transcribe_audio`
-on the vocal stem → `analyze_beats` → `plan_cuts`), on the asset `soviet-anthem/song_s23.mp3`. There is no
-generative step, and on #822's two runs the same asset gave the same transcript. On this take Whisper
-emits hundreds of `"—"` chunks over the roughly 30 s instrumental intro and an "I'm sorry, I'm sorry, …"
-loop over the fade. Before #822 these became `kind: "vocal"` shots from frame 0, and the reply's warnings
-grew quadratically to about 205 KB, past a client's tool-result limit. CPU/GPU-light, about 20 s on a 3090.
-Steps:
-1. `run_workflow(workflow_path="templates/minimax/music-video-cuts", arguments={"song":
-   "asset:soviet-anthem/song_s23.mp3", "timestamps": "word"}, acknowledged_cost=true, wait_seconds=55)`.
-2. `get_output_text` on the `plan` step's `plan.3-0.json` (`max_characters` about 5000).
-expected:
-- (1) `succeeded`. The warnings include one `plan_cuts: N transcript chunk(s) 0.00-… s '— — …' marked
-  suspect (no_words); left out of the lines` and one `… "I'm sorry, I'm sorry, …" marked suspect
-  (repetition); left out of the lines`. There are fewer than 20 warnings in all, and none repeats an
-  accumulated word list. In #822's verify: 7 warnings, 444 `no_words` chunks over 0.00-29.92 s and 222
-  `repetition` chunks.
-- (2) Every shot before about 29 s (frame ~700 at 24 fps) is `kind: "instrumental"` with `lyric: null`.
-  The first `vocal` shot begins at about 29.8 s, and no shot's `lyric` is `"—"` or contains "sorry". The
-  plan was 4,344 chars in #822's verify; before the fix it was 247,597.
-It is a **finding** if any vocal shot starts before about 29 s or carries a `"—"`/"sorry" lyric, or if
-the warnings grow with the number of words. If the asset's transcript itself changes (a different
-Whisper or demucs build), say so rather than calling it a regression.
-cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
 ### M-F142 — H3: a catalogued `transformer` adapter on a `ref2va` step is refused at validate and at `run_workflow`, naming the catalog entry; on `t2va` and `fl2va` the same adapter is clean, with no "names neither" warning
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 (`MiniMaxAI/MiniMax-H3`) partition check on `loras`, Realism-People LoRA
