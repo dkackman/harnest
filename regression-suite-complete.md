@@ -21647,7 +21647,7 @@ Open F's job page. Then open L's page while L is running (in C-F1097's run). Bef
 and the request log.
 expected:
 - Both pages show a section titled **Event log** (not "Full event log"), collapsed: no event rows visible.
-- No request to `**/event-log**` has been sent from either page before the section is opened. Opening F's section
+- No request to `**/journal**` has been sent from either page before the section is opened. Opening F's section
   sends one, with query `limit=500` (and an `after`, if the first request sends one).
 - F's page otherwise looks as before the stage: its outputs, steps and metadata are where they were.
 A section open by default, a request before opening, a "Full" label, or a page error is a **finding**.

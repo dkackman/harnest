@@ -2180,7 +2180,7 @@ source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthrop
 Free, no job. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1095 (finished job F). A job's
 events carry log lines the job itself wrote, so a workflow's own text reaches this panel. Register
 `page.on("dialog")`, `page.on("console")` and a `page.on("request")` log. Open F's page with
-`**/api/jobs/<F>/event-log**` mocked from its real answer:
+`**/api/jobs/<F>/journal**` mocked from its real answer:
 - one event's message is `<img src=x onerror="window.__pwn1=1">`;
 - one event's `kind` is `<script>window.__pwn2=1</script>` (it will appear in the kinds filter too);
 - one event with no message has a payload holding `{"html": "<svg onload=\"window.__pwn3=1\">", "t": "{{7*7}}"}`;
