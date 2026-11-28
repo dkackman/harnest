@@ -21670,7 +21670,7 @@ Arm A is free past the setup; arm B runs one small image job (L, setup in C-F109
 after=-1, limit=1000)`, then again with `after=<last_seq>` while the reply says more remain. Keep the `seq` list S, each
 event's `kind`, and the `note`. Open F's page and its Event log section; wait until the requests stop.
 
-**Arm B (a running job).** Every `**/event-log**` request logged with its query.
+**Arm B (a running job).** Every `**/journal**` request logged with its query.
 Queue L and open its page at once. Record the step chips' text and the flow view. Open the Event log, note the last
 `seq` shown (N1), wait about 10 s, and press **Refresh**. Repeat once. Then `wait_for_job(L, workspace=...)` until it
 finishes and reload its page.
@@ -21707,7 +21707,7 @@ expected:
 - With k chosen, every visible row's kind is k, and the row count equals the count of k in the MCP read. The same for
   the second kind.
 - Clearing restores every row.
-- Choosing a kind sends **no** new request to `**/event-log**` (the filter is client-side).
+- Choosing a kind sends **no** new request to `**/journal**` (the filter is client-side).
 A row of another kind showing, a kind offered that has no rows, a missing kind, or a request per filter change is a
 **finding**.
 cleanup: none here (C-F1101).
@@ -21717,7 +21717,7 @@ metrics: none.
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1095. Confirm over MCP that `get_job_events(job_id="00000000-0000-4000-8000-000000000000")`
 reports the job unknown. Open the job page for that id (the UI's job URL with the id swapped in) and open its Event
-log, if the page shows one. Then open F's page with `**/api/jobs/<F>/event-log**` fulfilled with status 404 and the
+log, if the page shows one. Then open F's page with `**/api/jobs/<F>/journal**` fulfilled with status 404 and the
 body the real unknown-job request returns (`route.fetch()` it against the zero id), and open the Event log.
 expected:
 - On F's page with the mocked 404, the section reads `no event log for this job` and shows no rows and no raw error.
@@ -21730,7 +21730,7 @@ metrics: none.
 
 ### C-F1100 — the log pages on while `truncated` is true, and stops at 5,000 events with the cap message
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
-Free, no job. Web UI as in C-F1095, on F's page, every `**/api/jobs/<F>/event-log**` request fulfilled by a mock built
+Free, no job. Web UI as in C-F1095, on F's page, every `**/api/jobs/<F>/journal**` request fulfilled by a mock built
 from the real first answer: keep its fields, replace `events` with 500 synthetic events copying a real event's fields,
 `seq` running on from the request's `after` + 1, and set `truncated` and `last_seq` to match. Arms:
 - (a) `truncated: true` on the first two answers and `false` on the third (1,500 events in all).

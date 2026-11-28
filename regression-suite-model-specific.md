@@ -261,6 +261,7 @@ fixture) when nothing uses it anymore.
   2. `run_workflow(...)` with the same arguments, `wait_seconds=1500`, then `wait_for_job` until done.
   3. `get_gallery_metadata` on the job's video: 24 fps, `duration_seconds` 26 ± 0.1, `frame_count` about 624,
      an audio stream. Then `keep_output` it as `qa-1230/chain-26s.mp4` and `delete_output(job_id=<id>)`.
+- `asset:bench/runner.png` (M-F499 steps 7–8; also C-F714/C-F715 in the complete suite). An RGB PNG, mostly background, in the shared library `common/assets/bench/runner.png` on both mini-ai and lem. Made per dkackman/diffusers-workflow#1258 (job 443fb76f2d31, FLUX 3 Klein seed 1258, 960x544); re-create it from that recipe if it's lost. Until it resolves, M-F499 records "fixture missing" for steps 7–8.
 
 ## Functional
 
@@ -2465,8 +2466,8 @@ Model/pipeline: MiniMax H3 Ref2VA (plus Z-Image and MiniMax-Music3 steps), via a
 of `templates/minimax/music-video`. Free: validate calls only.
 Setup: **W** is `templates/minimax/music-video` (read with `get_workflow`) with its top-level `cost`
 array **deleted**. Keep `vram_estimate` exactly as the template has it. Keep the steps `draw_singer`,
-`write_song`, `slice` and `shot` (both references), and drop `edit`, `balanced` and `music_video`.
-`shots` is one entry, `{"name": "one", "start_frame": 0, "prompt": "the otter sings"}`. You may drop
+`write_song`, `slice` and `shot` (both references), and drop `trim`, `edit`, `song_cut`, `song_cuts`, `balanced` and `music_video`. Since #627 the template takes `num_frames` per entry, so declare a `num_frames` variable (default 124) and have `slice` and `shot` read `variable:num_frames` in place of `item:num_frames`.
+`shots` is one entry, `{"name": "one", "start_frame": 0, "lead_frames": 0, "prompt": "the otter sings"}`. You may drop
 the `shot` step's quantization, offload and LoRA configuration, and the variables only they use.
 Steps:
 1. `validate_workflow(workflow=W, arguments={"num_frames": 345, "width": 4096, "height": 4096})`.

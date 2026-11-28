@@ -758,7 +758,7 @@ workflow (`regression-suite-complete.md`) with one argument replaced:
 - `fit`'s `video` (via `src`), then `restore`'s `video` as a literal, each set to
   `/etc/passwd`, `/nonexistent-dw-probe/x.mp4` and `../../../../etc/passwd`.
 - A `file:///etc/passwd` URL in `src`.
-- Control: `src: "asset:qa-fit/src-640x480-50f.mp4"` validates clean.
+- Control: `src` set to a video in the shared `common` library (e.g. `src: "asset:qa-cast/ep3-shot1-incident.mp4"`) validates clean.
 Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/passwd` `src` arm.
 
 expected:
@@ -2188,7 +2188,7 @@ events carry log lines the job itself wrote, so a workflow's own text reaches th
 Open the Event log, choose the hostile kind in the filter, and click the note's text.
 expected:
 - Each string appears **literally** as visible text (the payload as compact JSON text), or not at all; `{{7*7}}` is not
-  `49`. The hostile kind is a filter choice shown as text.
+  `49`. The injected strings must be on the page; a mock that did not apply is not a pass. The hostile kind is a filter choice shown as text.
 - `window.__pwn1` to `__pwn4` are undefined. No dialog opened. No injected `<img>`, `<script>`, `<svg>` or `<a>`
   element, and clicking the note navigated nowhere.
 Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
