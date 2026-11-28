@@ -3113,7 +3113,7 @@ expected:
   - a routing line for a same-size refine pointing at `refine-in-place`;
   - the "the schedule is not a knob" rule, reworded to except `refine-in-place`'s `strength`;
   - the rule `noise_scale = sigmas[0]`;
-  - a cost line for `refine-in-place`.
+  - the general cost rule: take `cost` from the `list_workflows` listing, quote `validate_workflow`'s `plan.estimate`, and price from the shape only a template with no `cost` (since dkackman/diffusers-workflow#1079; no per-template cost line).
 - **Non-goals unchanged.** `refine-clip` still upsamples 2× with its fixed stage-two schedule and has
   no `strength` variable. `two-stage` has no `strength` variable either.
 It is a **finding** if the template is missing from `shot`, if it lacks either trait or a cost, if any
