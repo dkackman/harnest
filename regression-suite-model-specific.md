@@ -999,9 +999,9 @@ absorbs: M-F032 (merged 2026-11-26, suite review)
 - M-F032: tester, model `opus` via provider `anthropic`, verified in #122 on 2026-09-14 against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job `af59273620ae`, run `20260914-044007-369fdaf5`, one-entry `shots` cast from `asset:qa-cast/{priya,hal}-portrait.jpg`, succeeded in 535.8 s against an 8.4 min `derived` estimate; both draw steps warned, manifest two entries, first `loading` phase was `pipeline: MiniMaxAI/MiniMax-H3`). Proposed by the implementer in that issue; the one-entry `shots` list is mine, to buy the same evidence for a quarter of the five-shot price. source: moved from C-F021 (curation 2026-09-24)
 
 ### M-F021 — a hot intermediate that a normalizer consumes is not warned about; one nothing re-levels still is
-Music 3 always lands at or over full scale, and `templates/minimax/music-video` saves that raw
-mp3 (`write_song`, `subfolder: intermediate`) before `balanced` (`normalize_audio`, -3.0 dBFS)
-re-levels it into the only deliverable. Until #286 the `audio_no_headroom` check fired on that
+Music 3 always lands at or over full scale, and until #627 `templates/minimax/music-video` saved
+that raw mp3 (`write_song`, `subfolder: intermediate`) before `balanced` (`normalize_audio`,
+-3.0 dBFS) re-levelled it into the only deliverable. Until #286 the `audio_no_headroom` check fired on that
 intermediate save on every stock run — a warning for a designed-in condition, which trains a
 reader to ignore `job.warnings` (the thing #161 was fixing). The fix suppresses the pre-write
 (`audio_no_headroom`) and post-write (`audio_clipped`) checks on a save whose result a later
@@ -1009,22 +1009,24 @@ reader to ignore `job.warnings` (the thing #161 was fixing). The fix suppresses 
 merely reads the result (a `slice_audio` conditioning read) does not suppress it. This case
 pins both halves, because a suppression that widened to "any consumer" would silence the
 warning on a genuinely un-normalized clipped save and look identical on the template run.
-**Measure the intermediate.** The template half is only evidence if the raw mp3 really is
-over -0.5 dBFS — a quieter render would pass the warning check for the wrong reason.
-Model/pipeline: MiniMax Music 3 (write_song) + MiniMax H3 `ref2va` (shots). The template half
-rides on whatever `music-video` render the suite does for M-F006/M-F012 rather than paying for
-its own; the two inline halves are utility-only and take seconds, but need a hot mp3 to read —
-use that render's `write_song` intermediate via `output:`.
+**Measure the hot input.** The inline halves are only evidence if the mp3 they read really is
+over -0.5 dBFS — a quieter input would pass the warning check for the wrong reason. Since #627
+the template saves no `write_song` mp3, so the template half no longer exercises the
+suppression; the positive half carries that evidence. Model/pipeline: MiniMax Music 3
+(write_song) + MiniMax H3 `ref2va` (shots) for the template half, which rides on whatever
+`music-video` render the suite does for M-F006/M-F012 rather than paying for its own. The
+inline halves are utility-only and take seconds: first make the hot input with an inline
+`normalize_audio(audio: "asset:song/la-vela.mp3", peak_dbfs: 0, sample_rate: 44100)` with
+`result: {content_type: "audio/mp3", sample_rate: 44100}`, and confirm
+`get_gallery_metadata(<that mp3>).media.peak_dbfs` is at or above -0.5 (+0.244 on 2026-11-27).
 expected:
 - **Template half.** On a `music-video` run (any `shots`/`audio_duration`), `job.warnings`
-  carries no entry naming `write_song` — neither `audio_no_headroom` ("peaks at … leaves no
-  headroom") nor `audio_clipped`. Corroborate with
-  `get_gallery_metadata(<write_song intermediate mp3>).media.peak_dbfs` **at or above -0.5**
-  (it was +0.31 on the verifying run) — if it isn't, the half proves nothing; say so and rely
-  on the inline halves. The final mp4's `peak_dbfs` stays strictly below 0 (M-F012's bullet).
+  carries no entry naming `write_song` — neither `audio_no_headroom` nor `audio_clipped` — and
+  the manifest's `write_song` entry has `files: []` (#627). The final mp4's `peak_dbfs` stays
+  strictly below 0 (M-F012's bullet).
 - **Negative half — a reader is not a normalizer.** Inline workflow, two `task` steps:
-  `resave` = `slice_audio(audio: "output:<that write_song mp3>", start_seconds: 0,
-  duration_seconds: <the full audio_duration>, sample_rate: 44100)` with
+  `resave` = `slice_audio(audio: "output:<the hot stand-in mp3>", start_seconds: 0,
+  duration_seconds: <the stand-in's full duration>, sample_rate: 44100)` with
   `result: {content_type: "audio/mp3", sample_rate: 44100, subfolder: "intermediate"}`;
   `reader` = `slice_audio(audio: "previous_result:resave", start_seconds: 0,
   duration_seconds: 2, sample_rate: 44100)`, no `result`. `job.warnings` **must** carry
@@ -1035,7 +1037,7 @@ expected:
   `normalize_audio(audio: "previous_result:resave", peak_dbfs: -3.0, sample_rate: 44100)` with
   `result: {content_type: "audio/mp3", sample_rate: 44100, subfolder: "final"}`.
   `job.warnings` is empty; both files are in the manifest.
-cleanup: `delete_output` on the two inline runs' folders. The `music-video` render belongs to
+cleanup: `delete_output` on the stand-in run's and the two inline runs' folders. The `music-video` render belongs to
 whichever case ran it.
 source: tester, verified in #286, model `opus` via provider `anthropic`, on 2026-09-21 against dw
 `0.4.0-beta.6` on `lem`, workspace `qa-ep28`. Template run `0d21109872ee` (2 shots,
@@ -1044,6 +1046,7 @@ source: tester, verified in #286, model `opus` via provider `anthropic`, on 2026
 first attempt slicing only 6 s (`84a617565b28`, `-1.91 dBFS`) was correctly silent, which is
 where the "take the whole track" note comes from. Positive `495f91d39f78`: `warnings: []`.
 Implementer proposed the case in its hand-off; placed here because it needs a Music 3 track.
+amended: 2026-11-27, harnest#377 (Don's ruling): the inline halves read a `normalize_audio` stand-in of `asset:song/la-vela.mp3` at 0 dBFS (measured ≥ -0.5) and the template half checks `write_song` has `files: []`, since dkackman/diffusers-workflow#627 (verified, breaking-change) stopped saving the `write_song` mp3.
 
 ### M-F022 — LTX-2.5 text-to-video refuses a (width, height, num_frames) that cannot fit VAE decode, at validate time
 `templates/ltx2/text-to-video` declares a top-level `vram_estimate` (`base_gb` + `bytes_per_voxel`
