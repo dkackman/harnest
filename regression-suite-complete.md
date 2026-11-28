@@ -319,6 +319,9 @@ smoke's Fixtures lists the asset too.
   dissolve), which C-F893's setup makes and keeps when it's missing. The multi-shot and person-free clips
   are built in each case's setup from those clips with `trim_video`, `concat_videos` (`crossfade_ms: 0`),
   `video_frames`/`get_first_frame`, `loop_frames` and `qr_code`. Nothing new to keep; every case deletes what it made.
+- `asset:bench/t26-stranger.jpg` — a portrait in the shared assets under `bench/`. Used by C-F887 as its reference
+  portrait, and through it by C-F889's ≥ 0.363 check against the same portrait. The one property that matters is that
+  it shows neither `ep49-episode.mp4` performer (shot 2's is Hal). Do not sweep it.
 - C-F1053–C-F1063 and SE-F072 (rerun with changes, #1471) use the workflow `rerun-size-1471` saved in **this**
   workspace: SD 1.5 text-to-image at 256 px, 4 steps, with a `size` preset selector (`small`/`medium`). C-F1053's
   setup writes it out in full and saves it when it's missing. Keep it across runs. What matters is that it isn't H3,
@@ -18902,16 +18905,14 @@ metrics: none.
 ### C-F887 — `replace-performer` swaps the person in every cut, keeping length, cuts, background and soundtrack
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: source SRC = `ep49-episode.mp4` trimmed to its first two shots (`trim_video`, `start_frame=0`,
-`num_frames=248`). Run `replace-performer-cuts` on SRC as in C-F886 (two cuts, one mask of 248 frames). First
-confirm with `get_output_frames` on SRC at `frame:60` and `frame:180` that each shot holds one person who is not Hal.
-If not, use `ep62-shot1-accuse.mp4` + `ep62-shot2-deflect.mp4` joined with `concat_videos(crossfade_ms=0)` and
-re-check. On the ep62 pair (whose bald man is Hal) use a portrait that is not the source's performer, such as
-`asset:bench/t26-stranger.jpg` copied into the workspace, in place of `hal-portrait.jpg` here and in the drift
-bullet below. `validate_workflow("replace-performer", arguments={"source_video": SRC, "mask_video": <prep mask>,
+`num_frames=248`). Run `replace-performer-cuts` on SRC as in C-F886 (two cuts, one mask of 248 frames). Shot 2's
+performer is Hal, so the reference is a portrait of neither performer: `asset:bench/t26-stranger.jpg` copied into the
+workspace, in place of `hal-portrait.jpg` here and in the drift bullet below. First confirm with `get_output_frames`
+on SRC at `frame:60` and `frame:180` that each shot holds one person. `validate_workflow("replace-performer", arguments={"source_video": SRC, "mask_video": <prep mask>,
 "cuts": <prep cut list, each cut carrying its own `prompt` naming that cut's pose, action and framing, as the
 `dw:minimax-h3` skill's "Replace a performer" route says>, "references": [{"reference_type":
 "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference", "from_file": "asset:qa-cast/hal-portrait.jpg"}],
-"prompt": "<the scene with Hal>", "seed": 7})`, then run with its `acknowledged_cost`.
+"prompt": "<the scene with the reference's person>", "seed": 7})`, then run with its `acknowledged_cost`.
 expected:
 - The output has SRC's frame count (248) and fps (24), at 960×544.
 - Face drift against the reference portrait (the `face-drift-check` template, C-F650, or `assess_output`'s face drift)
