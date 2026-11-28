@@ -14697,15 +14697,16 @@ No GPU time: every arm is `validate_workflow` only, `workspace="regression-compl
 a. **`references` item.** `get_workflow("templates/minimax/music-video", variables_only=true)` to
    read one default `shots` entry and the name `G` of its `for_each` step (`get_workflow` without
    `variables_only` if the step name isn't otherwise visible). Build a two-entry `shots` from that
-   entry, named `a` and `b`; give `b` a `references` list holding one item copied from the default's
-   shape but with `"from_previous_result": "G@a"` (drop any other source key in that item).
+   entry, named `a` and `b`; give `b` a `singer` reference copied from the default `singer_reference`'s
+   shape but with `"from_previous_result": "G@a"` (drop any other source key in that item). The step places
+   `singer` into `pipeline.arguments.references[0]`.
    `validate_workflow(name="templates/minimax/music-video", arguments={"shots": [...]})`.
 b. **`.property`.** C-F590's W1 with entry `b`'s `audio` set to `"previous_result:shot@a.frames"`.
 c. **Index keys.** C-F590's W1 with both `name` fields removed and the second entry's `audio` set to
    `"previous_result:shot@0"` (the member names become `shot@0`, `shot@1`).
 expected:
 - a: `valid: false`, an error naming `G@a` and `G@b` with the separate-runs / `output:` fix, at a
-  path under `arguments.shots[1].references…` or the step. No other error points at that reference
+  path under `arguments.shots[1].singer…` or the step (`steps[N].pipeline.arguments.references[0]…`). No other error points at that reference
   (a "no earlier step" or property error alongside it is a finding: one error, not two).
 - b: `valid: false` with the cross-entry error naming `shot@a` and `shot@b`. A property-not-found
   error **in place of** it is a finding; the cross-entry rule matches with or without `.property`.
@@ -16917,7 +16918,7 @@ its own list of which moves are moving, or `shot: moving` fails validation.
 cleanup: none.
 metrics: none.
 
-### C-F728 — the MiniMax chain template prices `check` + `retries` as 1 + (N - 1)(1 + `retries`) segment renders
+### C-F728 — the MiniMax chain template prices `check` + `retries` as N × (1 + `retries`) segment renders (its default guide chain carries its audio, so segment 1 is level-checked too)
 source: tester, verified in #1252 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow(name="templates/minimax/chained-segments", workspace="regression-complete",
 arguments=...)`, one call per probe:
@@ -16925,11 +16926,11 @@ arguments=...)`, one call per probe:
   (d) `{"check": true, "retries": 3}`; (e) `{"check": true, "retries": 1, "segments": 2}`;
   (f) `{"check": false, "retries": 2}`.
 expected:
-- `get_workflow("templates/minimax/chained-segments", variables_only=true)` declares `check` (default `false`)
+- `get_workflow("templates/minimax/chained-segments", variables_only=true)` declares `check` (default `null`, off)
   and `retries` (default `0`).
 - (a) to (e) are valid, with a numeric `plan.estimate.minutes`, and their basis is not `unknown`.
-- (a) and (b) carry no `scaled` text. (c)'s `scaled` says 5 renders for 3, (d)'s says 9 renders for 3, and (e)'s
-  says 3 renders for 2. Minutes rise strictly from (b) to (c) to (d).
+- (a) and (b) carry no `scaled` text. (c)'s `scaled` says 6 renders for 3, (d)'s says 12 renders for 3, and (e)'s
+  says 4 renders for 2. Minutes rise strictly from (b) to (c) to (d).
 - (f) is invalid, with its error at `steps[0].pipeline.chain.retries`, saying retries needs check on.
 It is a **finding** if (c) or (d) quotes the same minutes as (b), or if `basis` is `unknown`: the documented
 worst-case quote can't be seen on a priced chain again (#1252).
@@ -17115,6 +17116,38 @@ expected:
 cleanup: none (reads only).
 metrics: none.
 
+#### #1262: the chain check's words measure (C-F741 to C-F756)
+
+Specced from #1262's plan v2 before any code existed. Stage A (#1297) is the measure and the shared number-word
+normaliser, which `templates/check-script` reaches. Stage B (#1298) wires the measure into the H3 chain. Stage C
+(#1299) adds the template variable and the skill docs. Workspace `regression-complete` on every call.
+
+**The dialogue carrier**, used by C-F746 to C-F752, C-F754 and C-F755. It is H3 only: on a host that doesn't run MiniMax-H3 (mini-ai),
+skip those cases and say so.
+- Take `get_workflow("templates/minimax/chained-segments")` and pass its JSON inline. Let `P` be its default
+  `prompt` variable with every `<d>…</d>` span removed (the default holds one), and record the `P` used. If what is
+  left still holds a `<d>`, record the H3 cases as not run and file a harness issue. That is not a pass.
+- Let `D(x)` = `P` + `"\n\nA calm man's voice, off-screen, says: <d>" + x + "</d>"`.
+- The lines are `L1` = "We the people of the United States.", `L2` = "In order to form a more perfect union." and
+  `LX` = "Purple elephants dance quietly on a Tuesday."
+- The base arguments are `{"shot": "dialogue", "segments": 2, "num_frames": 124, "seed": 1262, "check": true,
+  "retries": 1, "prompts": [D(L1), D(L2)]}`. Each case states what it changes.
+- On the inline copy, write `lines` into its `chain` block as `"lines": [...]`, and a `check` object
+  (`{"words_similarity_min": ...}`) into the same block as `"check": {...}`, beside `lines`, not passed as an argument.
+  Where a case says to pass a `check` object, it means this. (Since #1299 the template also takes both as variables,
+  `check` defaulting to `null`, off; C-F754 and C-F755 use that route.)
+- Run it with `validate_workflow` first and bind `acknowledged_cost`. Then `run_workflow(..., wait_seconds=55,
+  note="C-F7xx: ...")`, then `wait_for_job` until it finishes, then `get_job` and `get_job_events`.
+- "A shot's words measure" means the `words` entry in the place where that shot's record carries its other check
+  measures (`jump_ratio`, `audio_dbfs`) today. The plan records it in `measures`.
+- The default ceiling: stage A's record sets `WORDS_SIMILARITY_MIN`, provisionally 0.80. If stage A found no clean
+  separation between good and bad takes, Don's gate makes stage B ship the default as `null`. C-F753 reads which
+  one shipped. Where a case says "the default ceiling", use the value C-F753 reads. If it is `null`, the case
+  passes `"check": {"words_similarity_min": 0.8}` explicitly, says so in its record, and expects what it would
+  expect from a non-null default.
+- Amended 2026-11-09 (harnest#199, approved by Don): `P` drops the default prompt's `<d>` span, and a `check` object
+  goes into the inline `chain` block. No case's expectations changed.
+
 ### C-F741 — check-script folds number spellings together ("Article One" / "1"; "twenty-one" / "21" / "twenty one" all read 1.0) but not numbers: a different number still reads under 1.0
 source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Cheap (TTS once, then Whisper on CPU). Setup, only if `asset:qa-1262/article-one.wav` or
@@ -17182,7 +17215,7 @@ once per probe.
 - `lines` written into the chain block, with `check: true`:
   - accepted: (i) `[L1, L2]`;
   - refused: (j) `[L1]`; (k) `[L1, L2, L2]`; (l) `[]`; (m) `[L1, 123]`; (n) `[L1, null]`.
-- `lines` `[L1, L2]` with `check: false`: (o).
+- `lines` `[L1, L2]` with `check: false` and `retries: 0`: (o).
 - `lines` on a length set by `duration_seconds`. Drop `segments` and set `duration_seconds` 10. First validate it
   without `lines`, and read the segment count N from its plan.
   - accepted: (p) a `lines` of N strings;
@@ -20507,7 +20540,7 @@ under a field is a **finding**.
 cleanup: none.
 metrics: none.
 
-### C-F1036 — Run stays enabled while validate is pending or refuses, and a refused Run still toasts
+### C-F1036 — Run stays enabled while validate is pending or refuses, and a counted refusal turns it into "Fix N issues"
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job queued. Web UI, setup as in C-F1033. `list_jobs(workspace=<the UI's workspace>)` before and after.
 1. Mock the validate route to hold its answer for 5 s; load the run page of `templates/text-to-image` and check Run
@@ -20516,8 +20549,10 @@ Free, no job queued. Web UI, setup as in C-F1033. `list_jobs(workspace=<the UI's
 3. Press Run.
 expected:
 - Steps 1 and 2: Run is enabled (clickable, not `disabled`, not `aria-disabled`).
-- Step 3: the submit is refused by the server and the page shows a toast with the refusal, as before #1468. No job
-  appears in `list_jobs`.
+- Step 3: once the check has answered that the value is refused, the button reads "Fix 1 issue" and stays enabled.
+  Pressing it sends no submit and shows no toast; it scrolls to the issue and focuses `num_images_per_prompt`
+  (dkackman/diffusers-workflow commit 54f012e2, refined in #1635, ruled intended in #1797). No job appears in
+  `list_jobs`.
 Run disabled at any point, or a job queued from the refused form, is a **finding**.
 cleanup: if a job did queue, `cancel_job` it and `delete_output(job_id=…)`, then report the finding.
 metrics: none.
@@ -23602,8 +23637,8 @@ metrics: none.
 
 ### C-F1235 — a closed request's page notices a reopen by an agent, within about 5 s
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
-Free. S1536-BG in `cf1233-live`. Before launching: `set_request` on `live1` at its revision with `state: "done"`,
-then `get_request(request="live1")` to confirm it reads closed. Spec: `record **/api/**`; `goto` `live1`'s request
+Free. S1536-BG in `cf1233-live`. Before launching: close `live1` with the user write (U-PUT as defined in C-F1384,
+with `state: "done"`), then `get_request(request="live1")` to confirm it reads closed. Spec: `record **/api/**`; `goto` `live1`'s request
 page; `wait_text "Renamed probe one"`; `screenshot`; `wait_text "Reopened item"`; `screenshot`; `recorded`. The
 write: `set_request` on `live1` at its revision, `state: "open"`, items `a` plus `{"key":"b","title":"Reopened item"}`.
 expected:
@@ -23720,7 +23755,7 @@ workflow=<its definition>, workspace="cf1242-wf")`.
 "duration_seconds":2}` (validate first) and wait for it, before any spec. Then two S1536-BG runs, each: `record
 **/api/**`; `goto` the Assets page of `cf1243-as`; `wait_text` <the name>; `screenshot`; `recorded`.
 (A1) Write: `upload_asset(content=<C-F1227's 1x1 PNG>, asset_name="cf1243/dot.png")`; wait for `dot.png`.
-(A2) Write: `keep_output(name=<the run's audio gallery name>, asset_name="cf1243/kept.wav")`; wait for `kept.wav`.
+(A2) Write: `keep_output(name=<the run's audio gallery name>, asset_name="cf1243/kept.mp3")`; wait for `kept.mp3`.
 
 **Gallery and Overview arm.** `cf1243-as` (the Assets arm's workspace). Two S1536-BG runs.
 (1) Spec: `record **/api/**`; `goto` the Gallery page of `cf1243-as`; `wait_text` the page's heading; `wait_text
@@ -23758,8 +23793,8 @@ metrics: none.
 
 ### C-F1246 — picks on the Assets page survive a background reload
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
-Free. S1536-BG in `cf1243-as` (holding `dot.png`, `kept.wav`, `here.png`). Spec: `record **/api/**`; `goto` the
-Assets page; pick `dot.png` and `kept.wav` with the page's own pick control; `inspect` each picked tile (and the
+Free. S1536-BG in `cf1243-as` (holding `dot.png`, `kept.mp3`, `here.png`). Spec: `record **/api/**`; `goto` the
+Assets page; pick `dot.png` and `kept.mp3` with the page's own pick control; `inspect` each picked tile (and the
 selection count, if the page shows one); `wait_text "late.png"`; `inspect` the same two again; `screenshot`. Write:
 `upload_asset(content=<1x1 PNG>, asset_name="cf1246/late.png", workspace="cf1243-as")`.
 expected:
@@ -24699,7 +24734,8 @@ CPU only. Same fixture and workspace rule as C-F1309.
    stale). Call its job E. `get_request(request="cf1310")`.
 expected:
 - (2) Refused before anything queues: the error message contains `has no item 'export'`.
-  `list_jobs(request="cf1310")` is empty.
+  `list_jobs(request="cf1310")` holds no job created during this run (earlier runs' jobs keep their `request` and
+  `item` link after `delete_request` and are still listed: dkackman/diffusers-workflow#1761).
 - (3) The write is accepted and `export` reads back with `depends_on: ["cut"]`, `status` `planned`.
 - (4) E queues and succeeds with `request` "cf1310", `item` "export". `export` reads `done` with `result.job` E and
   `attempts` [E]. `cut` has no attempts and `result` null: the export did not become a take of the cut.
@@ -28780,15 +28816,16 @@ expected:
 cleanup: none.
 metrics: none.
 
-### C-F1545 — the Models page offers a dw update exactly when `newer` is `true`, and never from its own string compare
+### C-F1545 — the Server → System page offers a dw update exactly when `newer` is `true`, and never from its own string compare
 source: tester, spec for #1770 from #1768's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`. Before the stage, the Models page's dw line read `dw
 <version>` and, when it judged `latest` newer by its own heuristic, a muted span `<latest> is available - update with
 <command>` beside it (with `managed` true the offer may be an Update button instead; either form counts as "the
 offer"). Each arm is a fresh run of: `mock {url_glob: "**/api/system/dw", set: {...}}` from the real answer;
-`goto {path: "/"}`; `click {text: "Models"}`; `wait_text {regex: "dw\\s"}` (the dw line, the version `<V>` shown);
+`goto {path: "/#/server/system"}` (the dw line moved from Models to Server → System, Software card:
+dkackman/diffusers-workflow#1799); `wait_text {regex: "dw\\s"}` (the dw line, the version `<V>` shown);
 `wait_text {text: <V>}`; `inspect {text: "is available"}` (a no-match is the "no offer" result, not a step failure to
-stop on: if the runner stops there, the arm's offer is absent); `screenshot {name: "models_<arm>"}`. Read each
+stop on: if the runner stops there, the arm's offer is absent); `screenshot {name: "system_<arm>"}`. Read each
 screenshot.
 Arms (`set` values; `managed` and the rest stay as served):
 1. `{version: "0.9.0", latest: "0.10.0", newer: true}`.
